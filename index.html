@@ -2,8 +2,18 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>FX Navigator</title>
+<!-- PWA -->
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0a0d14">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- iOS: ホーム画面アプリ・全画面起動 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FX Navi">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -23,7 +33,8 @@
       radial-gradient(900px 500px at 80% -10%, rgba(205,168,106,.10), transparent 60%),
       radial-gradient(700px 500px at -10% 10%, rgba(74,222,155,.07), transparent 55%);
   }
-  .wrap{max-width:880px;margin:0 auto;padding:18px 16px 60px}
+  .wrap{max-width:880px;margin:0 auto;
+    padding:calc(18px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
   header{
     display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
     padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:22px;
@@ -239,6 +250,13 @@ async function load(){
 }
 load();
 setInterval(load, 30000);
+
+// PWA: サービスワーカー登録（オフライン対応・インストール可能化）
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW登録失敗', e));
+  });
+}
 </script>
 </body>
 </html>

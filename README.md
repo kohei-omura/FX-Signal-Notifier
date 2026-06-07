@@ -17,6 +17,7 @@ GMOコイン外国為替FX Public API を使い、GitHub Actionsだけで動く�
 |---|---|
 | `fx_signal.py` | シグナル判定／ポジション監視／status.json書き出し |
 | `index.html` | ダッシュボード画面（GitHub Pages） |
+| `manifest.webmanifest` / `sw.js` / `icon-*.png` | PWA（ホーム画面アプリ化）用 |
 | `status.json` | 最新状態（アプリが毎回自動更新。画面が読み込む） |
 | `positions.json` | 保有ポジション登録（あなたが編集） |
 | `.github/workflows/fx-signal.yml` | 5分おき自動実行 |
@@ -39,7 +40,13 @@ Settings → **Pages** → Source を「Deploy from a branch」、Branch を `ma
 数十秒後、`https://<ユーザー名>.github.io/<リポジトリ名>/` で画面が開きます。
 （画面は `status.json` を30秒ごとに読み込み、Actionの更新を反映）
 
-### 4. 起動
+### 4. ホーム画面アプリ化（iPhone）
+Pages公開後、iPhoneの **Safari** で `https://<ユーザー名>.github.io/<リポジトリ名>/` を開き、
+共有ボタン → **「ホーム画面に追加」**。アイコンが追加され、タップすると
+アドレスバーなしの**全画面アプリ**として起動します（オフライン時も直近画面を表示）。
+※必ずSafariで開くこと（Chrome等からは全画面PWAになりません）。
+
+### 5. 起動
 Actions → Run workflow（疎通確認はテストにチェック）。以降5分おきに自動実行。
 
 ---
