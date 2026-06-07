@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX Navigator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d14; --panel:#11151f; --panel2:#161b27; --line:#222a3a;
+    --ink:#e8ecf4; --mut:#7e899e; --dim:#566074;
+    --up:#4ade9b; --down:#ff7a8a; --gold:#cda86a; --buy:#4ade9b; --sell:#ff7a8a;
+    --mono:'IBM Plex Mono',monospace; --jp:'Zen Kaku Gothic New',sans-serif;
+    --serif:'Shippori Mincho',serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--jp);
+    min-height:100vh; line-height:1.5; -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(900px 500px at 80% -10%, rgba(205,168,106,.10), transparent 60%),
+      radial-gradient(700px 500px at -10% 10%, rgba(74,222,155,.07), transparent 55%);
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:18px 16px 60px}
+  header{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
+    padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:22px;
+  }
+  .brand{font-family:var(--serif);font-size:26px;letter-spacing:.04em;line-height:1.1}
+  .brand small{display:block;font-family:var(--mono);font-size:10px;color:var(--gold);
+    letter-spacing:.32em;text-transform:uppercase;margin-top:4px}
+  .meta{text-align:right;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:600;
+    padding:3px 8px;border-radius:999px;letter-spacing:.08em;border:1px solid currentColor}
+  .open{color:var(--up)} .closed{color:var(--dim)}
+  h2{font-family:var(--serif);font-weight:600;font-size:15px;letter-spacing:.06em;
+    margin:26px 0 12px;color:var(--ink);display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:18px;height:1px;background:var(--gold)}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:620px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:14px;padding:14px 15px;
+    opacity:0;transform:translateY(8px);animation:rise .5s ease forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .sym{font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:.02em}
+  .price{font-family:var(--mono);font-size:24px;font-weight:500;letter-spacing:.01em}
+  .sig{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:8px}
+  .sig.buy{background:rgba(74,222,155,.12);color:var(--buy);border:1px solid rgba(74,222,155,.4)}
+  .sig.sell{background:rgba(255,122,138,.12);color:var(--sell);border:1px solid rgba(255,122,138,.4)}
+  .sig.none{color:var(--dim);border:1px solid var(--line)}
+  .tag{font-family:var(--mono);font-size:10px;color:var(--mut)}
+  .chips{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:7px;
+    background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--mut)}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.tp b{color:var(--up)} .chip.sl b{color:var(--down)}
+  svg{display:block;width:100%;height:64px;margin-top:11px;overflow:visible}
+  .rsiwrap{margin-top:11px}
+  .rsibar{position:relative;height:6px;border-radius:6px;background:var(--panel);
+    border:1px solid var(--line);overflow:hidden}
+  .rsibar i{position:absolute;top:-1px;width:2px;height:8px;background:var(--ink);border-radius:2px}
+  .rsibar .zoneL{position:absolute;left:0;top:0;bottom:0;width:30%;background:rgba(74,222,155,.10)}
+  .rsibar .zoneR{position:absolute;right:0;top:0;bottom:0;width:30%;background:rgba(255,122,138,.10)}
+  .reasons{font-size:11px;color:var(--mut);margin-top:9px;line-height:1.6}
+  /* positions */
+  .pnl{font-family:var(--mono);font-size:22px;font-weight:600}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .pside{font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px}
+  .pside.long{background:rgba(74,222,155,.12);color:var(--buy)}
+  .pside.short{background:rgba(255,122,138,.12);color:var(--sell)}
+  .range{position:relative;height:30px;margin-top:14px}
+  .track{position:absolute;top:13px;left:0;right:0;height:3px;border-radius:3px;
+    background:linear-gradient(90deg,var(--down),var(--dim),var(--up))}
+  .mark{position:absolute;top:6px;width:3px;height:17px;background:var(--ink);
+    border-radius:2px;box-shadow:0 0 0 3px var(--bg)}
+  .rlabel{position:absolute;top:20px;font-family:var(--mono);font-size:9px;color:var(--dim)}
+  .pmeta{display:flex;gap:14px;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .pmeta b{color:var(--ink);font-weight:500}
+  /* history */
+  .hist{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:10px 13px;border-bottom:1px solid var(--line);font-size:12px}
+  .hrow:last-child{border-bottom:0}
+  .hrow .l{font-family:var(--mono);color:var(--mut)}
+  .hrow .l b{color:var(--ink)}
+  .hrow .r{font-family:var(--mono);font-weight:600}
+  .empty{color:var(--dim);font-size:12.5px;padding:14px;text-align:center;
+    border:1px dashed var(--line);border-radius:12px}
+  footer{margin-top:30px;padding-top:16px;border-top:1px solid var(--line);
+    font-size:10.5px;color:var(--dim);line-height:1.7}
+  .reload{font-family:var(--mono);font-size:10px;color:var(--gold);cursor:pointer;
+    background:none;border:1px solid var(--line);border-radius:7px;padding:4px 9px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">FX ナビゲーター<small>signal · take-profit</small></div>
+    <div class="meta">
+      <div id="clock">--:--:--</div>
+      <div id="status" style="margin-top:4px"><span class="badge closed">— —</span></div>
+      <div id="updated" style="margin-top:4px"></div>
+    </div>
+  </header>
+
+  <h2>ペア別シグナル</h2>
+  <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
+
+  <h2>保有ポジション（利確ナビ）</h2>
+  <div class="grid" id="positions"></div>
+
+  <h2>決済履歴</h2>
+  <div id="history"></div>
+
+  <footer>
+    ※ ATR推奨は直近の値動きに見合った目安であり、未来の最適値や利益を保証する予測ではありません。売買・損益はすべて自己責任です。<br>
+    データは GitHub Actions が5分おきに更新（GitHub混雑時は遅延あり）。価格は GMOコイン外国為替FX Public API。
+    <br><button class="reload" onclick="load()">↻ 今すぐ更新</button>
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => (n===null||n===undefined) ? '—' : n;
+const yen = n => (n>=0?'+':'') + n.toLocaleString('ja-JP') + '円';
+const pips = n => (n>=0?'+':'') + n.toFixed(1) + 'pips';
+
+function clock(){
+  const t = new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false});
+  $('#clock').textContent = t;
+}
+setInterval(clock,1000); clock();
+
+function spark(c, ss, ll){
+  // c: closes[], ss/ll: sma arrays (nullable). returns SVG markup.
+  const W=300,H=64,pad=4;
+  const all=[...c, ...ss.filter(v=>v!=null), ...ll.filter(v=>v!=null)];
+  const mn=Math.min(...all), mx=Math.max(...all), rng=(mx-mn)||1;
+  const X=i=> pad + i*(W-2*pad)/(c.length-1);
+  const Y=v=> pad + (H-2*pad)*(1-(v-mn)/rng);
+  const line=(arr,col,w)=>{
+    let d='',started=false;
+    arr.forEach((v,i)=>{ if(v==null){started=false;return;}
+      d += (started?'L':'M') + X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; started=true; });
+    return `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  };
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    ${line(c,'rgba(232,236,244,.35)',1)}
+    ${line(ll,'var(--gold)',1.4)}
+    ${line(ss,'var(--up)',1.4)}
+  </svg>`;
+}
+
+function pairCard(p, idx){
+  const sg = p.signal==='買い' ? `<span class="sig buy">▲ 買いシグナル</span>`
+           : p.signal==='売り' ? `<span class="sig sell">▼ 売りシグナル</span>`
+           : `<span class="sig none">${p.bias||'様子見'}</span>`;
+  const rsi = p.rsi!=null ? p.rsi : 50;
+  const reasons = (p.reasons&&p.reasons.length)? `<div class="reasons">${p.reasons.map(r=>'・'+r).join('<br>')}</div>`:'';
+  return `<div class="card" style="animation-delay:${idx*60}ms">
+    <div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
+    <div class="row" style="margin-top:8px">
+      <span class="price">${fmt(p.bid)}</span>
+      <span class="tag">RSI ${fmt(p.rsi)}</span>
+    </div>
+    <div class="rsiwrap"><div class="rsibar">
+      <span class="zoneL"></span><span class="zoneR"></span>
+      <i style="left:calc(${rsi}% - 1px)"></i>
+    </div></div>
+    ${spark(p.closes||[], p.sma_s_series||[], p.sma_l_series||[])}
+    <div class="chips">
+      <span class="chip">SMA5 <b>${fmt(p.sma_short)}</b></span>
+      <span class="chip">SMA20 <b>${fmt(p.sma_long)}</b></span>
+      <span class="chip tp">推奨TP <b>+${fmt(p.tp_pips)}p</b></span>
+      <span class="chip sl">推奨SL <b>-${fmt(p.sl_pips)}p</b></span>
+    </div>${reasons}
+  </div>`;
+}
+
+function posCard(p, idx){
+  const cls = p.pips>=0?'up':'down';
+  const sideTxt = p.side==='long'?'買い':'売り';
+  let bar='';
+  if(p.tp_price!=null && p.sl_price!=null){
+    const lo=Math.min(p.tp_price,p.sl_price), hi=Math.max(p.tp_price,p.sl_price);
+    let pos=(p.current-lo)/((hi-lo)||1); pos=Math.max(0,Math.min(1,pos))*100;
+    const leftLab=p.side==='long'?'SL '+p.sl_price:'TP '+p.tp_price;
+    const rightLab=p.side==='long'?'TP '+p.tp_price:'SL '+p.sl_price;
+    bar=`<div class="range"><div class="track"></div>
+      <div class="mark ${cls}" style="left:calc(${pos}% - 1.5px);background:${p.pips>=0?'var(--up)':'var(--down)'}"></div>
+      <span class="rlabel" style="left:0">${leftLab}</span>
+      <span class="rlabel" style="right:0">${rightLab}</span></div>`;
+  }
+  return `<div class="card" style="animation-delay:${idx*60}ms">
+    <div class="row">
+      <span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span>
+      <span class="tag">建値 ${p.entry}</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span class="pnl ${cls}">${yen(p.yen)}</span>
+      <span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span>
+    </div>
+    ${bar}
+    <div class="pmeta"><span>現在 <b>${p.current}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
+  </div>`;
+}
+
+function render(s){
+  $('#updated').textContent = '更新 ' + s.generated_at;
+  $('#status').innerHTML = s.market_open
+    ? '<span class="badge open">● MARKET OPEN</span>'
+    : '<span class="badge closed">○ MARKET CLOSED</span>';
+
+  $('#pairs').innerHTML = (s.pairs||[]).map(pairCard).join('') || '<div class="empty">データなし</div>';
+
+  const op=s.open_positions||[];
+  $('#positions').innerHTML = op.length ? op.map(posCard).join('')
+    : '<div class="empty">保有ポジションなし — positions.json に登録すると利確ナビが起動します</div>';
+
+  const cp=(s.closed_positions||[]).slice().reverse();
+  $('#history').innerHTML = cp.length ? `<div class="hist">${cp.map(h=>{
+    const cls=h.close_pips>=0?'up':'down';
+    return `<div class="hrow"><span class="l"><b>${h.symbol.replace('_','/')}</b> ${h.side==='long'?'買い':'売り'} · ${h.close_reason} · ${h.closed_at||''}</span>
+      <span class="r ${cls}">${yen(h.close_yen)} / ${pips(h.close_pips)}</span></div>`;
+  }).join('')}</div>` : '<div class="empty">決済履歴なし</div>';
+}
+
+async function load(){
+  try{
+    const r = await fetch('./status.json?t='+Date.now(), {cache:'no-store'});
+    if(!r.ok) throw new Error('status.json '+r.status);
+    render(await r.json());
+  }catch(e){
+    $('#pairs').innerHTML = '<div class="empty">status.json を読み込めません（初回はワークフローを1回実行＆GitHub Pages公開後に表示されます）<br>'+e.message+'</div>';
+  }
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

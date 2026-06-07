@@ -2,7 +2,6 @@ name: FX Signal Notifier
 
 on:
   schedule:
-    # 5分おき（UTC基準・GitHub混雑時は数分遅延あり）。土日は市場CLOSEで自動スキップ
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
@@ -12,7 +11,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write          # positions.json / status.json を自動更新するため
 
 concurrency:
   group: fx-signal
@@ -27,7 +26,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Run signal check
+      - name: Run signal & position check
         env:
           TEST_NOTIFY:               ${{ inputs.test }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
@@ -35,3 +34,9 @@ jobs:
           GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
           MAIL_TO:                   ${{ secrets.MAIL_TO }}
         run: python fx_signal.py
+      - name: Commit dashboard state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add positions.json status.json
+          git diff --staged --quiet || (git commit -m "auto: update state [skip ci]" && git push)

@@ -1,229 +1,350 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-FX Signal Notifier  (FXシグナル通知)
------------------------------------
-GMOコイン 外国為替FX Public API の5分足から、テクニカルシグナルを判定し、
-LINE Messaging API と Gmail にリアルタイム（数分おき）で通知する。
+FX Signal & Position Navigator  (シグナル＋利確ナビ＋ATR推奨＋ダッシュボード)
+-----------------------------------------------------------------------
+GMOコイン 外国為替FX Public API を使い、GitHub Actionsだけで動く：
+  (A) エントリー: 主要円ペアの買い/売りシグナル＋ATR推奨TP/SLを通知
+  (B) エグジット: 保有ポジションを監視し利確/損切り到達で通知＋自動クローズ
+  (C) 推奨自動設定: "auto":true のポジションはATRからTP/SLを自動算出
+  (D) 画面表示: 毎回 status.json を書き出し、GitHub Pagesのダッシュボードで可視化
 
-⚠️ 重要: これは「売買タイミングの補助情報」を出すだけのツールです。
-   未来の値動きを保証する予測ではありません。投資判断・結果はすべて自己責任です。
-
-シグナルロジック（5分足の最新「確定足」で判定）:
-  ・買い: ゴールデンクロス(短期SMA>長期SMA) または RSIが30を下から上抜け（売られすぎ脱出）
-  ・売り: デッドクロス(短期SMA<長期SMA)   または RSIが70を上から下抜け（買われすぎ脱出）
-
-クロスが起きた足でのみ発火するため、同じシグナルの連投は自然に抑制されます。
+⚠️ ATR推奨は値動きに見合った目安で、未来の最適値の保証ではありません。自己責任で。
 """
 
-import os
-import sys
-import smtplib
-import datetime
+import os, sys, json, smtplib, datetime
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from zoneinfo import ZoneInfo
-
 import requests
 
 # ===================== 設定 =====================
 JST = ZoneInfo("Asia/Tokyo")
-
-# GMOが提供する主要な円ペア（ティッカーで存在確認済み）
-SYMBOLS = ["USD_JPY", "EUR_JPY", "GBP_JPY", "AUD_JPY"]
-
-INTERVAL   = "5min"   # 足の種類
-PRICE_TYPE = "BID"    # BID（売値）基準
-SMA_SHORT  = 5        # 短期移動平均（5本=25分）
-SMA_LONG   = 20       # 長期移動平均（20本=100分）
+SYMBOLS    = ["USD_JPY", "EUR_JPY", "GBP_JPY", "AUD_JPY"]
+INTERVAL   = "5min"
+PRICE_TYPE = "BID"
+SMA_SHORT, SMA_LONG = 5, 20
 RSI_PERIOD = 14
-RSI_LOW    = 30       # 売られすぎ
-RSI_HIGH   = 70       # 買われすぎ
-
+RSI_LOW, RSI_HIGH = 30, 70
+ATR_PERIOD  = 14
+ATR_SL_MULT = 1.5
+ATR_TP_MULT = 2.0
+PIP_SIZE    = 0.01
+DEFAULT_LOT = 10000
+POSITIONS_FILE = "positions.json"
+STATUS_FILE    = "status.json"
+CHART_POINTS   = 60
 BASE = "https://forex-api.coin.z.com/public/v1"
 # ================================================
 
+_OHLC_CACHE: dict[str, list[tuple]] = {}
+
 
 # --------------- データ取得 ---------------
-def fetch_klines(symbol: str) -> list[float]:
-    """昨日+今日(JST)の5分足を結合し、終値リストを時系列順で返す。"""
+def get_ohlc(symbol):
+    """直近営業日まで遡って (high,low,close) を集める。週末でも空にならない。"""
+    if symbol in _OHLC_CACHE:
+        return _OHLC_CACHE[symbol]
+    need = max(SMA_LONG, RSI_PERIOD, ATR_PERIOD) + CHART_POINTS  # 十分な本数
     today = datetime.datetime.now(JST).date()
-    closes: dict[int, float] = {}  # openTime(ms) -> close（重複除去）
-    for d in (today - datetime.timedelta(days=1), today):
-        url = f"{BASE}/klines"
-        params = {"symbol": symbol, "priceType": PRICE_TYPE,
-                  "interval": INTERVAL, "date": d.strftime("%Y%m%d")}
+    rows = {}
+    for back in range(0, 7):           # 最大7日遡る
+        d = today - datetime.timedelta(days=back)
         try:
-            r = requests.get(url, params=params, timeout=15)
-            j = r.json()
-            if j.get("status") != 0:
-                continue
-            for k in j.get("data", []):
-                closes[int(k["openTime"])] = float(k["close"])
+            j = requests.get(f"{BASE}/klines", timeout=15, params={
+                "symbol": symbol, "priceType": PRICE_TYPE,
+                "interval": INTERVAL, "date": d.strftime("%Y%m%d")}).json()
+            if j.get("status") == 0:
+                for k in j.get("data", []):
+                    rows[int(k["openTime"])] = (float(k["high"]), float(k["low"]), float(k["close"]))
         except Exception as e:
-            print(f"[WARN] {symbol} 取得失敗: {e}", file=sys.stderr)
-    return [closes[t] for t in sorted(closes)]
+            print(f"[WARN] {symbol} klines失敗: {e}", file=sys.stderr)
+        if len(rows) >= need:
+            break
+    out = [rows[t] for t in sorted(rows)]
+    _OHLC_CACHE[symbol] = out
+    return out
 
 
-def market_is_open() -> bool:
+def fetch_ticker():
+    out = {}
     try:
-        j = requests.get(f"{BASE}/status", timeout=10).json()
-        return j.get("data", {}).get("status") == "OPEN"
-    except Exception:
-        return True  # 取れない時は処理継続
+        for d in requests.get(f"{BASE}/ticker", timeout=10).json().get("data", []):
+            out[d["symbol"]] = {"bid": float(d["bid"]), "ask": float(d["ask"])}
+    except Exception as e:
+        print(f"[WARN] ticker失敗: {e}", file=sys.stderr)
+    return out
 
 
-def latest_price(symbol: str) -> str:
+def market_is_open():
     try:
-        j = requests.get(f"{BASE}/ticker", timeout=10).json()
-        for d in j.get("data", []):
-            if d["symbol"] == symbol:
-                return d["bid"]
+        return requests.get(f"{BASE}/status", timeout=10).json().get("data", {}).get("status") == "OPEN"
     except Exception:
-        pass
-    return "-"
+        return True
 
 
-# --------------- テクニカル指標 ---------------
-def sma(values: list[float], period: int) -> float | None:
-    if len(values) < period:
+# --------------- 指標 ---------------
+def sma(v, p):
+    return sum(v[-p:]) / p if len(v) >= p else None
+
+
+def sma_series(v, p):
+    out = [None] * len(v)
+    for i in range(p - 1, len(v)):
+        out[i] = round(sum(v[i - p + 1:i + 1]) / p, 5)
+    return out
+
+
+def rsi(v, p):
+    if len(v) < p + 1:
         return None
-    return sum(values[-period:]) / period
+    d = [v[i] - v[i - 1] for i in range(1, len(v))]
+    g = [max(x, 0.0) for x in d]; l = [max(-x, 0.0) for x in d]
+    ag, al = sum(g[:p]) / p, sum(l[:p]) / p
+    for i in range(p, len(d)):
+        ag = (ag * (p - 1) + g[i]) / p; al = (al * (p - 1) + l[i]) / p
+    return 100.0 if al == 0 else 100.0 - 100.0 / (1.0 + ag / al)
 
 
-def rsi(values: list[float], period: int) -> float | None:
-    """Wilder方式のRSI（最新値）。"""
-    if len(values) < period + 1:
+def atr(ohlc, p=ATR_PERIOD):
+    if len(ohlc) < p + 1:
         return None
-    deltas = [values[i] - values[i - 1] for i in range(1, len(values))]
-    gains  = [max(d, 0.0) for d in deltas]
-    losses = [max(-d, 0.0) for d in deltas]
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    for i in range(period, len(deltas)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-    if avg_loss == 0:
-        return 100.0
-    rs = avg_gain / avg_loss
-    return 100.0 - 100.0 / (1.0 + rs)
+    trs = []
+    for i in range(1, len(ohlc)):
+        h, l, _ = ohlc[i]; pc = ohlc[i - 1][2]
+        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+    a = sum(trs[:p]) / p
+    for i in range(p, len(trs)):
+        a = (a * (p - 1) + trs[i]) / p
+    return a
 
 
-# --------------- シグナル判定 ---------------
-def detect_signal(closes: list[float]) -> tuple[str, list[str], float | None] | None:
-    """最新確定足でのシグナルを判定。(side, reasons, rsi_now) or None"""
-    need = max(SMA_LONG, RSI_PERIOD) + 2
-    if len(closes) < need:
+def suggest_tp_sl(a):
+    return (round(a * ATR_TP_MULT / PIP_SIZE, 1), round(a * ATR_SL_MULT / PIP_SIZE, 1))
+
+
+def detect_signal(closes):
+    if len(closes) < max(SMA_LONG, RSI_PERIOD) + 2:
         return None
-
-    prev, now = closes[:-1], closes  # 1本前 / 最新
-    s_prev, s_now = sma(prev, SMA_SHORT), sma(now, SMA_SHORT)
-    l_prev, l_now = sma(prev, SMA_LONG),  sma(now, SMA_LONG)
-    r_prev, r_now = rsi(prev, RSI_PERIOD), rsi(now, RSI_PERIOD)
-    if None in (s_prev, s_now, l_prev, l_now, r_prev, r_now):
+    prev, now = closes[:-1], closes
+    sp, sn = sma(prev, SMA_SHORT), sma(now, SMA_SHORT)
+    lp, ln = sma(prev, SMA_LONG),  sma(now, SMA_LONG)
+    rp, rn = rsi(prev, RSI_PERIOD), rsi(now, RSI_PERIOD)
+    if None in (sp, sn, lp, ln, rp, rn):
         return None
+    buy, sell = [], []
+    if sp <= lp and sn > ln: buy.append(f"ゴールデンクロス(SMA{SMA_SHORT}↑SMA{SMA_LONG})")
+    if sp >= lp and sn < ln: sell.append(f"デッドクロス(SMA{SMA_SHORT}↓SMA{SMA_LONG})")
+    if rp < RSI_LOW <= rn:   buy.append(f"RSI売られすぎ脱出({RSI_LOW}↑)")
+    if rp > RSI_HIGH >= rn:  sell.append(f"RSI買われすぎ脱出({RSI_HIGH}↓)")
+    if buy and not sell: return ("買い", buy, rn)
+    if sell and not buy: return ("売り", sell, rn)
+    return None
 
-    buy_reasons, sell_reasons = [], []
-    if s_prev <= l_prev and s_now > l_now:
-        buy_reasons.append(f"ゴールデンクロス(SMA{SMA_SHORT}↑SMA{SMA_LONG})")
-    if s_prev >= l_prev and s_now < l_now:
-        sell_reasons.append(f"デッドクロス(SMA{SMA_SHORT}↓SMA{SMA_LONG})")
-    if r_prev < RSI_LOW <= r_now:
-        buy_reasons.append(f"RSI売られすぎ脱出({RSI_LOW}↑)")
-    if r_prev > RSI_HIGH >= r_now:
-        sell_reasons.append(f"RSI買われすぎ脱出({RSI_HIGH}↓)")
 
-    if buy_reasons and not sell_reasons:
-        return ("買い", buy_reasons, r_now)
-    if sell_reasons and not buy_reasons:
-        return ("売り", sell_reasons, r_now)
-    return None  # シグナルなし / 両方向矛盾はスルー
+# --------------- ポジション ---------------
+def load_positions():
+    if not os.path.exists(POSITIONS_FILE):
+        return {"positions": []}
+    try:
+        data = json.load(open(POSITIONS_FILE, encoding="utf-8"))
+        return data if "positions" in data else {"positions": []}
+    except Exception as e:
+        print(f"[WARN] positions.json読込失敗: {e}", file=sys.stderr)
+        return {"positions": []}
+
+
+def save_positions(data):
+    json.dump(data, open(POSITIONS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+
+def _tp_sl_prices(p):
+    side = p.get("side", "long"); entry = float(p["entry"])
+    tp, sl = p.get("tp"), p.get("sl")
+    if tp is None and p.get("tp_pips") is not None:
+        tp = entry + float(p["tp_pips"]) * PIP_SIZE if side == "long" else entry - float(p["tp_pips"]) * PIP_SIZE
+    if sl is None and p.get("sl_pips") is not None:
+        sl = entry - float(p["sl_pips"]) * PIP_SIZE if side == "long" else entry + float(p["sl_pips"]) * PIP_SIZE
+    return (float(tp) if tp is not None else None, float(sl) if sl is not None else None)
+
+
+def auto_set_levels(data):
+    msgs, changed = [], False
+    for p in data.get("positions", []):
+        if p.get("status", "open") != "open" or not p.get("auto") or p.get("auto_set"):
+            continue
+        a = atr(get_ohlc(p.get("symbol"))) if p.get("symbol") else None
+        if not a:
+            continue
+        tp_pips, sl_pips = suggest_tp_sl(a)
+        p["tp_pips"], p["sl_pips"], p["atr_used"], p["auto_set"] = tp_pips, sl_pips, round(a, 3), True
+        changed = True
+        side = p.get("side", "long"); entry = float(p["entry"]); tp_pr, sl_pr = _tp_sl_prices(p)
+        msgs.append(f"🧭 推奨レベル設定 {p['symbol']} ({'買い' if side=='long' else '売り'})\n"
+                    f"  建値:{entry} / ATR{ATR_PERIOD}:{a:.3f}\n"
+                    f"  TP:+{tp_pips}pips({tp_pr:.3f}) / SL:-{sl_pips}pips({sl_pr:.3f})")
+    return msgs, changed
+
+
+def position_pl(p, ticker):
+    """開いているポジションの現在損益等を計算して dict で返す。"""
+    sym, side = p.get("symbol"), p.get("side", "long")
+    entry, lot = float(p["entry"]), float(p.get("lot", DEFAULT_LOT))
+    bid, ask = ticker[sym]["bid"], ticker[sym]["ask"]
+    cur = bid if side == "long" else ask
+    diff = (cur - entry) if side == "long" else (entry - cur)
+    tp_pr, sl_pr = _tp_sl_prices(p)
+    return {"id": p.get("id"), "symbol": sym, "side": side, "entry": entry, "lot": lot,
+            "current": round(cur, 3), "pips": round(diff / PIP_SIZE, 1), "yen": round(diff * lot),
+            "tp_price": round(tp_pr, 3) if tp_pr else None,
+            "sl_price": round(sl_pr, 3) if sl_pr else None}
+
+
+def check_positions(data, ticker):
+    msgs, changed = [], False
+    now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
+    for p in data.get("positions", []):
+        if p.get("status", "open") != "open" or p.get("symbol") not in ticker:
+            continue
+        info = position_pl(p, ticker); side = info["side"]
+        bid, ask = ticker[info["symbol"]]["bid"], ticker[info["symbol"]]["ask"]
+        tp_pr, sl_pr = info["tp_price"], info["sl_price"]
+        print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} {info['pips']:+}pips {info['yen']:+,}円")
+        hit = None
+        if side == "long":
+            if tp_pr and bid >= tp_pr: hit = ("利確", "🎯")
+            elif sl_pr and bid <= sl_pr: hit = ("損切り", "🛑")
+        else:
+            if tp_pr and ask <= tp_pr: hit = ("利確", "🎯")
+            elif sl_pr and ask >= sl_pr: hit = ("損切り", "🛑")
+        if hit:
+            kind, mark = hit
+            msgs.append(f"{mark} {kind} {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
+                        f"  建値:{info['entry']} → 決済:{info['current']}\n"
+                        f"  {info['pips']:+}pips / {info['yen']:+,}円")
+            p.update(status="closed", close_price=info["current"], close_pips=info["pips"],
+                     close_yen=info["yen"], close_reason=kind, closed_at=now_str)
+            changed = True
+    return msgs, changed
+
+
+# --------------- 状態書き出し(ダッシュボード用) ---------------
+def build_status(ticker, data, market_open):
+    pairs = []
+    notify_blocks = []
+    for sym in SYMBOLS:
+        ohlc = get_ohlc(sym)
+        closes = [r[2] for r in ohlc]
+        if len(closes) < max(SMA_LONG, RSI_PERIOD) + 2:
+            continue
+        rn = rsi(closes, RSI_PERIOD)
+        ss, ll = sma(closes, SMA_SHORT), sma(closes, SMA_LONG)
+        a = atr(ohlc)
+        tp_pips, sl_pips = suggest_tp_sl(a) if a else (None, None)
+        sig = detect_signal(closes)
+        bias = "買い優勢" if (ss and ll and ss >= ll) else "売り優勢"
+        info = {
+            "symbol": sym,
+            "bid": ticker.get(sym, {}).get("bid"),
+            "ask": ticker.get(sym, {}).get("ask"),
+            "rsi": round(rn, 1) if rn else None,
+            "sma_short": round(ss, 3) if ss else None,
+            "sma_long": round(ll, 3) if ll else None,
+            "atr": round(a, 4) if a else None,
+            "tp_pips": tp_pips, "sl_pips": sl_pips,
+            "signal": sig[0] if sig else None,
+            "reasons": sig[1] if sig else [],
+            "bias": bias,
+            "closes": [round(c, 3) for c in closes[-CHART_POINTS:]],
+            "sma_s_series": sma_series(closes, SMA_SHORT)[-CHART_POINTS:],
+            "sma_l_series": sma_series(closes, SMA_LONG)[-CHART_POINTS:],
+        }
+        pairs.append(info)
+        if market_open and sig:
+            price = ticker.get(sym, {}).get("bid", "-")
+            rtxt = "\n".join(f"  ・{x}" for x in sig[1])
+            blk = f"{'🟢' if sig[0]=='買い' else '🔴'} {sym} {sig[0]}シグナル\n{rtxt}\n  現在値:{price} / RSI:{rn:.1f}"
+            if a:
+                blk += f"\n  推奨 TP:+{tp_pips}pips / SL:-{sl_pips}pips (ATR{ATR_PERIOD}:{a:.3f})"
+            notify_blocks.append(blk)
+
+    open_pos, closed_pos = [], []
+    for p in data.get("positions", []):
+        if p.get("status", "open") == "open" and p.get("symbol") in ticker:
+            open_pos.append(position_pl(p, ticker))
+        elif p.get("status") == "closed":
+            closed_pos.append({k: p.get(k) for k in
+                ("id", "symbol", "side", "entry", "close_price", "close_pips",
+                 "close_yen", "close_reason", "closed_at")})
+
+    status = {
+        "generated_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
+        "market_open": market_open,
+        "config": {"interval": INTERVAL, "sma_short": SMA_SHORT, "sma_long": SMA_LONG,
+                   "rsi_period": RSI_PERIOD, "atr_period": ATR_PERIOD,
+                   "atr_tp_mult": ATR_TP_MULT, "atr_sl_mult": ATR_SL_MULT},
+        "pairs": pairs, "open_positions": open_pos, "closed_positions": closed_pos[-20:],
+    }
+    json.dump(status, open(STATUS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    return notify_blocks
 
 
 # --------------- 通知 ---------------
-def notify_line(text: str) -> None:
+def notify_line(text):
     token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     if not token:
-        print("[INFO] LINEトークン未設定。LINE通知スキップ")
-        return
+        print("[INFO] LINE未設定。スキップ"); return
     try:
-        r = requests.post(
-            "https://api.line.me/v2/bot/message/broadcast",
-            headers={"Authorization": f"Bearer {token}",
-                     "Content-Type": "application/json"},
-            json={"messages": [{"type": "text", "text": text}]},
-            timeout=15,
-        )
+        r = requests.post("https://api.line.me/v2/bot/message/broadcast",
+                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                          json={"messages": [{"type": "text", "text": text}]}, timeout=15)
         print(f"[INFO] LINE送信 status={r.status_code} {r.text[:120]}")
     except Exception as e:
         print(f"[WARN] LINE送信失敗: {e}", file=sys.stderr)
 
 
-def notify_mail(subject: str, body: str) -> None:
-    addr = os.environ.get("GMAIL_ADDRESS")
-    pw   = os.environ.get("GMAIL_APP_PASSWORD")
-    to   = os.environ.get("MAIL_TO") or addr
+def notify_mail(subject, body):
+    addr = os.environ.get("GMAIL_ADDRESS"); pw = os.environ.get("GMAIL_APP_PASSWORD")
+    to = os.environ.get("MAIL_TO") or addr
     if not (addr and pw):
-        print("[INFO] Gmail設定なし。メール通知スキップ")
-        return
+        print("[INFO] Gmail未設定。スキップ"); return
     try:
         msg = MIMEText(body, "plain", "utf-8")
-        msg["Subject"] = subject
-        msg["From"] = addr
-        msg["To"] = to
+        msg["Subject"], msg["From"], msg["To"] = subject, addr, to
         msg["Date"] = formatdate(localtime=True)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as s:
-            s.login(addr, pw)
-            s.send_message(msg)
+            s.login(addr, pw); s.send_message(msg)
         print("[INFO] メール送信完了")
     except Exception as e:
         print(f"[WARN] メール送信失敗: {e}", file=sys.stderr)
 
 
 # --------------- メイン ---------------
-def main() -> None:
+def main():
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
-
-    # --- テストモード: 市場/シグナルに関係なく疎通確認の通知を送る ---
     if os.environ.get("TEST_NOTIFY", "").lower() == "true":
-        msg = (f"✅ テスト通知\n時刻: {now_str}\n"
-               "LINEとメールの疎通確認です。これが届けば設定OKです。")
-        print(msg)
-        notify_line(msg)
-        notify_mail("【FXシグナル】テスト通知", msg)
-        return
+        m = f"✅ テスト通知\n時刻: {now_str}\nLINEとメールの疎通確認です。"
+        print(m); notify_line(m); notify_mail("【FX】テスト通知", m); return
 
-    if not market_is_open():
-        print(f"[INFO] {now_str} 市場クローズ。終了。")
-        return
+    market_open = market_is_open()
+    ticker = fetch_ticker()
+    data = load_positions()
 
-    blocks = []
-    for sym in SYMBOLS:
-        closes = fetch_klines(sym)
-        sig = detect_signal(closes)
-        if not sig:
-            continue
-        side, reasons, r_now = sig
-        mark = "🟢" if side == "買い" else "🔴"
-        price = latest_price(sym)
-        reason_txt = "\n".join(f"  ・{x}" for x in reasons)
-        blocks.append(
-            f"{mark} {sym} {side}シグナル\n{reason_txt}\n"
-            f"  現在値:{price} / RSI:{r_now:.1f}"
-        )
+    m1, c1 = auto_set_levels(data)
+    m2, c2 = check_positions(data, ticker)
+    if c1 or c2:
+        save_positions(data)
 
-    if not blocks:
-        print(f"[INFO] {now_str} シグナルなし。")
-        return
+    notify_blocks = build_status(ticker, data, market_open)   # status.json を書き出し
+    msgs = m1 + m2 + notify_blocks
 
-    body = (
-        f"📊 FXシグナル通知 (5分足)\n時刻: {now_str}\n\n"
-        + "\n\n".join(blocks)
-        + "\n\n※自動判定の補助情報です。売買は必ずご自身の判断・責任で。"
-    )
-    print(body)
-    notify_line(body)
-    notify_mail("【FXシグナル】売買タイミング通知", body)
+    if not market_open:
+        print(f"[INFO] {now_str} 市場クローズ(エントリー判定スキップ)")
+    if not msgs:
+        print(f"[INFO] {now_str} 通知なし。"); return
+    body = (f"📊 FX通知\n時刻: {now_str}\n\n" + "\n\n".join(msgs)
+            + "\n\n※ATR推奨は目安です。最適値の保証ではなく自己責任で。")
+    print(body); notify_line(body); notify_mail("【FX】シグナル/利確ナビ通知", body)
 
 
 if __name__ == "__main__":
