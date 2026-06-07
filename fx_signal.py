@@ -184,6 +184,15 @@ def notify_mail(subject: str, body: str) -> None:
 def main() -> None:
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
 
+    # --- テストモード: 市場/シグナルに関係なく疎通確認の通知を送る ---
+    if os.environ.get("TEST_NOTIFY", "").lower() == "true":
+        msg = (f"✅ テスト通知\n時刻: {now_str}\n"
+               "LINEとメールの疎通確認です。これが届けば設定OKです。")
+        print(msg)
+        notify_line(msg)
+        notify_mail("【FXシグナル】テスト通知", msg)
+        return
+
     if not market_is_open():
         print(f"[INFO] {now_str} 市場クローズ。終了。")
         return
