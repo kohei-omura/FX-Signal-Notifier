@@ -1,0 +1,31 @@
+name: FX Signal Notifier
+
+on:
+  schedule:
+    # 5分おき（UTC基準・GitHub混雑時は数分遅延あり）。土日は市場CLOSEで自動スキップ
+    - cron: '*/5 * * * *'
+  workflow_dispatch:   # 手動実行ボタン
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fx-signal
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Run signal check
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          GMAIL_ADDRESS:             ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO:                   ${{ secrets.MAIL_TO }}
+        run: python fx_signal.py
