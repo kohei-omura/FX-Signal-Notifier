@@ -18,6 +18,7 @@ GMOコイン外国為替FX Public API を使い、GitHub Actionsだけで動く�
 | `fx_signal.py` | シグナル判定／ポジション監視／status.json書き出し |
 | `index.html` | ダッシュボード画面（GitHub Pages） |
 | `manifest.webmanifest` / `sw.js` / `icon-*.png` | PWA（ホーム画面アプリ化）用 |
+| `worker.js` | （任意）リアルタイム価格用のCloudflare Worker |
 | `status.json` | 最新状態（アプリが毎回自動更新。画面が読み込む） |
 | `positions.json` | 保有ポジション登録（あなたが編集） |
 | `.github/workflows/fx-signal.yml` | 5分おき自動実行 |
@@ -89,3 +90,23 @@ Actions → Run workflow（疎通確認はテストにチェック）。以降5�
 - `cron`最短5分・遅延あり（真のリアルタイム不可）。LINE無料枠は月200通。
 - `positions.json`と`status.json`はアプリが自動コミット（`contents: write`・設定済み）。
 - 価格取得元: GMOコイン外国為替FX Public API。
+
+
+---
+
+## リアルタイム表示について（重要）
+- 標準では画面は `status.json`（GitHub Actionsが**約5分間隔**で更新）を30秒ごとに読み込みます。
+  つまり**金額は約5分ごとに変化**し、ティック単位の完全リアルタイムではありません。
+- もし「更新が止まる」場合：Actionsタブで失敗(赤)ランを確認。本ワークフローはpushを
+  rebase＆3回リトライする堅牢版にしてあります。`*/5`のcronはGitHub高負荷時に遅延/間引きされる仕様です。
+
+### 数秒ごとに金額を動かす（任意・推奨）
+GMOのAPIは画面から直接呼べない（CORS不可）ため、無料の**Cloudflare Worker**で中継します。
+1. https://dash.cloudflare.com → Workers & Pages → Create → Worker を作成
+2. コードを `worker.js` の内容に差し替えて Deploy
+3. 発行されたURL（例 `https://fx-navi.xxxx.workers.dev`）をコピー
+4. `index.html` の `const LIVE_PRICE_URL = "";` にそのURLを貼って commit
+
+設定すると、画面が**約9秒ごと**にライブ価格を取得し、保有ポジションの含み損益(円/pips)を
+即時に再計算、ヘッダに「● LIVE hh:mm:ss」が表示されます（空欄なら従来どおり5分更新）。
+※シグナル判定・TP/SL到達の通知は引き続きGitHub Actions側で行います。

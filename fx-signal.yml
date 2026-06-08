@@ -11,7 +11,7 @@ on:
         default: false
 
 permissions:
-  contents: write          # positions.json / status.json を自動更新するため
+  contents: write
 
 concurrency:
   group: fx-signal
@@ -39,4 +39,12 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add positions.json status.json
-          git diff --staged --quiet || (git commit -m "auto: update state [skip ci]" && git push)
+          if git diff --staged --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "auto: update state [skip ci]"
+          # push失敗(他runとの競合等)に備えrebase＆リトライ
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" \
+              && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push retry $i"; sleep 4
+          done
+          echo "push failed after retries"; exit 1

@@ -114,6 +114,7 @@
       <div id="clock">--:--:--</div>
       <div id="status" style="margin-top:4px"><span class="badge closed">— —</span></div>
       <div id="updated" style="margin-top:4px"></div>
+      <div id="live" style="margin-top:4px"></div>
     </div>
   </header>
 
@@ -135,6 +136,10 @@
 
 <script>
 const $ = s => document.querySelector(s);
+let S = null;  // 直近に読み込んだ状態
+// ▼▼ リアルタイム価格（任意）。Cloudflare Worker等のURLを入れると数秒ごとに金額が更新されます ▼▼
+const LIVE_PRICE_URL = "";
+// ▲▲ 空のままなら status.json（約5分間隔）で更新します ▲▲
 const fmt = n => (n===null||n===undefined) ? '—' : n;
 const yen = n => (n>=0?'+':'') + n.toLocaleString('ja-JP') + '円';
 const pips = n => (n>=0?'+':'') + n.toFixed(1) + 'pips';
@@ -243,13 +248,41 @@ async function load(){
   try{
     const r = await fetch('./status.json?t='+Date.now(), {cache:'no-store'});
     if(!r.ok) throw new Error('status.json '+r.status);
-    render(await r.json());
+    S = await r.json();
+    render(S);
+    applyLive();   // 読み込み直後にライブ価格も反映
   }catch(e){
     $('#pairs').innerHTML = '<div class="empty">status.json を読み込めません（初回はワークフローを1回実行＆GitHub Pages公開後に表示されます）<br>'+e.message+'</div>';
   }
 }
+
+// ライブ価格（任意・LIVE_PRICE_URL設定時のみ）：金額/pipsを数秒ごとに再計算
+async function applyLive(){
+  if(!LIVE_PRICE_URL || !S) return;
+  try{
+    const sep = LIVE_PRICE_URL.includes('?') ? '&' : '?';
+    const r = await fetch(LIVE_PRICE_URL + sep + 't=' + Date.now(), {cache:'no-store'});
+    const j = await r.json();
+    const arr = j.data || j;             // GMO形式 {data:[...]} / 配列 / マップ に対応
+    const m = {};
+    if(Array.isArray(arr)) arr.forEach(d => m[d.symbol] = {bid:parseFloat(d.bid), ask:parseFloat(d.ask)});
+    else Object.assign(m, arr);
+    (S.pairs||[]).forEach(p => { if(m[p.symbol]) p.bid = m[p.symbol].bid; });
+    (S.open_positions||[]).forEach(p => {
+      const q = m[p.symbol]; if(!q) return;
+      const cur = p.side==='long' ? q.bid : q.ask;
+      const diff = p.side==='long' ? (cur - p.entry) : (p.entry - cur);
+      p.current = +cur.toFixed(3); p.pips = +(diff/0.01).toFixed(1); p.yen = Math.round(diff * p.lot);
+    });
+    render(S);
+    const t = new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false});
+    $('#live').innerHTML = '<span class="badge open">● LIVE '+t+'</span>';
+  }catch(e){ /* 失敗時は直近表示を維持 */ }
+}
+
 load();
 setInterval(load, 30000);
+if(LIVE_PRICE_URL){ setInterval(applyLive, 9000); }   // 約9秒ごとに金額更新
 
 // PWA: サービスワーカー登録（オフライン対応・インストール可能化）
 if ('serviceWorker' in navigator) {
