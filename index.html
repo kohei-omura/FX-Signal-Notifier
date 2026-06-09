@@ -138,7 +138,7 @@
 const $ = s => document.querySelector(s);
 let S = null;  // 直近に読み込んだ状態
 // ▼▼ リアルタイム価格（任意）。Cloudflare Worker等のURLを入れると数秒ごとに金額が更新されます ▼▼
-const LIVE_PRICE_URL = "";
+const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
 // ▲▲ 空のままなら status.json（約5分間隔）で更新します ▲▲
 const fmt = n => (n===null||n===undefined) ? '—' : n;
 const yen = n => (n>=0?'+':'') + n.toLocaleString('ja-JP') + '円';
