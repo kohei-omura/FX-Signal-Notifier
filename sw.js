@@ -1,5 +1,5 @@
 // FX Navigator service worker
-const CACHE = 'fxnavi-v3';
+const CACHE = 'fxnavi-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest',
                './icon-180.png', './icon-192.png', './icon-512.png'];
 
@@ -16,7 +16,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   // HTML/ナビゲーション・status.json は常に最新を取得（オフライン時のみキャッシュ）
   const fresh = req.mode === 'navigate' || url.pathname.endsWith('.html')
-             || url.pathname.endsWith('/') || url.pathname.endsWith('status.json');
+             || url.pathname.endsWith('/') || url.pathname.endsWith('status.json') || url.pathname.endsWith('positions.json');
   if (fresh) {
     e.respondWith(
       fetch(req).then(res => {
