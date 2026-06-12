@@ -26,9 +26,9 @@ PRICE_TYPE = "BID"
 MODE = os.environ.get("MODE", "scalp").lower()
 PARAMS = {
     "scalp": {"interval":"1min","ema_f":5,"ema_s":13,"rsi":7,"macd":(6,13,5),
-              "bb":(20,2.0),"adx":14,"atr":14,"tp":1.0,"sl":0.8,"th":0.35},
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.35},
     "day":   {"interval":"5min","ema_f":9,"ema_s":21,"rsi":14,"macd":(12,26,9),
-              "bb":(20,2.0),"adx":14,"atr":14,"tp":2.0,"sl":1.5,"th":0.40},
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.40},
 }
 P = PARAMS.get(MODE, PARAMS["scalp"])
 
@@ -39,6 +39,11 @@ TECH_W, FUND_W = 0.9, 0.1
 # ファンダ(10%)：金利差キャリーの方向バイアス [-1,1]（円ペアは円が低金利→買い寄り）
 # 現在の政策金利差に合わせて調整可。
 FUND_BIAS = {"USD_JPY":0.5, "EUR_JPY":0.4, "GBP_JPY":0.5, "AUD_JPY":0.4}
+
+# ===== TP/SL（Pattern1：ATR基準）=====
+# SL = エントリー時ATR × SL_ATR_MULT（そのままpips）／ TP = SL × TP_SL_RATIO
+SL_ATR_MULT = 1.0     # SL = ATR×1.0
+TP_SL_RATIO = 1.5     # TP = SL×1.5（リスクリワード 1:1.5）
 
 # 重要指標の前後はシグナル抑制（任意）。例: ["2026-06-10 21:30"]（JST）
 NEWS_BLACKOUT = []
@@ -188,7 +193,10 @@ def adx(ohlc, p):
 
 
 def suggest_tp_sl(a):
-    return (round(a*P["tp"]/PIP_SIZE, 1), round(a*P["sl"]/PIP_SIZE, 1))
+    """Pattern1: SL=ATR×SL_ATR_MULT(pips), TP=SL×TP_SL_RATIO"""
+    sl_pips = a * SL_ATR_MULT / PIP_SIZE
+    tp_pips = sl_pips * TP_SL_RATIO
+    return (round(tp_pips, 1), round(sl_pips, 1))
 
 
 # ---------------- 加重スコア（テク90/ファンダ10） ----------------

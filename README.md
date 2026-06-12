@@ -156,11 +156,18 @@ EMAクロス(0.35) ＋ MACDヒスト(0.25) ＋ RSI(0.20) ＋ ボリンジャー�
 `fx_signal.py` の `FUND_BIAS` で各ペアを調整可（現在の政策金利差に合わせる）。
 重要指標の前後を避けたい場合は `NEWS_BLACKOUT`（JST日時）に追加するとその前後はシグナル抑制。
 
+### TP/SLの決め方（Pattern 1：ATR基準）
+- **SL（損切り）= エントリー時のATR × 1.0**（ATRをそのままpips換算）
+- **TP（利確）= SL × 1.5**（リスクリワード 1:1.5）
+- 例：ATRが2.0pipsなら → SL=2.0pips / TP=3.0pips
+- 倍率は `fx_signal.py` の `SL_ATR_MULT` / `TP_SL_RATIO` で調整可（TPを2倍にしたいなら`TP_SL_RATIO=2.0`）
+- ATRは足に依存（scalp=1分足ATR→狭い、day=5分足ATR→広い）
+
 ### モード切替（scalp / day）
 | モード | 足 | EMA | RSI | TP/SL(×ATR) | しきい値 |
 |---|---|---|---|---|---|
-| scalp | 1分 | 5/13 | 7 | 1.0 / 0.8 | 0.35 |
-| day | 5分 | 9/21 | 14 | 2.0 / 1.5 | 0.40 |
+| scalp | 1分 | 5/13 | 7 | ATR基準(下記) | 0.35 |
+| day | 5分 | 9/21 | 14 | ATR基準(下記) | 0.40 |
 
 切替方法：GitHubの **Settings → Secrets and variables → Actions → Variables** に `MODE` を作り `scalp` か `day`。
 （または `fx_signal.py` 冒頭の `MODE` を直接編集）
