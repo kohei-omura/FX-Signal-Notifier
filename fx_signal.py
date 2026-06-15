@@ -45,6 +45,10 @@ FUND_BIAS = {"USD_JPY":0.5, "EUR_JPY":0.4, "GBP_JPY":0.5, "AUD_JPY":0.4}
 SL_ATR_MULT = 1.0     # SL = ATR×1.0
 TP_SL_RATIO = 1.5     # TP = SL×1.5（リスクリワード 1:1.5）
 
+# ===== エントリー有効条件（通知後、いつまで・どこまでの価格なら入ってよいか）=====
+VALID_BARS = 3        # 有効な足数（scalp=3分 / day=15分）
+MAX_CHASE_RATIO = 0.5 # 追いかけ許容 = SL × 0.5（これ以上離れていたら見送り）
+
 # 重要指標の前後はシグナル抑制（任意）。例: ["2026-06-10 21:30"]（JST）
 NEWS_BLACKOUT = []
 BLACKOUT_MIN = 15
@@ -345,12 +349,28 @@ def check_positions(data, ticker):
 def build_status(ticker, data, market_open):
     pairs, notify = [], []
     blackout = in_blackout()
+    now = datetime.datetime.now(JST)
+    bar_min = 1 if P["interval"] == "1min" else 5
+    valid_min = VALID_BARS * bar_min
     for sym in SYMBOLS:
         sc = score_pair(sym, get_ohlc(sym))
         if not sc:
             continue
         sig = None if blackout else sc["side"]
         bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
+
+        # エントリー有効条件（通知後 いつまで・どこまでの価格なら入ってよいか）
+        entry = {}
+        if market_open and sig:
+            ref = ticker.get(sym, {}).get("bid")
+            if ref is not None:
+                maxchase = round(sc["sl_pips"] * MAX_CHASE_RATIO, 1)
+                limit = round(ref + maxchase*PIP_SIZE, 3) if sig == "買い" else round(ref - maxchase*PIP_SIZE, 3)
+                until = now + datetime.timedelta(minutes=valid_min)
+                entry = {"entry_ref": round(ref, 3), "entry_limit": limit, "maxchase_pips": maxchase,
+                         "valid_minutes": valid_min, "valid_until": until.strftime("%H:%M"),
+                         "valid_until_ts": int(until.timestamp()*1000)}
+
         pairs.append({
             "symbol":sym, "bid":ticker.get(sym,{}).get("bid"), "ask":ticker.get(sym,{}).get("ask"),
             "rsi":sc["rsi"], "adx":sc["adx"], "ema_f":round(sc["ef"],3), "ema_s":round(sc["es"],3),
@@ -358,14 +378,18 @@ def build_status(ticker, data, market_open):
             "score":sc["score"], "tech":sc["tech"], "fund":sc["fund"],
             "signal":sig, "bias":bias, "reasons":sc["reasons"],
             "closes":sc["closes"], "ema_f_series":sc["ef_series"], "ema_s_series":sc["es_series"],
+            **entry,
         })
-        if market_open and sig:
-            price = ticker.get(sym,{}).get("bid","-")
+        if market_open and sig and entry:
             rtxt = " / ".join(sc["reasons"])
+            arrow = "以下" if sig == "買い" else "以上"
             notify.append(f"{'🟢' if sig=='買い' else '🔴'} {sym} {sig}（{MODE}）\n"
                           f"  スコア{sc['score']:+.2f}（テク{sc['tech']:+.2f}/ファンダ{sc['fund']:+.2f}）\n"
-                          f"  {rtxt}\n  現在値:{price}\n"
-                          f"  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips")
+                          f"  {rtxt}\n  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
+                          f"  ▶エントリー目安: 通知価格 {entry['entry_ref']}\n"
+                          f"   ・{valid_min}分以内（{entry['valid_until']}まで）\n"
+                          f"   ・現在値が {entry['entry_limit']} {arrow}なら可"
+                          f"（+{entry['maxchase_pips']}pipsまで追い、超過は見送り）")
 
     open_pos, closed_pos = [], []
     for p in data.get("positions", []):

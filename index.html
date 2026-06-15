@@ -70,6 +70,13 @@
   .pmeta b{color:var(--ink);font-weight:500}
   .pact{display:flex;gap:8px;margin-top:12px}
   .closebox{display:flex;gap:8px;margin-top:10px}
+  .entry{margin-top:11px;border-radius:10px;padding:9px 11px;border:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .entry.up{border-color:rgba(74,222,155,.45)}
+  .entry.down{border-color:rgba(255,122,138,.45)}
+  .entry .ev{font-family:var(--mono);font-size:12.5px;font-weight:600}
+  .entry.up .ev{color:var(--up)}.entry.down .ev{color:var(--down)}
+  .entry .er{font-family:var(--mono);font-size:10.5px;color:var(--mut);margin-top:4px;line-height:1.7}
+  .entry .er b{color:var(--ink)}
   .hist{border:1px solid var(--line);border-radius:12px;overflow:hidden}
   .hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line);font-size:12px}
   .hrow:last-child{border-bottom:0}
@@ -245,13 +252,25 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
   const tC=p.tech>=0?'up':'down';
+  let entryBox='';
+  if(p.signal && p.entry_ref!=null){
+    const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
+    let v,vc;
+    if(p.valid_until_ts && now>p.valid_until_ts){v='⌛ 期限切れ・見送り';vc='down';}
+    else if(cur!=null && p.signal==='買い' && cur>p.entry_limit){v='⛔ 高く動きすぎ・見送り';vc='down';}
+    else if(cur!=null && p.signal==='売り' && cur<p.entry_limit){v='⛔ 安く動きすぎ・見送り';vc='down';}
+    else{const rem=p.valid_until_ts?Math.max(0,Math.round((p.valid_until_ts-now)/60000)):'?';v=`✅ エントリー可（残り約${rem}分）`;vc='up';}
+    const lab=p.signal==='買い'?'上限':'下限';
+    entryBox=`<div class="entry ${vc}"><div class="ev">${v}</div>
+      <div class="er">通知価格 <b>${p.entry_ref}</b> ／ 追い${lab} <b>${p.entry_limit}</b> ／ 期限 <b>${p.valid_until||'-'}</b>${cur!=null?' ／ 現在 <b>'+cur.toFixed(3)+'</b>':''}</div></div>`;
+  }
   return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
     <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip">ADX <b>${fmt(p.adx)}</b></span>
-    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}</div>`;}
+    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${entryBox}</div>`;}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
@@ -276,9 +295,70 @@ function render(){
       <span class="r"><span class="${cls}">${yen(h.close_yen)} / ${pips(h.close_pips)}</span><button class="x" onclick="delPos('${h.id}')">✕</button></span></div>`;}).join('')}</div>`
     :'<div class="empty">決済履歴なし</div>';}
 function setPriceFromStatus(){PRICE={};(S.pairs||[]).forEach(p=>{if(p.bid!=null)PRICE[p.symbol]={bid:p.bid,ask:(p.ask!=null?p.ask:p.bid)};});}
+
+/* ====== ライブ計算（Workerでklines取得→画面側で再計算。Python版と一致） ====== */
+const CHART_POINTS=60, PS_=0.01;
+const W_EMA=0.35,W_MACD=0.25,W_RSI=0.20,W_BB=0.20,TECH_W=0.9,FUND_W=0.1;
+const SL_ATR_MULT=1.0,TP_SL_RATIO=1.5,VALID_BARS=3,MAX_CHASE_RATIO=0.5;
+const FUND_BIAS={USD_JPY:0.5,EUR_JPY:0.4,GBP_JPY:0.5,AUD_JPY:0.4};
+const SYMS=["USD_JPY","EUR_JPY","GBP_JPY","AUD_JPY"];
+const JS_PARAMS={scalp:{interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35},
+  day:{interval:'5min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40}};
+const cl=(x,lo=-1,hi=1)=>Math.max(lo,Math.min(hi,x)),r3=x=>x==null?null:Math.round(x*1000)/1000,r4=x=>x==null?null:Math.round(x*10000)/10000;
+function emaSeries(v,p){if(v.length<p)return Array(v.length).fill(null);const k=2/(p+1),o=Array(v.length).fill(null);let e=v.slice(0,p).reduce((a,b)=>a+b,0)/p;o[p-1]=e;for(let i=p;i<v.length;i++){e=v[i]*k+e*(1-k);o[i]=e;}return o;}
+function ema(v,p){const s=emaSeries(v,p);return s.length?s[s.length-1]:null;}
+function rsiC(v,p){if(v.length<p+1)return null;const d=[];for(let i=1;i<v.length;i++)d.push(v[i]-v[i-1]);const g=d.map(x=>Math.max(x,0)),l=d.map(x=>Math.max(-x,0));let ag=g.slice(0,p).reduce((a,b)=>a+b,0)/p,al=l.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<d.length;i++){ag=(ag*(p-1)+g[i])/p;al=(al*(p-1)+l[i])/p;}return al===0?100:100-100/(1+ag/al);}
+function macdC(v,f,s,sig){const ef=emaSeries(v,f),es=emaSeries(v,s);const ml=v.map((_,i)=>(ef[i]!=null&&es[i]!=null)?ef[i]-es[i]:null);const vals=ml.filter(m=>m!=null);if(vals.length<sig+1)return null;const ss=emaSeries(vals,sig);if(ss[ss.length-1]==null||ss[ss.length-2]==null)return null;return [vals[vals.length-1],ss[ss.length-1],vals[vals.length-1]-ss[ss.length-1],vals[vals.length-2]-ss[ss.length-2]];}
+function bollC(v,p,k){if(v.length<p)return null;const w=v.slice(-p),mid=w.reduce((a,b)=>a+b,0)/p;const sd=Math.sqrt(w.reduce((a,b)=>a+(b-mid)**2,0)/p);return [mid,mid+k*sd,mid-k*sd,sd];}
+function atrC(o,p){if(o.length<p+1)return null;const tr=[];for(let i=1;i<o.length;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];tr.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}let a=tr.slice(0,p).reduce((x,y)=>x+y,0)/p;for(let i=p;i<tr.length;i++)a=(a*(p-1)+tr[i])/p;return a;}
+function adxC(o,p){if(o.length<2*p+1)return null;const pdm=[],mdm=[],tr=[];for(let i=1;i<o.length;i++){const h=o[i][0],l=o[i][1],ph=o[i-1][0],pl=o[i-1][1],pc=o[i-1][2];const up=h-ph,dn=pl-l;pdm.push((up>dn&&up>0)?up:0);mdm.push((dn>up&&dn>0)?dn:0);tr.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}const w=arr=>{let s=arr.slice(0,p).reduce((a,b)=>a+b,0);const o2=[s];for(let i=p;i<arr.length;i++){s=s-s/p+arr[i];o2.push(s);}return o2;};const at=w(tr),pd=w(pdm),md=w(mdm);const pdi=at.map((x,i)=>x?100*pd[i]/x:0),mdi=at.map((x,i)=>x?100*md[i]/x:0);const dx=pdi.map((x,i)=>100*Math.abs(x-mdi[i])/((x+mdi[i])||1));let av;if(dx.length<p)av=dx.reduce((a,b)=>a+b,0)/dx.length;else{av=dx.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<dx.length;i++)av=(av*(p-1)+dx[i])/p;}return [av,pdi[pdi.length-1],mdi[mdi.length-1]];}
+function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.max(P.ema_s,P.macd[1],P.adx*2)+2)return null;
+  const price=closes[closes.length-1],ef=ema(closes,P.ema_f),es=ema(closes,P.ema_s),rv=rsiC(closes,P.rsi);
+  const md=macdC(closes,P.macd[0],P.macd[1],P.macd[2]),bb=bollC(closes,P.bb[0],P.bb[1]),a=atrC(o,P.atr),ax=adxC(o,P.adx);
+  if([ef,es,rv,a].some(x=>x==null)||!md||!bb||!ax)return null;
+  const adxVal=ax[0];let adxf=Math.max(cl(adxVal/40,0,1),0.25);
+  let emaSig=cl((ef-es)/(a||1e-9)),macdSig=cl(md[2]/(0.6*(a||1e-9)));
+  if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
+  const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
+  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),fund=cl(FUND_BIAS[sym]||0),total=cl(TECH_W*tech+FUND_W*fund);
+  const reasons=[];if(Math.abs(emaSig)>0.2)reasons.push(`EMA${emaSig>0?'上':'下'}(${P.ema_f}vs${P.ema_s})`);if(Math.abs(macdSig)>0.2)reasons.push(`MACDヒスト${md[2]>0?'+':'-'}`);reasons.push(`RSI${Math.round(rv)}`);reasons.push(`ADX${Math.round(adxVal)}${adxVal>=25?'(強)':'(弱)'}`);
+  const slp=a*SL_ATR_MULT/PS_,tpp=slp*TP_SL_RATIO,side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  return {price,ef,es,rsi:Math.round(rv*10)/10,adx:Math.round(adxVal*10)/10,atr:a,tp_pips:Math.round(tpp*10)/10,sl_pips:Math.round(slp*10)/10,
+    tech:Math.round(tech*1000)/1000,fund:Math.round(fund*1000)/1000,score:Math.round(total*1000)/1000,side,reasons,
+    ef_series:emaSeries(closes,P.ema_f).slice(-CHART_POINTS).map(r3),es_series:emaSeries(closes,P.ema_s).slice(-CHART_POINTS).map(r3),closes:closes.slice(-CHART_POINTS).map(r3)};}
+function jstYmd(off){return new Date(Date.now()+off*86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).replace(/-/g,'');}
+async function fetchKlines(base,sym,P,need){let rows={};for(const off of [0,-1,-2]){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${P.interval}&date=${jstYmd(off)}`;
+  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&last=400&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}
+  if(Object.keys(rows).length>=need)break;}return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+let LIVE_CALC_BUSY=false;
+async function liveSignals(){
+  if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
+  const P=JS_PARAMS[S.mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30,barMin=P.interval==='1min'?1:5,validMin=VALID_BARS*barMin;
+  LIVE_CALC_BUSY=true;
+  try{
+    for(const sym of SYMS){
+      const oh=await fetchKlines(base,sym,P,need);if(oh.length<30)continue;
+      const sc=scorePair(sym,oh,P);if(!sc)continue;
+      const sig=S.market_open?sc.side:null;
+      const pair={symbol:sym,bid:(PRICE[sym]?PRICE[sym].bid:r3(sc.price)),ask:(PRICE[sym]?PRICE[sym].ask:null),
+        rsi:sc.rsi,adx:sc.adx,ema_f:r3(sc.ef),ema_s:r3(sc.es),atr:r4(sc.atr),tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
+        score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:sc.score>=0?'買い優勢':'売り優勢',reasons:sc.reasons,
+        closes:sc.closes,ema_f_series:sc.ef_series,ema_s_series:sc.es_series};
+      if(sig){const ref=PRICE[sym]?PRICE[sym].bid:sc.price,mc=Math.round(sc.sl_pips*MAX_CHASE_RATIO*10)/10;
+        const limit=sig==='買い'?r3(ref+mc*PS_):r3(ref-mc*PS_),until=Date.now()+validMin*60000;
+        Object.assign(pair,{entry_ref:r3(ref),entry_limit:limit,maxchase_pips:mc,valid_minutes:validMin,
+          valid_until:new Date(until).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5),valid_until_ts:until});}
+      const idx=S.pairs.findIndex(p=>p.symbol===sym);if(idx>=0)S.pairs[idx]=pair;else S.pairs.push(pair);
+    }
+    render();
+    $('#live').innerHTML='<span class="badge open">● LIVE計算 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
+  }finally{LIVE_CALC_BUSY=false;}
+}
+
 async function load(){try{
   const[sr,pr]=await Promise.all([fetch('./status.json?t='+Date.now(),{cache:'no-store'}),fetch('./positions.json?t='+Date.now(),{cache:'no-store'})]);
-  if(sr.ok)S=await sr.json();if(pr.ok)POS=await pr.json();setPriceFromStatus();render();applyLive();
+  if(sr.ok)S=await sr.json();if(pr.ok)POS=await pr.json();setPriceFromStatus();render();applyLive();liveSignals();
   }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
 async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   const sep=LIVE_PRICE_URL.includes('?')?'&':'?';const r=await fetch(LIVE_PRICE_URL+sep+'t='+Date.now(),{cache:'no-store'});
@@ -286,7 +366,7 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
-load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);}
+load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);}
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
 </script>
 </body>
