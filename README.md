@@ -223,3 +223,29 @@ Cloudflare Workerでklinesも取得し、**画面側でスコア・シグナル�
 klinesはWorker側で末尾400本に間引き（`?last=400`）して軽量化。モバイル通信が気になる場合は
 `index.html` 末尾の `setInterval(liveSignals,45000)` の値を `90000`（90秒）等に伸ばしてください。
 LIVE_PRICE_URL が空ならライブ計算は動かず、従来どおりstatus.json（約5分）で更新します。
+
+
+---
+
+## ライブLINE通知（画面のシグナルもLINEに飛ばす）
+GitHub Actionの通知は約5分間隔のため、45秒ごとのライブ計算で出たシグナルが通知されないことがあります。
+そこで **Worker側にLINEトークンを置き、画面がシグナル検知時にWorkerへ依頼→WorkerがLINE送信** します。
+トークンはブラウザに出さないので安全です。
+
+### 設定
+1. **worker.js を最新版に差し替えてDeploy**（POST `?action=notify` でLINE送信に対応）
+2. Cloudflareの Worker → **Settings → Variables and Secrets** に追加：
+   | 種別 | 名前 | 値 |
+   |---|---|---|
+   | Secret(暗号化) | `LINE_TOKEN` | LINEチャネルアクセストークン（GitHubのと同じ）|
+   | （任意）Text | `NOTIFY_KEY` | 任意の合言葉（簡易の不正送信防止）|
+3. `NOTIFY_KEY` を設定したら、`index.html` の `const NOTIFY_KEY = "";` に同じ値を入れる
+4. `index.html` を最新版に差し替え
+
+### 動作・連投防止
+- ダッシュボードが**新規シグナル**を検知した時だけ送信（同じ通貨は**3分間は再送しない**）
+- 文面の先頭は「⚡ライブ」（Action発の通常通知と区別）
+- **画面（PWA）を開いている間のみ**動作。閉じている時はAction(5分)の通知が担当します
+- これによりライブのシグナルは**約1分以内**にLINEへ届きます
+
+※Action通知とライブ通知の両方が来る場合があります（同じシグナルを二重に拾った時）。気になる場合はどちらかに寄せられます。

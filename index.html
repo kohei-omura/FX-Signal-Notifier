@@ -176,7 +176,9 @@
 <script>
 const $ = s => document.querySelector(s);
 let S={pairs:[]}, POS={positions:[]}, PRICE={};
-const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
+const LIVE_PRICE_URL = "";
+// WorkerにNOTIFY_KEYを設定した場合のみ同じ値を入れる（任意）
+const NOTIFY_KEY = "";
 const PS = 0.01; // 円ペア 1pips
 
 const fmt=n=>(n===null||n===undefined)?'—':n;
@@ -330,12 +332,22 @@ function jstYmd(off){return new Date(Date.now()+off*86400000).toLocaleDateString
 async function fetchKlines(base,sym,P,need){let rows={};for(const off of [0,-1,-2]){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${P.interval}&date=${jstYmd(off)}`;
   try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&last=400&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}
   if(Object.keys(rows).length>=need)break;}return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+// ライブLINE通知（Worker経由・新規シグナルのみ・連投防止）
+function notifyBase(){return LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');}
+function loadNotified(){try{return JSON.parse(localStorage.getItem('fxnavi_notified'))||{}}catch(e){return{}}}
+function saveNotified(o){try{localStorage.setItem('fxnavi_notified',JSON.stringify(o));}catch(e){}}
+async function notifyLive(text){
+  if(!LIVE_PRICE_URL)return;
+  try{await fetch(notifyBase()+'?action=notify'+(NOTIFY_KEY?('&key='+encodeURIComponent(NOTIFY_KEY)):''),
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});}catch(e){}
+}
 let LIVE_CALC_BUSY=false;
 async function liveSignals(){
   if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
   const P=JS_PARAMS[S.mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
   const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30,barMin=P.interval==='1min'?1:5,validMin=VALID_BARS*barMin;
   LIVE_CALC_BUSY=true;
+  const notified=loadNotified();
   try{
     for(const sym of SYMS){
       const oh=await fetchKlines(base,sym,P,need);if(oh.length<30)continue;
@@ -349,8 +361,18 @@ async function liveSignals(){
         const limit=sig==='買い'?r3(ref+mc*PS_):r3(ref-mc*PS_),until=Date.now()+validMin*60000;
         Object.assign(pair,{entry_ref:r3(ref),entry_limit:limit,maxchase_pips:mc,valid_minutes:validMin,
           valid_until:new Date(until).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5),valid_until_ts:until});}
+      // 新規シグナルのみ通知（同一symは3分間は再通知しない）
+      const now=Date.now(),rec=notified[sym];
+      if(sig){
+        if((!rec||rec.side!==sig)&&(!rec||now-rec.ts>180000)){
+          const sg=sig==='買い'?'🟢買い':'🔴売り',arrow=sig==='買い'?'上限':'下限';
+          const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}`;
+          notifyLive(txt);notified[sym]={side:sig,ts:now};
+        }
+      }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
       const idx=S.pairs.findIndex(p=>p.symbol===sym);if(idx>=0)S.pairs[idx]=pair;else S.pairs.push(pair);
     }
+    saveNotified(notified);
     render();
     $('#live').innerHTML='<span class="badge open">● LIVE計算 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }finally{LIVE_CALC_BUSY=false;}
