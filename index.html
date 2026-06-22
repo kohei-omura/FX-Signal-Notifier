@@ -176,6 +176,7 @@
 <script>
 const $ = s => document.querySelector(s);
 let S={pairs:[]}, POS={positions:[]}, PRICE={};
+let POS_BUSY=false; // 追加/決済/削除の書込中はポーリングで上書きしない
 const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
 // WorkerにNOTIFY_KEYを設定した場合のみ同じ値を入れる（任意）
 const NOTIFY_KEY = "高坂麗奈ちゃん";
@@ -219,22 +220,25 @@ async function addPos(){const c=needCfg();if(!c)return;
   const pos={id:'p'+Date.now(),symbol:sym,side,entry,lot,status:'open'};
   if($('#f_mode').value==='manual'){const tp=parseFloat($('#f_tp').value),sl=parseFloat($('#f_sl').value);
     if(isFinite(tp))pos.tp_pips=tp;if(isFinite(sl))pos.sl_pips=sl;}else{pos.auto=true;}
+  POS_BUSY=true;
   try{toast('保存中…');const{data,sha}=await ghGet(c);data.positions=data.positions||[];data.positions.push(pos);
     await ghPut(c,data,sha,'add '+sym);POS=data;render();toast('追加しました（通知/TP自動設定は次回更新時）');togglePanel('addPanel');
-    $('#f_entry').value='';}catch(e){toast(e.message);}}
+    $('#f_entry').value='';}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
 function computeClose(p,price){const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000);
   const diff=side==='long'?(price-entry):(entry-price);return{pips:+(diff/PS).toFixed(1),yen:Math.round(diff*lot),reason:diff>=0?'利確':'損切り'};}
 function toggleClose(id){const b=document.getElementById('cb_'+id);if(b)b.classList.toggle('hide');}
 async function doClose(id){const c=needCfg();if(!c)return;const price=parseFloat(document.getElementById('cp_'+id).value);
   if(!isFinite(price)){toast('実際の約定価格を入力してください');return;}
+  POS_BUSY=true;
   try{toast('保存中…');const{data,sha}=await ghGet(c);const p=(data.positions||[]).find(x=>x.id===id&&(x.status||'open')==='open');
     if(!p){toast('対象が見つかりません');return;}const r=computeClose(p,price);
     Object.assign(p,{status:'closed',close_price:price,close_pips:r.pips,close_yen:r.yen,close_reason:r.reason,closed_at:nowJST()});
-    await ghPut(c,data,sha,'close '+p.symbol);POS=data;render();toast(`決済しました：${r.reason} ${r.yen>=0?'+':''}${r.yen}円`);}catch(e){toast(e.message);}}
+    await ghPut(c,data,sha,'close '+p.symbol);POS=data;render();toast(`決済しました：${r.reason} ${r.yen>=0?'+':''}${r.yen}円`);}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 async function delPos(id){const c=needCfg();if(!c)return;if(!confirm('このポジション/履歴を削除しますか？'))return;
+  POS_BUSY=true;
   try{const{data,sha}=await ghGet(c);data.positions=(data.positions||[]).filter(x=>x.id!==id);
-    await ghPut(c,data,sha,'delete '+id);POS=data;render();toast('削除しました');}catch(e){toast(e.message);}}
+    await ghPut(c,data,sha,'delete '+id);POS=data;render();toast('削除しました');}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
 /* ---------- 計算/描画 ---------- */
 function tpsl(p){const side=p.side||'long',entry=+p.entry;let tp=(p.tp!=null)?+p.tp:null,sl=(p.sl!=null)?+p.sl:null;
@@ -378,9 +382,20 @@ async function liveSignals(){
   }finally{LIVE_CALC_BUSY=false;}
 }
 
+// 保有ポジションは「トークンがあればAPIから（正確・即時）／無ければPagesから」読む
+async function loadPositions(){
+  const c=cfg();
+  if(c.token&&c.owner&&c.repo){
+    try{const {data}=await ghGet(c); if(data&&Array.isArray(data.positions)) return data;}catch(e){}
+  }
+  try{const pr=await fetch('./positions.json?t='+Date.now(),{cache:'no-store'}); if(pr.ok) return await pr.json();}catch(e){}
+  return null; // 失敗時は現状維持（空で上書きしない）
+}
 async function load(){try{
-  const[sr,pr]=await Promise.all([fetch('./status.json?t='+Date.now(),{cache:'no-store'}),fetch('./positions.json?t='+Date.now(),{cache:'no-store'})]);
-  if(sr.ok)S=await sr.json();if(pr.ok)POS=await pr.json();setPriceFromStatus();render();applyLive();liveSignals();
+  const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
+  if(sr.ok)S=await sr.json();
+  if(!POS_BUSY){const np=await loadPositions(); if(np)POS=np;}
+  setPriceFromStatus();render();applyLive();liveSignals();
   }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
 async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   const sep=LIVE_PRICE_URL.includes('?')?'&':'?';const r=await fetch(LIVE_PRICE_URL+sep+'t='+Date.now(),{cache:'no-store'});
