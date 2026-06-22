@@ -49,7 +49,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="bgo" onclick="addTrade()">記録を追加</button><button class="bsub" onclick="document.getElementById('pastebox').style.display='block'">まとめて貼付</button><label class="bsub" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:11px 14px;border-radius:9px;font-weight:700;font-size:14px">📷 スクショ取込<input id="ocrfile" type="file" accept="image/*" style="display:none" onchange="ocrImport(this.files[0])"></label></div>
   <div id="ocrmsg" class="note"></div>
   <div id="pastebox" style="display:none;margin-top:10px">
-    <label>損益(円)を1行ずつ貼付（例: 90 / -59 / 1184 …）符号付き数字を拾います</label>
+    <label>1行＝1取引。「ペア サイド 損益」も可（例: USD/JPY 買い 9 ／ GBP/JPY 売り -953）。数字だけでも可（その場合サイドは上の選択を使用）。</label>
     <textarea id="jpaste" placeholder="-59&#10;90&#10;-23&#10;31"></textarea>
     <button class="bsub" style="margin-top:8px" onclick="importPaste()">取り込む</button>
   </div>

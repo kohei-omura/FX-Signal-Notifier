@@ -9,34 +9,78 @@ function addTrade(){
   const t=loadTrades(); t.push({pair:$('#jp').value,side:$('#js').value,yen:y,ts:Date.now()}); saveTrades(t); $('#jy').value=''; renderJournal();
 }
 function importPaste(){
-  const nums=($('#jpaste').value.match(/-?\d[\d,]*/g)||[]).map(s=>parseFloat(s.replace(/,/g,''))).filter(n=>!isNaN(n));
-  if(!nums.length){alert('数字が見つかりません');return;}
-  const t=loadTrades(); nums.forEach(n=>t.push({pair:$('#jp').value,side:'-',yen:n,ts:Date.now()})); saveTrades(t);
-  $('#jpaste').value=''; $('#pastebox').style.display='none'; renderJournal();
+  const lines=$('#jpaste').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const t=loadTrades(); let added=0;
+  for(const ln of lines){
+    const pm=ln.match(PAIR_RE); const pair=pm?(pm[1].toUpperCase()+'/JPY'):$('#jp').value;
+    let side; if(/売り|売/.test(ln))side='売り'; else if(/買い|買/.test(ln))side='買い'; else side=$('#js').value;
+    const cleaned=ln.replace(PAIR_RE,' ').replace(/\d{1,4}\.\d+/g,' ');
+    const nm=cleaned.match(/-?\d{1,3}(?:,\d{3})+|-?\d+/);
+    if(!nm)continue; const y=parseInt(nm[0].replace(/,/g,''),10); if(isNaN(y))continue;
+    t.push({pair,side,yen:y,ts:Date.now()}); added++;
+  }
+  if(!added){alert('数字が見つかりません');return;}
+  saveTrades(t); $('#jpaste').value=''; $('#pastebox').style.display='none'; renderJournal();
 }
 function clearTrades(){if(confirm('記録を全削除しますか？')){saveTrades([]);renderJournal();}}
-/* ===== スクショ取込（ブラウザ内OCR：Tesseract.js） ===== */
+/* ===== スクショ取込（ブラウザ内OCR：Tesseract.js／列レイアウト解析） ===== */
+function _loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('ライブラリ読込失敗（通信環境をご確認ください）'));document.head.appendChild(s);});}
+function _med(a){if(!a.length)return 0;const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function _words(d){if(d&&d.words&&d.words.length)return d.words;let o=[];((d&&d.blocks)||[]).forEach(b=>(b.paragraphs||[]).forEach(p=>(p.lines||[]).forEach(l=>(l.words||[]).forEach(w=>o.push(w)))));return o;}
+const PAIR_RE=/(USD|EUR|GBP|AUD|NZD|CAD|CHF|TRY|ZAR|MXN|HUF|SEK)\/?JPY/i;
+function _intTok(t){t=(t||'').replace(/[^\d,+-]/g,'');if(/^[+-]?\d{1,3}(,\d{3})+$/.test(t)||/^[+-]?\d+$/.test(t))return parseInt(t.replace(/,/g,''),10);return NaN;}
+// 決済行だけ →「ペア 保有サイド 損益」。保有サイド=決済方向の逆（売決済→買い保有/買決済→売り保有）
+function parseClosedTrades(words){
+  if(!words.length)return [];
+  const H=_med(words.map(w=>w.bbox.y1-w.bbox.y0))||24;
+  const anchors=words.filter(w=>PAIR_RE.test((w.text||'').replace(/\s/g,''))).sort((a,b)=>a.bbox.y0-b.bbox.y0);
+  const out=[];
+  for(const pw of anchors){
+    const y0=pw.bbox.y0;
+    const band=words.filter(w=>w.bbox.y0>=y0-0.6*H && w.bbox.y0<=y0+2.6*H);
+    if(!band.some(w=>/決|済/.test(w.text||'')))continue;          // 決済行のみ
+    const sellTok=band.some(w=>/売/.test(w.text||''));
+    const buyTok=band.some(w=>/買/.test(w.text||''));
+    const held=sellTok?'買い':(buyTok?'売り':'-');                // 決済方向の逆＝保有サイド
+    const cands=band.filter(w=>{
+      const raw=(w.text||'').replace(/\s/g,'');
+      if(w.bbox.y0>y0+1.3*H)return false;                          // 下段(日時/2つ目価格)は除外
+      if(/\d{2}\/\d{2}\/\d{2}/.test(raw)||/\d{1,2}:\d{2}/.test(raw))return false;
+      if(/\./.test(raw))return false;                              // 価格・ロット
+      const v=_intTok(raw);return !isNaN(v)&&v!==0&&Math.abs(v)<100000;
+    }).map(w=>({v:_intTok(w.text),x:w.bbox.x1})).sort((a,b)=>b.x-a.x);  // 一番右=損益
+    if(!cands.length)continue;
+    const m=(pw.text||'').replace(/\s/g,'').toUpperCase().match(PAIR_RE);
+    out.push(`${m?m[1].toUpperCase()+'/JPY':'USD/JPY'} ${held} ${cands[0].v}`);
+  }
+  return out;
+}
 async function ocrImport(file){
-  if(!file)return;
-  const msg=$('#ocrmsg');
+  if(!file)return; const msg=$('#ocrmsg');
   msg.innerHTML='画像を解析中…（初回はOCR辞書のDLで数十秒かかることがあります）';
   try{
-    if(!window.Tesseract){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=()=>rej(new Error('OCRライブラリの読込に失敗（通信環境をご確認ください）'));document.head.appendChild(s);});}
-    const {data}=await Tesseract.recognize(file,'eng',{logger:m=>{if(m.status==='recognizing text')msg.textContent='解析中… '+Math.round((m.progress||0)*100)+'%';}});
-    const text=data.text||'';
-    // 価格(小数)・日付・時刻を除去 → 残りの整数(=損益)を抽出
-    const cleaned=text.replace(/\d{1,4}\.\d+/g,' ').replace(/\d{2}\/\d{2}\/\d{2}/g,' ').replace(/\d{1,2}:\d{2}/g,' ');
-    const ints=(cleaned.match(/[+-]?\d{1,3}(?:,\d{3})+|[+-]?\d+/g)||[])
-      .map(s=>parseInt(s.replace(/,/g,''),10))
-      .filter(v=>!isNaN(v)&&v!==0&&Math.abs(v)<100000);
-    // ペア自動判定（最頻出の通貨）
-    const pc={};['USD','EUR','GBP','AUD'].forEach(k=>pc[k]=(text.match(new RegExp(k,'g'))||[]).length);
-    const top=Object.entries(pc).sort((a,b)=>b[1]-a[1])[0];
-    if(top&&top[1]>0){const opt=Array.from($('#jp').options).find(o=>o.value.indexOf(top[0])===0);if(opt)$('#jp').value=opt.value;}
-    if(!ints.length){msg.innerHTML='<span class="warn">損益らしき数字を検出できませんでした。履歴部分だけをトリミングした鮮明なスクショで再試行するか、手入力してください。</span>';return;}
+    if(!window.Tesseract){await _loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');}
+    let data;
+    const lg=m=>{if(m.status&&m.status.indexOf('recogni')>=0)msg.textContent='解析中… '+Math.round((m.progress||0)*100)+'%';};
+    try{
+      const worker=await Tesseract.createWorker('jpn+eng',1,{logger:lg});
+      const r=await worker.recognize(file,{},{blocks:true,text:true});data=r.data;await worker.terminate();
+    }catch(e1){
+      const r=await Tesseract.recognize(file,'jpn+eng',{logger:lg});data=r.data;
+    }
+    let lines=parseClosedTrades(_words(data));
+    const viaBox=lines.length>0;
+    if(!lines.length){ // フォールバック：数値だけ（サイドは下の選択を使用）
+      const text=(data&&data.text)||'';
+      const cleaned=text.replace(/\d{1,4}\.\d+/g,' ').replace(/\d{2}\/\d{2}\/\d{2}/g,' ').replace(/\d{1,2}:\d{2}/g,' ');
+      lines=(cleaned.match(/[+-]?\d{1,3}(?:,\d{3})+|[+-]?\d+/g)||[]).map(s=>parseInt(s.replace(/,/g,''),10)).filter(v=>!isNaN(v)&&v!==0&&Math.abs(v)<100000).map(String);
+    }
+    if(!lines.length){msg.innerHTML='<span class="warn">読み取れませんでした。履歴部分だけを大きく鮮明にトリミングして再試行するか、手入力してください。</span>';return;}
     $('#pastebox').style.display='block';
-    $('#jpaste').value=ints.join('\n');
-    msg.innerHTML=`<span class="good">${ints.length}件の損益候補を抽出（ペア: ${$('#jp').value}）。</span> 内容を確認・修正して「取り込む」を押してください。<b>赤字(損切り)は数字の前に「−」が付いているか必ず確認</b>してください（OCRはマイナス符号を取りこぼすことがあります）。`;
+    $('#jpaste').value=lines.join('\n');
+    msg.innerHTML=viaBox
+      ? `<span class="good">${lines.length}件の決済を抽出（形式: ペア サイド 損益）。</span> 「サイド」は決済方向の逆＝実際に保有していた向きです。<b>サイドと符号(−が損)を確認</b>して「取り込む」を押してください。`
+      : `<span class="good">${lines.length}件の損益候補を抽出。</span> サイドは判定できなかったので、下の「買い/売り」を選んでから「取り込む」を。<b>−(損)の符号も確認</b>を。`;
   }catch(e){msg.innerHTML='<span class="warn">解析失敗: '+e.message+'</span>';}
   finally{const f=$('#ocrfile');if(f)f.value='';}
 }
@@ -68,7 +112,8 @@ function renderJournal(){
     const nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
     return `<tr><td>${p}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">記録なし</td></tr>';
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
-    return `<div><span>${x.pair} ${x.side}</span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
+    const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
+    return `<div><span>${x.pair} ${sd}</span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
 }
 /* ============ ② リスク/ロット計算 ============ */
 function loadRisk(){try{return JSON.parse(localStorage.getItem('fxnavi_risk'))||{cap:10000,rpct:2,units:1000}}catch(e){return{cap:10000,rpct:2,units:1000}}}
