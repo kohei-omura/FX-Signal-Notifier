@@ -15,6 +15,31 @@ function importPaste(){
   $('#jpaste').value=''; $('#pastebox').style.display='none'; renderJournal();
 }
 function clearTrades(){if(confirm('記録を全削除しますか？')){saveTrades([]);renderJournal();}}
+/* ===== スクショ取込（ブラウザ内OCR：Tesseract.js） ===== */
+async function ocrImport(file){
+  if(!file)return;
+  const msg=$('#ocrmsg');
+  msg.innerHTML='画像を解析中…（初回はOCR辞書のDLで数十秒かかることがあります）';
+  try{
+    if(!window.Tesseract){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=()=>rej(new Error('OCRライブラリの読込に失敗（通信環境をご確認ください）'));document.head.appendChild(s);});}
+    const {data}=await Tesseract.recognize(file,'eng',{logger:m=>{if(m.status==='recognizing text')msg.textContent='解析中… '+Math.round((m.progress||0)*100)+'%';}});
+    const text=data.text||'';
+    // 価格(小数)・日付・時刻を除去 → 残りの整数(=損益)を抽出
+    const cleaned=text.replace(/\d{1,4}\.\d+/g,' ').replace(/\d{2}\/\d{2}\/\d{2}/g,' ').replace(/\d{1,2}:\d{2}/g,' ');
+    const ints=(cleaned.match(/[+-]?\d{1,3}(?:,\d{3})+|[+-]?\d+/g)||[])
+      .map(s=>parseInt(s.replace(/,/g,''),10))
+      .filter(v=>!isNaN(v)&&v!==0&&Math.abs(v)<100000);
+    // ペア自動判定（最頻出の通貨）
+    const pc={};['USD','EUR','GBP','AUD'].forEach(k=>pc[k]=(text.match(new RegExp(k,'g'))||[]).length);
+    const top=Object.entries(pc).sort((a,b)=>b[1]-a[1])[0];
+    if(top&&top[1]>0){const opt=Array.from($('#jp').options).find(o=>o.value.indexOf(top[0])===0);if(opt)$('#jp').value=opt.value;}
+    if(!ints.length){msg.innerHTML='<span class="warn">損益らしき数字を検出できませんでした。履歴部分だけをトリミングした鮮明なスクショで再試行するか、手入力してください。</span>';return;}
+    $('#pastebox').style.display='block';
+    $('#jpaste').value=ints.join('\n');
+    msg.innerHTML=`<span class="good">${ints.length}件の損益候補を抽出（ペア: ${$('#jp').value}）。</span> 内容を確認・修正して「取り込む」を押してください。<b>赤字(損切り)は数字の前に「−」が付いているか必ず確認</b>してください（OCRはマイナス符号を取りこぼすことがあります）。`;
+  }catch(e){msg.innerHTML='<span class="warn">解析失敗: '+e.message+'</span>';}
+  finally{const f=$('#ocrfile');if(f)f.value='';}
+}
 function delTrade(i){const t=loadTrades();t.splice(i,1);saveTrades(t);renderJournal();}
 function renderJournal(){
   const t=loadTrades();
