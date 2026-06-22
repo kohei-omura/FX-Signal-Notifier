@@ -258,6 +258,8 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
   const tC=p.tech>=0?'up':'down';
+  const st=STATS[(S.mode||'scalp')+p.symbol];
+  const statBox = st?`<div class="entry"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>約${st.tpMin!=null?st.tpMin:'—'}分</b> ／ 損切りまで <b>約${st.slMin!=null?st.slMin:'—'}分</b><br>📊 この設定のTP勝率 <b>${st.winRate}%</b>（直近${st.n}回・${(S.mode||'scalp')}）</div></div>`:'';
   let entryBox='';
   if(p.signal && p.entry_ref!=null){
     const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
@@ -276,7 +278,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
     <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip">ADX <b>${fmt(p.adx)}</b></span>
-    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${entryBox}</div>`;}
+    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${statBox}${entryBox}</div>`;}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
@@ -370,7 +372,9 @@ async function liveSignals(){
       if(sig){
         if((!rec||rec.side!==sig)&&(!rec||now-rec.ts>180000)){
           const sg=sig==='買い'?'🟢買い':'🔴売り',arrow=sig==='買い'?'上限':'下限';
-          const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}`;
+          const st=STATS[S.mode+sym];
+          const stTxt=st?`\n⏱想定保有 利確~${st.tpMin!=null?st.tpMin:'?'}分/損切~${st.slMin!=null?st.slMin:'?'}分・TP勝率${st.winRate}%(直近${st.n}回)`:'';
+          const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}${stTxt}`;
           notifyLive(txt);notified[sym]={side:sig,ts:now};
         }
       }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
@@ -381,6 +385,47 @@ async function liveSignals(){
     $('#live').innerHTML='<span class="badge open">● LIVE計算 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }finally{LIVE_CALC_BUSY=false;}
 }
+
+/* ====== シグナル統計：想定保有時間・TP勝率（重いので30分キャッシュ） ====== */
+let STATS={}, STATS_BUSY=false;
+try{STATS=JSON.parse(localStorage.getItem('fxnavi_stats'))||{};}catch(e){STATS={};}
+function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.macd[1],P.adx*2)+2)return null;
+  const price=c[c.length-1],ef=ema(c,P.ema_f),es=ema(c,P.ema_s),rv=rsiC(c,P.rsi),md=macdC(c,P.macd[0],P.macd[1],P.macd[2]),bb=bollC(c,P.bb[0],P.bb[1]),a=atrC(o,P.atr),ax=adxC(o,P.adx);
+  if([ef,es,rv,a].some(x=>x==null)||!md||!bb||!ax)return null;
+  const adxVal=ax[0],adxf=Math.max(cl(adxVal/40,0,1),0.25);
+  let emaSig=cl((ef-es)/(a||1e-9)),macdSig=cl(md[2]/(0.6*(a||1e-9)));
+  if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
+  const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
+  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(TECH_W*tech+FUND_W*cl(FUND_BIAS[sym]||0));
+  const slp=a*SL_ATR_MULT/PS_,tpp=slp*TP_SL_RATIO,side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  return side?{side,slp,tpp}:null;}
+function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
+function simStats(sym,oh,P,barMin){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;let i=warm;const wins=[],losses=[];
+  while(i<oh.length-1){const e=evalAt(sym,oh.slice(0,i+1),P);if(!e){i++;continue;}
+    const entry=oh[i][2],tp=e.side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=e.side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
+    let res=null,xj=null;for(let j=i+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
+      if(e.side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
+      else{if(h>=sl){res='sl';xj=j;break;}if(l<=tp){res='tp';xj=j;break;}}}
+    if(res==null)break;(res==='tp'?wins:losses).push(xj-i);i=xj+1;}
+  const n=wins.length+losses.length;if(n<8)return null;
+  const tm=median(wins),sm=median(losses);
+  return{n,winRate:Math.round(wins.length/n*100),tpMin:tm!=null?tm*barMin:null,slMin:sm!=null?sm*barMin:null,ts:Date.now()};}
+async function fetchHistStats(base,sym,interval,days){let rows={};for(let off=0;off>=-(days+1);off--){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${interval}&date=${jstYmd(off)}`;
+  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}}
+  return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+async function refreshStats(force){
+  if(!LIVE_PRICE_URL||!S||!S.mode||STATS_BUSY)return;
+  const mode=S.mode,key0=mode+SYMS[0],fresh=STATS[key0]&&(Date.now()-STATS[key0].ts<1800000);
+  if(fresh&&!force)return;
+  STATS_BUSY=true;
+  try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+    const days=mode==='scalp'?3:7,cap=mode==='scalp'?1500:900,barMin=P.interval==='1min'?1:5;
+    for(const sym of SYMS){let oh=await fetchHistStats(base,sym,P.interval,days);if(oh.length>cap)oh=oh.slice(-cap);
+      if(oh.length<120)continue;const st=simStats(sym,oh,P,barMin);if(st){st.mode=mode;STATS[mode+sym]=st;}
+      await new Promise(r=>setTimeout(r,0));}
+    try{localStorage.setItem('fxnavi_stats',JSON.stringify(STATS));}catch(e){}
+    render();
+  }finally{STATS_BUSY=false;}}
 
 // 保有ポジションは「トークンがあればAPIから（正確・即時）／無ければPagesから」読む
 async function loadPositions(){
@@ -395,7 +440,7 @@ async function load(){try{
   const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
   if(!POS_BUSY){const np=await loadPositions(); if(np)POS=np;}
-  setPriceFromStatus();render();applyLive();liveSignals();
+  setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
   }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
 async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   const sep=LIVE_PRICE_URL.includes('?')?'&':'?';const r=await fetch(LIVE_PRICE_URL+sep+'t='+Date.now(),{cache:'no-store'});
@@ -403,7 +448,7 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
-load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);}
+load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);setInterval(()=>refreshStats(),1800000);}
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
 </script>
 <a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
