@@ -1,0 +1,106 @@
+<!doctype html><html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FX Navi ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0c10;--card:#11151c;--card2:#0e1218;--line:#1f2632;--ink:#e9edf3;--mut:#8893a4;--gold:#cda86a;--up:#4ade9b;--down:#ff7a8a;--mono:'IBM Plex Mono',monospace}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Zen Kaku Gothic New',sans-serif;padding:max(env(safe-area-inset-top),14px) 14px calc(env(safe-area-inset-bottom) + 40px)}
+.wrap{max-width:560px;margin:0 auto}
+h1{font-family:'Shippori Mincho',serif;font-size:23px;margin:4px 0 2px}
+.sub{color:var(--gold);font-size:10px;letter-spacing:.28em;margin-bottom:14px}
+a.back{color:var(--mut);font-family:var(--mono);font-size:12px;text-decoration:none}
+.sec{font-family:'Shippori Mincho',serif;font-size:14px;color:var(--ink);letter-spacing:.1em;margin:22px 2px 10px;display:flex;align-items:center;gap:8px}
+.sec::before{content:"—";color:var(--gold)}
+.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:11px;color:var(--mut);margin:8px 0 3px;font-family:var(--mono)}
+input,select,textarea{width:100%;background:#0c1118;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px 10px;font-family:var(--mono);font-size:14px}
+textarea{min-height:74px;resize:vertical}
+.rowf{display:flex;gap:8px}.rowf>div{flex:1}
+button{font-family:'Zen Kaku Gothic New';font-weight:700;border:none;border-radius:9px;padding:11px 14px;font-size:14px;cursor:pointer}
+.bgo{background:var(--gold);color:#1a1206}.bsub{background:#1a212b;color:var(--ink);border:1px solid var(--line)}
+.stat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px}
+.kpi{background:#0c1118;border:1px solid var(--line);border-radius:10px;padding:10px}
+.kpi .l{font-size:9.5px;color:var(--mut);font-family:var(--mono)}.kpi .v{font-family:var(--mono);font-size:17px;margin-top:3px}
+.v.up{color:var(--up)}.v.dn{color:var(--down)}.v.go{color:var(--gold)}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;margin-top:6px}
+th,td{text-align:right;padding:6px 5px;border-top:1px solid var(--line)}th{color:var(--mut);font-weight:500}td:first-child,th:first-child{text-align:left}
+.note{color:var(--mut);font-size:10.5px;line-height:1.7;font-family:var(--mono);margin-top:8px}
+.tr{font-family:var(--mono);font-size:11px;color:var(--mut);max-height:150px;overflow:auto;margin-top:8px}
+.tr div{display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid var(--line)}
+.del{color:var(--down);cursor:pointer}
+svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9px}
+.warn{color:var(--down)}.good{color:var(--up)}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="index.html">← ダッシュボードへ</a>
+<h1>FX Navi ツール</h1><div class="sub">JOURNAL · RISK · BACKTEST</div>
+<!-- WorkerのURL（バックテスト・スプレッド用。FX Naviと同じ） -->
+<script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";</script>
+
+<div class="sec">① 成績分析（トレード記録）</div>
+<div class="card">
+  <div class="rowf">
+    <div><label>通貨ペア</label><select id="jp"><option>USD/JPY</option><option>EUR/JPY</option><option>GBP/JPY</option><option>AUD/JPY</option><option>その他</option></select></div>
+    <div><label>売買</label><select id="js"><option value="買い">買い</option><option value="売り">売り</option></select></div>
+    <div><label>損益(円)</label><input id="jy" type="number" inputmode="numbers" placeholder="例 90 / -59"></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:10px"><button class="bgo" onclick="addTrade()">記録を追加</button><button class="bsub" onclick="document.getElementById('pastebox').style.display='block'">まとめて貼付</button></div>
+  <div id="pastebox" style="display:none;margin-top:10px">
+    <label>損益(円)を1行ずつ貼付（例: 90 / -59 / 1184 …）符号付き数字を拾います</label>
+    <textarea id="jpaste" placeholder="-59&#10;90&#10;-23&#10;31"></textarea>
+    <button class="bsub" style="margin-top:8px" onclick="importPaste()">取り込む</button>
+  </div>
+  <div class="stat" id="kpis"></div>
+  <svg class="eq" id="eq" viewBox="0 0 320 120" preserveAspectRatio="none"></svg>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">ペア別</div>
+  <table id="bypair"><thead><tr><th>ペア</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="tr" id="trlist"></div>
+  <div style="margin-top:8px"><span class="del" onclick="clearTrades()">全削除</span></div>
+  <div class="note">端末内に保存（localStorage）。GMOの約定履歴の決済損益(円)を入れると、勝率・期待値・PF・損益曲線が出ます。</div>
+</div>
+
+<div class="sec">② リスク / ロット計算</div>
+<div class="card">
+  <div class="rowf">
+    <div><label>資金(円)</label><input id="cap" type="number" value="10000"></div>
+    <div><label>1回の許容リスク(%)</label><input id="rpct" type="number" value="2"></div>
+  </div>
+  <div class="rowf" style="margin-top:6px">
+    <div><label>損切り幅 SL(pips)</label><input id="slp" type="number" value="5"></div>
+    <div><label>通貨量(units)</label><input id="units" type="number" value="1000"></div>
+  </div>
+  <button class="bgo" style="margin-top:10px" onclick="calcRisk()">計算＆保存</button>
+  <div class="stat" id="riskout" style="margin-top:10px"></div>
+  <div class="note">円ペア前提（1pip=0.01）。許容損失＝資金×リスク%。推奨通貨量＝許容損失 ÷ (SL pips × 0.01)。GMO最小は1,000通貨(0.1ロット)。</div>
+</div>
+
+<div class="sec">③ スプレッド / コスト判定</div>
+<div class="card">
+  <div class="rowf">
+    <div><label>狙うTP(pips)</label><input id="ctp" type="number" value="2" step="0.1"></div>
+    <div style="display:flex;align-items:flex-end"><button class="bgo" style="width:100%" onclick="loadSpreads()">現在のスプレッドを取得</button></div>
+  </div>
+  <table id="sprtbl"><thead><tr><th>ペア</th><th>スプレッド</th><th>TP比</th><th>判定</th></tr></thead><tbody><tr><td colspan="4" style="text-align:center;color:#566">「取得」を押してください</td></tr></tbody></table>
+  <div class="note">スプレッドが狙うTPの3割以上だとコスト負けしやすい→見送り推奨。要 WorkerのURL設定。あなたの小さな負けの多くはこのコスト負けが原因の可能性が高いです。</div>
+</div>
+
+<div class="sec">④ シグナルのバックテスト</div>
+<div class="card">
+  <div class="rowf">
+    <div><label>ペア</label><select id="bsym"><option>USD_JPY</option><option>EUR_JPY</option><option>GBP_JPY</option><option>AUD_JPY</option></select></div>
+    <div><label>モード</label><select id="bmode"><option value="scalp">scalp(1分)</option><option value="day">day(5分)</option></select></div>
+  </div>
+  <div class="rowf" style="margin-top:6px">
+    <div><label>期間(日)</label><input id="bdays" type="number" value="3"></div>
+    <div><label>スプレッド(pips)</label><input id="bspr" type="number" value="0.4" step="0.1"></div>
+  </div>
+  <button class="bgo" style="margin-top:10px" id="btbtn" onclick="runBacktest()">バックテスト実行</button>
+  <div class="stat" id="btout" style="margin-top:10px"></div>
+  <div id="btmsg" class="note"></div>
+  <div class="note">直近データで、各シグナルをATR基準のTP/SL通りに取った場合を検証（スプレッド控除後）。要 WorkerのURL設定。過去成績は将来を保証しません。</div>
+</div>
+</div>
+<script src="tools.js"></script>
+</body></html>

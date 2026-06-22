@@ -391,5 +391,6 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
 load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);}
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
 </script>
+<a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
 </body>
 </html>
