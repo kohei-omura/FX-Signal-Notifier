@@ -46,8 +46,29 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <div><label>売買</label><select id="js"><option value="買い">買い</option><option value="売り">売り</option></select></div>
     <div><label>損益(円)</label><input id="jy" type="number" inputmode="numbers" placeholder="例 90 / -59"></div>
   </div>
-  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="bgo" onclick="addTrade()">記録を追加</button><button class="bsub" onclick="document.getElementById('pastebox').style.display='block'">まとめて貼付</button><label class="bsub" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:11px 14px;border-radius:9px;font-weight:700;font-size:14px">📷 スクショ取込<input id="ocrfile" type="file" accept="image/*" style="display:none" onchange="ocrImport(this.files[0])"></label></div>
-  <div id="ocrmsg" class="note"></div>
+  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button class="bgo" onclick="addTrade()">記録を追加</button>
+    <label class="bsub" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:11px 14px;border-radius:9px;font-weight:700;font-size:14px">📄 CSV取込<input id="csvfile" type="file" accept=".csv,text/csv,text/plain" style="display:none" onchange="csvLoad(this.files[0])"></label>
+    <button class="bsub" onclick="toggleBox('iosbox')">📋 iPhone文字貼付</button>
+    <button class="bsub" onclick="appSync()">アプリ決済を取込</button>
+    <button class="bsub" onclick="toggleBox('pastebox')">数値貼付</button>
+  </div>
+  <div id="impmsg" class="note"></div>
+  <!-- CSV列マッピング -->
+  <div id="csvmap" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px">
+    <div class="rowf"><div><label>損益の列</label><select id="cPnl"></select></div><div><label>通貨ペアの列</label><select id="cPair"></select></div></div>
+    <div class="rowf" style="margin-top:6px"><div><label>売買の列</label><select id="cSide"></select></div><div></div></div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="cInvert" checked style="width:auto;margin:0">決済行は反対売買 → 保有方向に反転</label>
+    <button class="bgo" style="margin-top:8px" onclick="csvImport()">この設定で取り込む</button>
+    <div class="note">損益が空・0の行（新規）は自動でスキップします。列が違う場合は選び直してください。</div>
+  </div>
+  <!-- iPhone文字貼付 -->
+  <div id="iosbox" style="display:none;margin-top:10px">
+    <label>iPhoneでスクショを長押し→テキストを選択→すべて選択→コピーし、ここに貼付</label>
+    <textarea id="iospaste" placeholder="（写真からコピーした文字を貼り付け）"></textarea>
+    <button class="bsub" style="margin-top:8px" onclick="iosParse()">解析して下の確認欄へ</button>
+  </div>
+  <!-- 確認して取込（全方式共通） -->
   <div id="pastebox" style="display:none;margin-top:10px">
     <label>1行＝1取引。「ペア サイド 損益」も可（例: USD/JPY 買い 9 ／ GBP/JPY 売り -953）。数字だけでも可（その場合サイドは上の選択を使用）。</label>
     <textarea id="jpaste" placeholder="-59&#10;90&#10;-23&#10;31"></textarea>
