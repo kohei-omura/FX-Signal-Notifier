@@ -2,14 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
------------------------------------------------------------------
-シグナル = テクニカル90% + ファンダ10% の加重スコアで判定。
-  テクニカル: EMAクロス / MACD / RSI / ボリンジャー（ADXでトレンド強度を加味）
-  ファンダ : 金利差キャリーの方向バイアス（円ペアは円が低金利→買い寄り・調整可）
-モード: scalp(1分足・狭いTP/SL) / day(5分足・やや広め)
-GMOコイン外国為替FX Public API + GitHub Actions。LINE/メール通知 + ダッシュボード(status.json)。
-
-⚠️ スコアは判断補助で、未来の最適値・利益を保証しません。売買・損益は自己責任です。
 """
 
 import os, sys, json, math, smtplib, datetime
@@ -22,7 +14,6 @@ JST = ZoneInfo("Asia/Tokyo")
 SYMBOLS = ["USD_JPY", "EUR_JPY", "GBP_JPY", "AUD_JPY"]
 PRICE_TYPE = "BID"
 
-# ===== モード（scalp / day）。GitHub Secrets/Variables の MODE で上書き可 =====
 MODE = os.environ.get("MODE", "scalp").lower()
 PARAMS = {
     "scalp": {"interval":"1min","ema_f":5,"ema_s":13,"rsi":7,"macd":(6,13,5),
@@ -32,24 +23,21 @@ PARAMS = {
 }
 P = PARAMS.get(MODE, PARAMS["scalp"])
 
-# テクニカル内訳の重み（合計1.0）。EMA/MACDはADX強度で減衰
 W_EMA, W_MACD, W_RSI, W_BB = 0.35, 0.25, 0.20, 0.20
 TECH_W, FUND_W = 0.9, 0.1
-
-# ファンダ(10%)：金利差キャリーの方向バイアス [-1,1]（円ペアは円が低金利→買い寄り）
-# 現在の政策金利差に合わせて調整可。
 FUND_BIAS = {"USD_JPY":0.5, "EUR_JPY":0.4, "GBP_JPY":0.5, "AUD_JPY":0.4}
 
-# ===== TP/SL（Pattern1：ATR基準）=====
-# SL = エントリー時ATR × SL_ATR_MULT（そのままpips）／ TP = SL × TP_SL_RATIO
-SL_ATR_MULT = 1.0     # SL = ATR×1.0
-TP_SL_RATIO = 1.5     # TP = SL×1.5（リスクリワード 1:1.5）
+SL_ATR_MULT = 1.0
+TP_SL_RATIO = 1.5
 
-# ===== エントリー有効条件（通知後、いつまで・どこまでの価格なら入ってよいか）=====
-VALID_BARS = 3        # 有効な足数（scalp=3分 / day=15分）
-MAX_CHASE_RATIO = 0.5 # 追いかけ許容 = SL × 0.5（これ以上離れていたら見送り）
+VALID_BARS = 3
+MAX_CHASE_RATIO = 0.5
 
-# 重要指標の前後はシグナル抑制（任意）。例: ["2026-06-10 21:30"]（JST）
+# ===== シグナル統計（想定保有時間・TP勝率）：重いので約60分キャッシュ =====
+STATS_TTL_SEC = 3600
+STATS_DAYS = {"scalp": 3, "day": 7}
+STATS_MAX_BARS = {"scalp": 1000, "day": 600}
+
 NEWS_BLACKOUT = []
 BLACKOUT_MIN = 15
 
@@ -62,7 +50,6 @@ BASE = "https://forex-api.coin.z.com/public/v1"
 _OHLC_CACHE = {}
 
 
-# ---------------- データ取得 ----------------
 def get_ohlc(symbol):
     if symbol in _OHLC_CACHE:
         return _OHLC_CACHE[symbol]
@@ -104,7 +91,6 @@ def market_is_open():
         return True
 
 
-# ---------------- 指標 ----------------
 def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
@@ -197,13 +183,11 @@ def adx(ohlc, p):
 
 
 def suggest_tp_sl(a):
-    """Pattern1: SL=ATR×SL_ATR_MULT(pips), TP=SL×TP_SL_RATIO"""
     sl_pips = a * SL_ATR_MULT / PIP_SIZE
     tp_pips = sl_pips * TP_SL_RATIO
     return (round(tp_pips, 1), round(sl_pips, 1))
 
 
-# ---------------- 加重スコア（テク90/ファンダ10） ----------------
 def score_pair(symbol, ohlc):
     closes = [r[2] for r in ohlc]
     if len(closes) < max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2:
@@ -218,15 +202,15 @@ def score_pair(symbol, ohlc):
     if None in (ef, es, rv, a) or md is None or bb is None or ax is None:
         return None
     adx_val, pdi, mdi = ax
-    adxf = clamp(adx_val/40.0, 0.0, 1.0)        # トレンド強度 0..1
-    adxf = max(adxf, 0.25)                       # 弱トレンドでも最低限
+    adxf = clamp(adx_val/40.0, 0.0, 1.0)
+    adxf = max(adxf, 0.25)
 
-    ema_sig = clamp((ef-es)/(a if a else 1e-9))               # EMA方向（ATR正規化）
-    macd_sig = clamp(md[2]/(0.6*a if a else 1e-9))            # MACDヒスト/ATR
-    if md[2] > md[3]: macd_sig = clamp(macd_sig+0.1)          # ヒスト上昇=加点
+    ema_sig = clamp((ef-es)/(a if a else 1e-9))
+    macd_sig = clamp(md[2]/(0.6*a if a else 1e-9))
+    if md[2] > md[3]: macd_sig = clamp(macd_sig+0.1)
     elif md[2] < md[3]: macd_sig = clamp(macd_sig-0.1)
-    rsi_sig = clamp((rv-50)/50.0)                             # 50中心
-    bb_sig = clamp((price-bb[0])/(P["bb"][1]*bb[3] if bb[3] else 1e-9))  # 中心線からの位置
+    rsi_sig = clamp((rv-50)/50.0)
+    bb_sig = clamp((price-bb[0])/(P["bb"][1]*bb[3] if bb[3] else 1e-9))
 
     tech = (W_EMA*ema_sig*adxf + W_MACD*macd_sig*adxf + W_RSI*rsi_sig + W_BB*bb_sig)
     tech = clamp(tech)
@@ -251,6 +235,141 @@ def score_pair(symbol, ohlc):
             "closes":[round(c,3) for c in closes[-CHART_POINTS:]]}
 
 
+# ---------------- シグナル統計（想定保有時間・TP勝率） ----------------
+def get_ohlc_hist(symbol, days, cap):
+    today = datetime.datetime.now(JST).date()
+    rows = {}
+    for back in range(0, days+2):
+        d = today - datetime.timedelta(days=back)
+        try:
+            j = requests.get(f"{BASE}/klines", timeout=15, params={
+                "symbol": symbol, "priceType": PRICE_TYPE,
+                "interval": P["interval"], "date": d.strftime("%Y%m%d")}).json()
+            if j.get("status") == 0:
+                for k in j.get("data", []):
+                    rows[int(k["openTime"])] = (float(k["high"]), float(k["low"]), float(k["close"]))
+        except Exception as e:
+            print(f"[WARN] {symbol} hist失敗: {e}", file=sys.stderr)
+    out = [rows[t] for t in sorted(rows)]
+    return out[-cap:] if len(out) > cap else out
+
+
+def eval_side(symbol, ohlc):
+    """過去バーでの売買サイド + SL/TP(pips)。score_pairと同じ判定。"""
+    closes = [r[2] for r in ohlc]
+    if len(closes) < max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2:
+        return None
+    price = closes[-1]
+    ef, es = ema(closes, P["ema_f"]), ema(closes, P["ema_s"])
+    rv = rsi(closes, P["rsi"]); md = macd(closes, *P["macd"])
+    bb = bollinger(closes, P["bb"][0], P["bb"][1]); a = atr(ohlc, P["atr"]); ax = adx(ohlc, P["adx"])
+    if None in (ef, es, rv, a) or md is None or bb is None or ax is None:
+        return None
+    adx_val = ax[0]; adxf = max(clamp(adx_val/40.0, 0.0, 1.0), 0.25)
+    ema_sig = clamp((ef-es)/(a if a else 1e-9))
+    macd_sig = clamp(md[2]/(0.6*a if a else 1e-9))
+    if md[2] > md[3]: macd_sig = clamp(macd_sig+0.1)
+    elif md[2] < md[3]: macd_sig = clamp(macd_sig-0.1)
+    rsi_sig = clamp((rv-50)/50.0)
+    bb_sig = clamp((price-bb[0])/(P["bb"][1]*bb[3] if bb[3] else 1e-9))
+    tech = clamp(W_EMA*ema_sig*adxf + W_MACD*macd_sig*adxf + W_RSI*rsi_sig + W_BB*bb_sig)
+    fund = clamp(FUND_BIAS.get(symbol, 0.0))
+    total = clamp(TECH_W*tech + FUND_W*fund)
+    th = P["th"]
+    side = "買い" if total >= th else ("売り" if total <= -th else None)
+    if not side:
+        return None
+    sl_pips = a * SL_ATR_MULT / PIP_SIZE
+    tp_pips = sl_pips * TP_SL_RATIO
+    return side, sl_pips, tp_pips
+
+
+def _median(a):
+    if not a:
+        return None
+    s = sorted(a); m = len(s)//2
+    return s[m] if len(s) % 2 else (s[m-1]+s[m])/2
+
+
+def compute_signal_stats(symbol):
+    days = STATS_DAYS.get(MODE, 3); cap = STATS_MAX_BARS.get(MODE, 1000)
+    oh = get_ohlc_hist(symbol, days, cap)
+    if len(oh) < 120:
+        return None
+    warm = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 5
+    bar_min = 1 if P["interval"] == "1min" else 5
+    wins, losses = [], []
+    n = len(oh); i = warm
+    while i < n-1:
+        e = eval_side(symbol, oh[:i+1])
+        if not e:
+            i += 1; continue
+        side, sl_pips, tp_pips = e
+        entry = oh[i][2]
+        tp = entry + tp_pips*PIP_SIZE if side == "買い" else entry - tp_pips*PIP_SIZE
+        sl = entry - sl_pips*PIP_SIZE if side == "買い" else entry + sl_pips*PIP_SIZE
+        res = None; xj = None
+        for j in range(i+1, n):
+            h, l, _ = oh[j]
+            if side == "買い":
+                if l <= sl:
+                    res = "sl"; xj = j; break
+                if h >= tp:
+                    res = "tp"; xj = j; break
+            else:
+                if h >= sl:
+                    res = "sl"; xj = j; break
+                if l <= tp:
+                    res = "tp"; xj = j; break
+        if res is None:
+            break
+        (wins if res == "tp" else losses).append(xj - i)
+        i = xj + 1
+    nn = len(wins) + len(losses)
+    if nn < 8:
+        return None
+    tm = _median(wins); sm = _median(losses)
+    return {"n": nn, "tp_winrate": round(len(wins)/nn*100),
+            "hold_tp_min": round(tm*bar_min) if tm is not None else None,
+            "hold_sl_min": round(sm*bar_min) if sm is not None else None,
+            "stats_ts": int(datetime.datetime.now(JST).timestamp()), "stats_mode": MODE}
+
+
+def load_prev_stats():
+    """前回 status.json からキャッシュ済み統計を読む（再計算間隔の節約）。"""
+    out = {}
+    if not os.path.exists(STATUS_FILE):
+        return out
+    try:
+        prev = json.load(open(STATUS_FILE, encoding="utf-8"))
+        for p in prev.get("pairs", []):
+            if p.get("stats_ts"):
+                out[p["symbol"]] = {"n": p.get("stats_n"), "tp_winrate": p.get("tp_winrate"),
+                                    "hold_tp_min": p.get("hold_tp_min"), "hold_sl_min": p.get("hold_sl_min"),
+                                    "stats_ts": p.get("stats_ts"), "stats_mode": p.get("stats_mode")}
+    except Exception:
+        pass
+    return out
+
+
+def gather_stats(prev):
+    """新鮮なキャッシュは再利用、古い/無いものだけ再計算。"""
+    stats = {}
+    now_ts = int(datetime.datetime.now(JST).timestamp())
+    for sym in SYMBOLS:
+        c = prev.get(sym)
+        if c and c.get("stats_ts") and c.get("stats_mode") == MODE and (now_ts - c["stats_ts"] < STATS_TTL_SEC):
+            stats[sym] = c
+        else:
+            st = None
+            try:
+                st = compute_signal_stats(sym)
+            except Exception as e:
+                print(f"[WARN] {sym} 統計計算失敗: {e}", file=sys.stderr)
+            stats[sym] = st if st else c
+    return stats
+
+
 def in_blackout():
     now = datetime.datetime.now(JST).replace(tzinfo=None)
     for s in NEWS_BLACKOUT:
@@ -263,7 +382,6 @@ def in_blackout():
     return False
 
 
-# ---------------- ポジション ----------------
 def load_positions():
     if not os.path.exists(POSITIONS_FILE):
         return {"positions": []}
@@ -345,8 +463,7 @@ def check_positions(data, ticker):
     return msgs, changed
 
 
-# ---------------- status.json ----------------
-def build_status(ticker, data, market_open):
+def build_status(ticker, data, market_open, stats=None):
     pairs, notify = [], []
     blackout = in_blackout()
     now = datetime.datetime.now(JST)
@@ -359,7 +476,6 @@ def build_status(ticker, data, market_open):
         sig = None if blackout else sc["side"]
         bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
 
-        # エントリー有効条件（通知後 いつまで・どこまでの価格なら入ってよいか）
         entry = {}
         if market_open and sig:
             ref = ticker.get(sym, {}).get("bid")
@@ -371,7 +487,8 @@ def build_status(ticker, data, market_open):
                          "valid_minutes": valid_min, "valid_until": until.strftime("%H:%M"),
                          "valid_until_ts": int(until.timestamp()*1000)}
 
-        pairs.append({
+        st = stats.get(sym) if stats else None
+        pair = {
             "symbol":sym, "bid":ticker.get(sym,{}).get("bid"), "ask":ticker.get(sym,{}).get("ask"),
             "rsi":sc["rsi"], "adx":sc["adx"], "ema_f":round(sc["ef"],3), "ema_s":round(sc["es"],3),
             "atr":sc["atr"], "tp_pips":sc["tp_pips"], "sl_pips":sc["sl_pips"],
@@ -379,17 +496,28 @@ def build_status(ticker, data, market_open):
             "signal":sig, "bias":bias, "reasons":sc["reasons"],
             "closes":sc["closes"], "ema_f_series":sc["ef_series"], "ema_s_series":sc["es_series"],
             **entry,
-        })
+        }
+        if st and st.get("n"):
+            pair.update({"hold_tp_min":st.get("hold_tp_min"), "hold_sl_min":st.get("hold_sl_min"),
+                         "tp_winrate":st.get("tp_winrate"), "stats_n":st.get("n"),
+                         "stats_ts":st.get("stats_ts"), "stats_mode":st.get("stats_mode")})
+        pairs.append(pair)
+
         if market_open and sig and entry:
             rtxt = " / ".join(sc["reasons"])
             arrow = "以下" if sig == "買い" else "以上"
+            stat_txt = ""
+            if st and st.get("n"):
+                stat_txt = (f"\n  ⏱想定保有: 利確まで約{st.get('hold_tp_min','?')}分 / 損切りまで約{st.get('hold_sl_min','?')}分"
+                            f"\n  📊TP勝率 {st.get('tp_winrate')}%（直近{st.get('n')}回）")
             notify.append(f"{'🟢' if sig=='買い' else '🔴'} {sym} {sig}（{MODE}）\n"
                           f"  スコア{sc['score']:+.2f}（テク{sc['tech']:+.2f}/ファンダ{sc['fund']:+.2f}）\n"
                           f"  {rtxt}\n  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
                           f"  ▶エントリー目安: 通知価格 {entry['entry_ref']}\n"
                           f"   ・{valid_min}分以内（{entry['valid_until']}まで）\n"
                           f"   ・現在値が {entry['entry_limit']} {arrow}なら可"
-                          f"（+{entry['maxchase_pips']}pipsまで追い、超過は見送り）")
+                          f"（+{entry['maxchase_pips']}pipsまで追い、超過は見送り）"
+                          + stat_txt)
 
     open_pos, closed_pos = [], []
     for p in data.get("positions", []):
@@ -409,7 +537,6 @@ def build_status(ticker, data, market_open):
     return notify
 
 
-# ---------------- 通知 ----------------
 def notify_line(text):
     token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     if not token:
@@ -439,7 +566,6 @@ def notify_mail(subject, body):
         print(f"[WARN] メール送信失敗: {e}", file=sys.stderr)
 
 
-# ---------------- メイン ----------------
 def main():
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     if os.environ.get("TEST_NOTIFY", "").lower() == "true":
@@ -449,11 +575,13 @@ def main():
     market_open = market_is_open()
     ticker = fetch_ticker()
     data = load_positions()
+    prev_stats = load_prev_stats()
+    stats = gather_stats(prev_stats)
     m1, c1 = auto_set_levels(data)
     m2, c2 = check_positions(data, ticker)
     if c1 or c2:
         save_positions(data)
-    notify = build_status(ticker, data, market_open)
+    notify = build_status(ticker, data, market_open, stats)
     msgs = m1 + m2 + notify
 
     if not market_open:
