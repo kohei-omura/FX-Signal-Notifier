@@ -48,12 +48,18 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   </div>
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
     <button class="bgo" onclick="addTrade()">記録を追加</button>
-    <label class="bsub" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:11px 14px;border-radius:9px;font-weight:700;font-size:14px">📄 CSV取込<input id="csvfile" type="file" accept=".csv,text/csv,text/plain" style="display:none" onchange="csvLoad(this.files[0])"></label>
+    <label class="bsub" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:11px 14px;border-radius:9px;font-weight:700;font-size:14px">📄 CSV取込<input id="csvfile" type="file" style="display:none" onchange="csvLoad(this.files[0])"></label>
     <button class="bsub" onclick="toggleBox('iosbox')">📋 iPhone文字貼付</button>
     <button class="bsub" onclick="appSync()">アプリ決済を取込</button>
     <button class="bsub" onclick="toggleBox('pastebox')">数値貼付</button>
   </div>
   <div id="impmsg" class="note"></div>
+  <div style="margin-top:4px"><button class="bsub" style="font-size:12px;padding:7px 10px" onclick="toggleBox('csvpastebox')">CSVが選べない時：中身を貼付</button></div>
+  <div id="csvpastebox" style="display:none;margin-top:8px">
+    <label>ファイルAppでCSVを開く→画面を長押しまたは⋯→「すべて選択」→コピーし、ここに貼付</label>
+    <textarea id="csvpaste" placeholder="（CSVの中身を貼り付け：1行目は見出し）"></textarea>
+    <button class="bsub" style="margin-top:8px" onclick="csvPaste()">読み込む</button>
+  </div>
   <!-- CSV列マッピング -->
   <div id="csvmap" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px">
     <div class="rowf"><div><label>損益の列</label><select id="cPnl"></select></div><div><label>通貨ペアの列</label><select id="cPair"></select></div></div>

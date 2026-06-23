@@ -46,21 +46,29 @@ function parseCSV(text){
   return rows.filter(r=>r.some(x=>(x||'').trim()!==''));
 }
 function guessCol(head,keys){for(const k of keys){const i=head.findIndex(h=>h&&h.indexOf(k)>=0);if(i>=0)return i;}return -1;}
+function csvIngest(txt){
+  const msg=$('#impmsg');
+  const rows=parseCSV(txt);
+  if(rows.length<2){msg.innerHTML='<span class="warn">データ行が見つかりません（1行目=見出し、2行目以降=データ）。</span>';return;}
+  CSV_HEAD=rows[0].map(s=>(s||'').trim());CSV_ROWS=rows.slice(1);
+  const opts=CSV_HEAD.map((h,i)=>`<option value="${i}">${(h||('列'+(i+1))).slice(0,16)}</option>`).join('');
+  ['cPnl','cPair','cSide'].forEach(id=>{$('#'+id).innerHTML='<option value="-1">（なし）</option>'+opts;});
+  $('#cPnl').value=guessCol(CSV_HEAD,['決済損益','実現損益','約定損益','売買損益','損益']);
+  $('#cPair').value=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
+  $('#cSide').value=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
+  $('#csvmap').style.display='block';$('#csvpastebox').style.display='none';
+  msg.innerHTML=`<span class="good">${CSV_ROWS.length}行を読込。列を確認して「この設定で取り込む」を押してください。</span>`;
+}
 async function csvLoad(file){
   if(!file)return;const msg=$('#impmsg');msg.textContent='CSV読込中…';
-  try{
-    const txt=await readCSVFile(file);const rows=parseCSV(txt);
-    if(rows.length<2){msg.innerHTML='<span class="warn">データ行が見つかりません。</span>';return;}
-    CSV_HEAD=rows[0].map(s=>(s||'').trim());CSV_ROWS=rows.slice(1);
-    const opts=CSV_HEAD.map((h,i)=>`<option value="${i}">${(h||('列'+(i+1))).slice(0,16)}</option>`).join('');
-    ['cPnl','cPair','cSide'].forEach(id=>{$('#'+id).innerHTML='<option value="-1">（なし）</option>'+opts;});
-    $('#cPnl').value=guessCol(CSV_HEAD,['決済損益','実現損益','約定損益','売買損益','損益']);
-    $('#cPair').value=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
-    $('#cSide').value=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
-    $('#csvmap').style.display='block';
-    msg.innerHTML=`<span class="good">${CSV_ROWS.length}行を読込。列を確認して「この設定で取り込む」を押してください。</span>`;
-  }catch(e){msg.innerHTML='<span class="warn">CSV読込失敗: '+e.message+'</span>';}
+  try{ const txt=await readCSVFile(file); csvIngest(txt); }
+  catch(e){msg.innerHTML='<span class="warn">CSV読込失敗: '+e.message+'</span>';}
   finally{const f=$('#csvfile');if(f)f.value='';}
+}
+function csvPaste(){
+  const txt=$('#csvpaste').value||'';
+  if(!txt.trim()){alert('CSVの中身を貼り付けてください');return;}
+  try{ csvIngest(txt); }catch(e){$('#impmsg').innerHTML='<span class="warn">読込失敗: '+e.message+'</span>';}
 }
 function numFromCell(s){if(s==null)return NaN;let m=(''+s).replace(/[▲△]/g,'-').replace(/[^\d.,+-]/g,'').replace(/,/g,'');if(!m||m==='-'||m==='+'||m==='.')return NaN;const v=parseFloat(m);return isNaN(v)?NaN:Math.round(v);}
 function csvImport(){
