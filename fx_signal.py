@@ -33,6 +33,14 @@ TP_SL_RATIO = 1.5
 VALID_BARS = 3
 MAX_CHASE_RATIO = 0.5
 
+# ===== 保有中の利確/損切り判定（建値ベース・シグナル監視） =====
+ADV_OPP   = 0.25   # スコア×保有方向 がこの値以下なら「逆シグナル」
+ADV_SUPP  = 0.15   # この値以上なら順方向継続（ホールド）
+ADV_DECAY = 0.10   # |スコア| がこの値未満なら勢い減衰
+TRAIL_ATR = 1.0    # 最高益から ×ATR 押し戻したらトレール利確
+PROFIT_ATR = 1.0   # この含み益(×ATR)以上＋反転でしっかり利確
+ADX_WEAK  = 20.0   # ADXがこの値未満で勢い喪失
+
 # ===== シグナル統計（想定保有時間・TP勝率）：重いので約60分キャッシュ =====
 STATS_TTL_SEC = 3600
 STATS_DAYS = {"scalp": 3, "day": 7}
@@ -437,33 +445,100 @@ def position_pl(p, ticker):
             "tp_price":round(tp_pr,3) if tp_pr else None, "sl_price":round(sl_pr,3) if sl_pr else None}
 
 
-def check_positions(data, ticker):
+def position_advice(p, ticker, sc):
+    """保有中の利確/損切り判定。p['mfe']（最高益価格）を更新し、推奨を返す。
+       未来予測ではなく、現在価格＋ライブシグナルから『降りるサインが出たか』を判定。"""
+    sym = p.get("symbol"); side = p.get("side", "long")
+    if sym not in ticker or not sc:
+        return None
+    entry = float(p["entry"]); bid, ask = ticker[sym]["bid"], ticker[sym]["ask"]
+    cur = bid if side == "long" else ask
+    d = 1 if side == "long" else -1
+    a = sc.get("atr") or 0.0
+    score = sc.get("score", 0.0); rsi_v = sc.get("rsi", 50); adx_v = sc.get("adx", 0)
+    profit = (cur - entry) * d
+    profit_atr = (profit / a) if a else 0.0
+    aligned = score * d
+    # 最高益(MFE)を更新
+    mfe = p.get("mfe")
+    mfe = (entry if mfe is None else (max(mfe, cur) if side == "long" else min(mfe, cur)))
+    p["mfe"] = round(mfe, 3)
+    retrace = (mfe - cur) if side == "long" else (cur - mfe)
+    retrace_atr = (retrace / a) if a else 0.0
+    tp_pr, sl_pr = _tp_sl_prices(p)
+    hit_tp = tp_pr is not None and ((side == "long" and bid >= tp_pr) or (side == "short" and ask <= tp_pr))
+    hit_sl = sl_pr is not None and ((side == "long" and bid <= sl_pr) or (side == "short" and ask >= sl_pr))
+    rsi_against = (side == "long" and rsi_v >= 70) or (side == "short" and rsi_v <= 30)
+
+    if hit_sl:
+        level, label, reason = "cut", "🛑 損切り推奨", "SL到達"
+    elif aligned <= -ADV_OPP and profit <= 0:
+        level, label, reason = "cut", "🛑 損切り推奨", f"逆シグナル（スコア{score:+.2f}）で含み損"
+    elif hit_tp:
+        level, label, reason = "take", "🎯 利確推奨", "TP到達"
+    elif profit_atr >= PROFIT_ATR and retrace_atr >= TRAIL_ATR:
+        level, label, reason = "take", "🎯 利確推奨", f"高値から{retrace_atr:.1f}ATR押し戻し（トレール）"
+    elif profit > 0 and aligned <= -ADV_OPP:
+        level, label, reason = "take", "🎯 利確推奨", f"利益中に逆シグナル（スコア{score:+.2f}）"
+    elif profit > 0 and (abs(score) < ADV_DECAY or rsi_against or adx_v < ADX_WEAK):
+        why = "勢い減衰" if abs(score) < ADV_DECAY else ("RSI過熱" if rsi_against else "ADX低下")
+        level, label, reason = "watch", "🟡 利確検討", why
+    elif aligned >= ADV_SUPP:
+        level, label, reason = "hold", "🟢 ホールド", f"シグナル順方向（スコア{score:+.2f}）"
+    else:
+        level, label, reason = "watch", "🟡 様子見", "明確なサインなし"
+    return {"level": level, "label": label, "reason": reason,
+            "score": round(score, 3), "rsi": rsi_v, "adx": adx_v,
+            "profit_atr": round(profit_atr, 2), "retrace_atr": round(retrace_atr, 2), "mfe": round(mfe, 3)}
+
+
+def load_prev_adv():
+    """前回 status.json の open_positions から判定レベルを読む（positions.json未コミットでも重複通知を防ぐ保険）。"""
+    out = {}
+    if not os.path.exists(STATUS_FILE):
+        return out
+    try:
+        prev = json.load(open(STATUS_FILE, encoding="utf-8"))
+        for op in prev.get("open_positions", []):
+            if op.get("id") and op.get("adv_level"):
+                out[op["id"]] = op["adv_level"]
+    except Exception:
+        pass
+    return out
+
+
+def check_positions(data, ticker, prev_adv=None):
+    prev_adv = prev_adv or {}
     msgs, changed = [], False
+    advice_map = {}
     for p in data.get("positions", []):
         if p.get("status", "open") != "open" or p.get("symbol") not in ticker:
             continue
         info = position_pl(p, ticker); side = info["side"]
-        bid, ask = ticker[info["symbol"]]["bid"], ticker[info["symbol"]]["ask"]
-        tp_pr, sl_pr = info["tp_price"], info["sl_price"]
-        print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} {info['pips']:+}pips {info['yen']:+,}円")
-        hit = None
-        if side == "long":
-            if tp_pr and bid >= tp_pr: hit = ("利確", "🎯")
-            elif sl_pr and bid <= sl_pr: hit = ("損切り", "🛑")
-        else:
-            if tp_pr and ask <= tp_pr: hit = ("利確", "🎯")
-            elif sl_pr and ask >= sl_pr: hit = ("損切り", "🛑")
-        if hit and not p.get("hit_notified"):
-            kind, mark = hit
-            msgs.append(f"{mark} {kind}ライン到達 {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
-                        f"  建値:{info['entry']} → 現在:{info['current']}\n"
-                        f"  {info['pips']:+}pips / {info['yen']:+,}円\n"
-                        f"  ※GMOで決済後、アプリに実際の結果を登録してください")
-            p["hit_notified"] = True; p["hit_reason"] = kind; changed = True
-    return msgs, changed
+        old_mfe = p.get("mfe")
+        sc = score_pair(p["symbol"], get_ohlc(p["symbol"]))
+        adv = position_advice(p, ticker, sc)
+        print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} "
+              f"{info['pips']:+}pips {info['yen']:+,}円" + (f" [{adv['label']} {adv['reason']}]" if adv else ""))
+        if p.get("mfe") != old_mfe:
+            changed = True
+        if adv:
+            advice_map[p.get("id")] = adv
+            prev_level = p.get("adv_level") or prev_adv.get(p.get("id"))
+            if adv["level"] in ("take", "cut") and prev_level != adv["level"]:
+                kind = "利確" if adv["level"] == "take" else "損切り"
+                mark = "🎯" if adv["level"] == "take" else "🛑"
+                msgs.append(f"{mark} {kind}サイン {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
+                            f"  {adv['label']} — {adv['reason']}\n"
+                            f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円\n"
+                            f"  ※GMOで決済後、アプリに実際の結果を登録してください")
+                p["adv_level"] = adv["level"]; changed = True
+            elif p.get("adv_level") != adv["level"]:
+                p["adv_level"] = adv["level"]; changed = True
+    return msgs, changed, advice_map
 
 
-def build_status(ticker, data, market_open, stats=None):
+def build_status(ticker, data, market_open, stats=None, advice_map=None):
     pairs, notify = [], []
     blackout = in_blackout()
     now = datetime.datetime.now(JST)
@@ -522,7 +597,12 @@ def build_status(ticker, data, market_open, stats=None):
     open_pos, closed_pos = [], []
     for p in data.get("positions", []):
         if p.get("status","open") == "open" and p.get("symbol") in ticker:
-            open_pos.append(position_pl(p, ticker))
+            op = position_pl(p, ticker)
+            adv = (advice_map or {}).get(p.get("id"))
+            if adv:
+                op.update({"adv_level":adv["level"], "adv_label":adv["label"], "adv_reason":adv["reason"],
+                           "mfe":adv.get("mfe"), "profit_atr":adv.get("profit_atr")})
+            open_pos.append(op)
         elif p.get("status") == "closed":
             closed_pos.append({k:p.get(k) for k in
                 ("id","symbol","side","entry","close_price","close_pips","close_yen","close_reason","closed_at")})
@@ -576,12 +656,13 @@ def main():
     ticker = fetch_ticker()
     data = load_positions()
     prev_stats = load_prev_stats()
+    prev_adv = load_prev_adv()
     stats = gather_stats(prev_stats)
     m1, c1 = auto_set_levels(data)
-    m2, c2 = check_positions(data, ticker)
+    m2, c2, advice_map = check_positions(data, ticker, prev_adv)
     if c1 or c2:
         save_positions(data)
-    notify = build_status(ticker, data, market_open, stats)
+    notify = build_status(ticker, data, market_open, stats, advice_map)
     msgs = m1 + m2 + notify
 
     if not market_open:

@@ -249,6 +249,44 @@ function computeOpen(){return(POS.positions||[]).filter(p=>(p.status||'open')===
   if(q){const c2=side==='long'?q.bid:q.ask,diff=side==='long'?(c2-entry):(entry-c2);cur=+c2.toFixed(3);pp=+(diff/PS).toFixed(1);yy=Math.round(diff*lot);}
   const[tp,sl]=tpsl(p);return{id:p.id,symbol:p.symbol,side,entry,lot,current:cur,pips:pp,yen:yy,
     tp_price:tp!=null?+tp.toFixed(3):null,sl_price:sl!=null?+sl.toFixed(3):null};});}
+
+/* ---------- 保有ポジションの利確/損切り判定（建値ベース・シグナル監視） ---------- */
+const ADV_OPP=0.25, ADV_SUPP=0.15, ADV_DECAY=0.10, TRAIL_ATR=1.0, PROFIT_ATR=1.0, ADX_WEAK=20.0;
+function pairSig(sym){return (S.pairs||[]).find(x=>x.symbol===sym);}
+function loadMfe(){try{return JSON.parse(localStorage.getItem('fxnavi_mfe'))||{}}catch(e){return{}}}
+function saveMfe(o){try{localStorage.setItem('fxnavi_mfe',JSON.stringify(o));}catch(e){}}
+function posAdvice(p){
+  const ps=pairSig(p.symbol); if(!ps||p.current==null)return null;
+  const dir=p.side==='long'?1:-1, a=ps.atr||0, score=(ps.score!=null?ps.score:0), rsi=(ps.rsi!=null?ps.rsi:50), adx=(ps.adx!=null?ps.adx:0);
+  const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=score*dir;
+  const m=loadMfe(); let mfe=m[p.id]; mfe=(mfe==null)?p.entry:(p.side==='long'?Math.max(mfe,p.current):Math.min(mfe,p.current)); m[p.id]=+mfe.toFixed(3); saveMfe(m);
+  const retrace=(p.side==='long'?(mfe-p.current):(p.current-mfe)), retraceAtr=a?retrace/a:0;
+  const rsiAgainst=(p.side==='long'&&rsi>=70)||(p.side==='short'&&rsi<=30);
+  const hitTp=p.tp_price!=null&&((p.side==='long'&&p.current>=p.tp_price)||(p.side==='short'&&p.current<=p.tp_price));
+  const hitSl=p.sl_price!=null&&((p.side==='long'&&p.current<=p.sl_price)||(p.side==='short'&&p.current>=p.sl_price));
+  const sTxt=(score>=0?'+':'')+score.toFixed(2);
+  let level,label,reason;
+  if(hitSl){level='cut';label='🛑 損切り推奨';reason='SL到達';}
+  else if(aligned<=-ADV_OPP&&profit<=0){level='cut';label='🛑 損切り推奨';reason=`逆シグナル(スコア${sTxt})で含み損`;}
+  else if(hitTp){level='take';label='🎯 利確推奨';reason='TP到達';}
+  else if(profitAtr>=PROFIT_ATR&&retraceAtr>=TRAIL_ATR){level='take';label='🎯 利確推奨';reason=`高値から${retraceAtr.toFixed(1)}ATR押し戻し（トレール）`;}
+  else if(profit>0&&aligned<=-ADV_OPP){level='take';label='🎯 利確推奨';reason=`利益中に逆シグナル(スコア${sTxt})`;}
+  else if(profit>0&&(Math.abs(score)<ADV_DECAY||rsiAgainst||adx<ADX_WEAK)){level='watch';label='🟡 利確検討';reason=Math.abs(score)<ADV_DECAY?'勢い減衰':(rsiAgainst?'RSI過熱':'ADX低下');}
+  else if(aligned>=ADV_SUPP){level='hold';label='🟢 ホールド';reason=`シグナル順方向(スコア${sTxt})`;}
+  else{level='watch';label='🟡 様子見';reason='明確なサインなし'}
+  return {level,label,reason,cls:(level==='cut'?'down':(level==='take'||level==='hold')?'up':'')};
+}
+function checkPosNotify(){
+  let adv0;try{adv0=JSON.parse(localStorage.getItem('fxnavi_pos_adv'))||{}}catch(e){adv0={}}
+  let ch=false;
+  computeOpen().forEach(p=>{const a=posAdvice(p);if(!a)return;
+    if((a.level==='take'||a.level==='cut')&&adv0[p.id]!==a.level){
+      notifyLive(`${a.label} ${p.symbol.replace('_','/')}（${p.side==='long'?'買い':'売り'}）\n${a.reason}\n建値${p.entry} → 現在${p.current} / ${pips(p.pips)} / ${yen(p.yen)}\n※GMOで決済後アプリに結果を登録`);
+      adv0[p.id]=a.level;ch=true;
+    }else if(a.level!=='take'&&a.level!=='cut'&&(adv0[p.id]==='take'||adv0[p.id]==='cut')){adv0[p.id]=a.level;ch=true;}
+  });
+  if(ch){try{localStorage.setItem('fxnavi_pos_adv',JSON.stringify(adv0))}catch(e){}}
+}
 function spark(c,ss,ll){const W=300,H=64,pad=4;const all=[...c,...ss.filter(v=>v!=null),...ll.filter(v=>v!=null)];
   const mn=Math.min(...all),mx=Math.max(...all),rng=(mx-mn)||1;const X=i=>pad+i*(W-2*pad)/(c.length-1),Y=v=>pad+(H-2*pad)*(1-(v-mn)/rng);
   const line=(a,col,w)=>{let d='',st=false;a.forEach((v,i)=>{if(v==null){st=false;return;}d+=(st?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';st=true;});
@@ -286,9 +324,11 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
     bar=`<div class="range"><div class="track"></div><div class="mark" style="left:calc(${pos}% - 1.5px);background:${p.pips>=0?'var(--up)':'var(--down)'}"></div>
       <span class="rlabel" style="left:0">${L}</span><span class="rlabel" style="right:0">${R}</span></div>`;}
   else if(p.current!=null){bar=`<div class="reasons">TP/SL未設定（autoは次回Action実行で自動設定）</div>`;}
+  const adv=posAdvice(p);
+  const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}</div></div>`:'';
   return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span><span class="tag">建値 ${p.entry}</span></div>
     <div class="row" style="margin-top:10px"><span class="pnl ${cls}">${yen(p.yen)}</span><span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span></div>
-    ${bar}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
+    ${bar}${advBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
     <div class="pact"><button class="btn sm" onclick="toggleClose('${p.id}')">決済</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
 function render(){
@@ -382,6 +422,7 @@ async function liveSignals(){
     }
     saveNotified(notified);
     render();
+    checkPosNotify();
     $('#live').innerHTML='<span class="badge open">● LIVE計算 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }finally{LIVE_CALC_BUSY=false;}
 }
