@@ -9,36 +9,128 @@ function addTrade(){
   const t=loadTrades(); t.push({pair:$('#jp').value,side:$('#js').value,yen:y,ts:Date.now()}); saveTrades(t); $('#jy').value=''; renderJournal();
 }
 function importPaste(){
-  const nums=($('#jpaste').value.match(/-?\d[\d,]*/g)||[]).map(s=>parseFloat(s.replace(/,/g,''))).filter(n=>!isNaN(n));
-  if(!nums.length){alert('数字が見つかりません');return;}
-  const t=loadTrades(); nums.forEach(n=>t.push({pair:$('#jp').value,side:'-',yen:n,ts:Date.now()})); saveTrades(t);
-  $('#jpaste').value=''; $('#pastebox').style.display='none'; renderJournal();
+  const lines=$('#jpaste').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const t=loadTrades(); let added=0;
+  for(const ln of lines){
+    const pm=ln.match(PAIR_RE); const pair=pm?(pm[1].toUpperCase()+'/JPY'):$('#jp').value;
+    let side; if(/売り|売/.test(ln))side='売り'; else if(/買い|買/.test(ln))side='買い'; else side=$('#js').value;
+    const cleaned=ln.replace(PAIR_RE,' ').replace(/\d{1,4}\.\d+/g,' ');
+    const nm=cleaned.match(/-?\d{1,3}(?:,\d{3})+|-?\d+/);
+    if(!nm)continue; const y=parseInt(nm[0].replace(/,/g,''),10); if(isNaN(y))continue;
+    t.push({pair,side,yen:y,ts:Date.now()}); added++;
+  }
+  if(!added){alert('数字が見つかりません');return;}
+  saveTrades(t); $('#jpaste').value=''; $('#pastebox').style.display='none'; renderJournal();
 }
 function clearTrades(){if(confirm('記録を全削除しますか？')){saveTrades([]);renderJournal();}}
-/* ===== スクショ取込（ブラウザ内OCR：Tesseract.js） ===== */
-async function ocrImport(file){
-  if(!file)return;
-  const msg=$('#ocrmsg');
-  msg.innerHTML='画像を解析中…（初回はOCR辞書のDLで数十秒かかることがあります）';
+/* ===== 取込方式：CSV / iPhone文字貼付 / アプリ決済 ===== */
+const PAIR_RE=/(USD|EUR|GBP|AUD|NZD|CAD|CHF|TRY|ZAR|MXN|HUF|SEK)\/?JPY/i;
+function _intTok(t){t=(t||'').replace(/[^\d,+-]/g,'');if(/^[+-]?\d{1,3}(,\d{3})+$/.test(t)||/^[+-]?\d+$/.test(t))return parseInt(t.replace(/,/g,''),10);return NaN;}
+function toggleBox(id){const el=document.getElementById(id);el.style.display=(el.style.display==='none'||!el.style.display)?'block':'none';}
+
+/* ---- A. CSV取込（Shift_JIS自動判定・列マッピング） ---- */
+let CSV_ROWS=null,CSV_HEAD=null;
+function readCSVFile(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const buf=r.result;let txt='';
+  try{txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);}catch(e){}
+  if(!txt||(txt.match(/\uFFFD/g)||[]).length>3){try{txt=new TextDecoder('shift_jis').decode(buf);}catch(e){}}
+  res(txt);};r.onerror=()=>rej(new Error('読込失敗'));r.readAsArrayBuffer(file);});}
+function parseCSV(text){
+  text=(text||'').replace(/^\uFEFF/,'');
+  const rows=[];let i=0,f='',row=[],q=false;
+  while(i<text.length){const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else { if(c==='"')q=true; else if(c===','){row.push(f);f='';} else if(c==='\n'){row.push(f);rows.push(row);row=[];f='';} else if(c!=='\r')f+=c; }
+    i++;
+  }
+  if(f.length||row.length){row.push(f);rows.push(row);}
+  return rows.filter(r=>r.some(x=>(x||'').trim()!==''));
+}
+function guessCol(head,keys){for(const k of keys){const i=head.findIndex(h=>h&&h.indexOf(k)>=0);if(i>=0)return i;}return -1;}
+function csvIngest(txt){
+  const msg=$('#impmsg');
+  const rows=parseCSV(txt);
+  if(rows.length<2){msg.innerHTML='<span class="warn">データ行が見つかりません（1行目=見出し、2行目以降=データ）。</span>';return;}
+  CSV_HEAD=rows[0].map(s=>(s||'').trim());CSV_ROWS=rows.slice(1);
+  const opts=CSV_HEAD.map((h,i)=>`<option value="${i}">${(h||('列'+(i+1))).slice(0,16)}</option>`).join('');
+  ['cPnl','cPair','cSide'].forEach(id=>{$('#'+id).innerHTML='<option value="-1">（なし）</option>'+opts;});
+  $('#cPnl').value=guessCol(CSV_HEAD,['決済損益','実現損益','約定損益','売買損益','損益']);
+  $('#cPair').value=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
+  $('#cSide').value=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
+  $('#csvmap').style.display='block';$('#csvpastebox').style.display='none';
+  msg.innerHTML=`<span class="good">${CSV_ROWS.length}行を読込。列を確認して「この設定で取り込む」を押してください。</span>`;
+}
+async function csvLoad(file){
+  if(!file)return;const msg=$('#impmsg');msg.textContent='CSV読込中…';
+  try{ const txt=await readCSVFile(file); csvIngest(txt); }
+  catch(e){msg.innerHTML='<span class="warn">CSV読込失敗: '+e.message+'</span>';}
+  finally{const f=$('#csvfile');if(f)f.value='';}
+}
+function csvPaste(){
+  const txt=$('#csvpaste').value||'';
+  if(!txt.trim()){alert('CSVの中身を貼り付けてください');return;}
+  try{ csvIngest(txt); }catch(e){$('#impmsg').innerHTML='<span class="warn">読込失敗: '+e.message+'</span>';}
+}
+function numFromCell(s){if(s==null)return NaN;let m=(''+s).replace(/[▲△]/g,'-').replace(/[^\d.,+-]/g,'').replace(/,/g,'');if(!m||m==='-'||m==='+'||m==='.')return NaN;const v=parseFloat(m);return isNaN(v)?NaN:Math.round(v);}
+function csvImport(){
+  if(!CSV_ROWS){alert('先にCSVを読み込んでください');return;}
+  const pi=+$('#cPnl').value,ai=+$('#cPair').value,si=+$('#cSide').value,inv=$('#cInvert').checked;
+  if(pi<0){alert('損益の列を選んでください');return;}
+  const t=loadTrades();let added=0;
+  for(const r of CSV_ROWS){
+    const y=numFromCell(r[pi]); if(isNaN(y)||y===0)continue;
+    let pair=$('#jp').value; if(ai>=0&&r[ai]){const pm=(''+r[ai]).toUpperCase().match(PAIR_RE);pair=pm?(pm[1]+'/JPY'):(''+r[ai]).trim();}
+    let side='-'; if(si>=0&&r[si]){const sv=''+r[si];let s=/売/.test(sv)?'売り':(/買/.test(sv)?'買い':'-');if(inv&&s!=='-')s=(s==='売り'?'買い':'売り');side=s;}
+    t.push({pair,side,yen:y,ts:Date.now()});added++;
+  }
+  if(!added){alert('損益のある行が見つかりません。列の選択をご確認ください。');return;}
+  saveTrades(t);$('#csvmap').style.display='none';CSV_ROWS=null;$('#impmsg').innerHTML=`<span class="good">${added}件を取り込みました。</span>`;renderJournal();
+}
+
+/* ---- B. iPhone標準OCRの文字を貼付 → 決済行を解析 ---- */
+function iosParse(){
+  const text=$('#iospaste').value||'';
+  if(!text.trim()){alert('コピーした文字を貼り付けてください');return;}
+  const toks=text.split(/\s+/).filter(Boolean);
+  const idx=[];toks.forEach((t,i)=>{if(PAIR_RE.test(t))idx.push(i);});
+  const lines=[];
+  for(let k=0;k<idx.length;k++){
+    const a=idx[k],b=(k+1<idx.length?idx[k+1]:toks.length);const cell=toks.slice(a,b);
+    if(!cell.some(t=>/決|済/.test(t)))continue;                 // 決済のみ
+    const sell=cell.some(t=>/売/.test(t)),buy=cell.some(t=>/買/.test(t));
+    const held=sell?'買い':(buy?'売り':'-');
+    const ints=cell.filter(t=>!/\d{2}\/\d{2}\/\d{2}/.test(t)&&!/\d{1,2}:\d{2}/.test(t)&&!/\./.test(t)).map(_intTok).filter(v=>!isNaN(v)&&v!==0&&Math.abs(v)<100000);
+    if(!ints.length)continue;
+    const pm=toks[a].toUpperCase().match(PAIR_RE);
+    lines.push(`${pm?pm[1]+'/JPY':'USD/JPY'} ${held} ${ints[0]}`);
+  }
+  if(!lines.length){$('#impmsg').innerHTML='<span class="warn">決済が見つかりませんでした。コピー範囲に「決済」行が含まれているかご確認ください。</span>';return;}
+  $('#pastebox').style.display='block';$('#jpaste').value=lines.join('\n');$('#iosbox').style.display='none';
+  $('#impmsg').innerHTML=`<span class="good">${lines.length}件の決済を抽出。</span> サイドと−符号を確認して「取り込む」を押してください。`;
+}
+
+/* ---- C. アプリの決済履歴（status.json / positions.json）から自動取込 ---- */
+async function appSync(){
+  const msg=$('#impmsg');msg.textContent='アプリの決済履歴を取得中…';
   try{
-    if(!window.Tesseract){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=()=>rej(new Error('OCRライブラリの読込に失敗（通信環境をご確認ください）'));document.head.appendChild(s);});}
-    const {data}=await Tesseract.recognize(file,'eng',{logger:m=>{if(m.status==='recognizing text')msg.textContent='解析中… '+Math.round((m.progress||0)*100)+'%';}});
-    const text=data.text||'';
-    // 価格(小数)・日付・時刻を除去 → 残りの整数(=損益)を抽出
-    const cleaned=text.replace(/\d{1,4}\.\d+/g,' ').replace(/\d{2}\/\d{2}\/\d{2}/g,' ').replace(/\d{1,2}:\d{2}/g,' ');
-    const ints=(cleaned.match(/[+-]?\d{1,3}(?:,\d{3})+|[+-]?\d+/g)||[])
-      .map(s=>parseInt(s.replace(/,/g,''),10))
-      .filter(v=>!isNaN(v)&&v!==0&&Math.abs(v)<100000);
-    // ペア自動判定（最頻出の通貨）
-    const pc={};['USD','EUR','GBP','AUD'].forEach(k=>pc[k]=(text.match(new RegExp(k,'g'))||[]).length);
-    const top=Object.entries(pc).sort((a,b)=>b[1]-a[1])[0];
-    if(top&&top[1]>0){const opt=Array.from($('#jp').options).find(o=>o.value.indexOf(top[0])===0);if(opt)$('#jp').value=opt.value;}
-    if(!ints.length){msg.innerHTML='<span class="warn">損益らしき数字を検出できませんでした。履歴部分だけをトリミングした鮮明なスクショで再試行するか、手入力してください。</span>';return;}
-    $('#pastebox').style.display='block';
-    $('#jpaste').value=ints.join('\n');
-    msg.innerHTML=`<span class="good">${ints.length}件の損益候補を抽出（ペア: ${$('#jp').value}）。</span> 内容を確認・修正して「取り込む」を押してください。<b>赤字(損切り)は数字の前に「−」が付いているか必ず確認</b>してください（OCRはマイナス符号を取りこぼすことがあります）。`;
-  }catch(e){msg.innerHTML='<span class="warn">解析失敗: '+e.message+'</span>';}
-  finally{const f=$('#ocrfile');if(f)f.value='';}
+    let cp=[];
+    for(const u of ['./status.json','./positions.json']){
+      try{const r=await fetch(u+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)continue;const j=await r.json();
+        if(Array.isArray(j.closed_positions))cp=cp.concat(j.closed_positions);
+        if(Array.isArray(j.positions))cp=cp.concat(j.positions.filter(p=>p&&p.status==='closed'));
+      }catch(e){}
+    }
+    if(!cp.length){msg.innerHTML='<span class="warn">アプリ側に決済履歴がありませんでした。ダッシュボードで「決済」を記録すると貯まります。</span>';return;}
+    const t=loadTrades();const have=new Set(t.map(x=>x.srcId).filter(Boolean));let added=0;
+    for(const p of cp){
+      const yen=Math.round(+(p.close_yen!=null?p.close_yen:(p.yen!=null?p.yen:NaN)));if(isNaN(yen)||yen===0)continue;
+      const id=String(p.id||(((p.symbol||'')+'|'+(p.closed_at||p.close_at||'')+'|'+yen)));if(have.has(id))continue;
+      const pair=(p.symbol||p.pair||'').replace('_','/');
+      const side=p.side==='long'?'買い':(p.side==='short'?'売り':(p.side==='買い'||p.side==='売り'?p.side:'-'));
+      t.push({pair,side,yen,ts:Date.now(),srcId:id});have.add(id);added++;
+    }
+    if(!added){msg.innerHTML='<span class="good">新しい決済はありませんでした（取込済み）。</span>';return;}
+    saveTrades(t);msg.innerHTML=`<span class="good">${added}件をアプリから取り込みました。</span>`;renderJournal();
+  }catch(e){msg.innerHTML='<span class="warn">取得失敗: '+e.message+'</span>';}
 }
 function delTrade(i){const t=loadTrades();t.splice(i,1);saveTrades(t);renderJournal();}
 function renderJournal(){
@@ -68,7 +160,8 @@ function renderJournal(){
     const nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
     return `<tr><td>${p}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">記録なし</td></tr>';
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
-    return `<div><span>${x.pair} ${x.side}</span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
+    const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
+    return `<div><span>${x.pair} ${sd}</span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
 }
 /* ============ ② リスク/ロット計算 ============ */
 function loadRisk(){try{return JSON.parse(localStorage.getItem('fxnavi_risk'))||{cap:10000,rpct:2,units:1000}}catch(e){return{cap:10000,rpct:2,units:1000}}}
