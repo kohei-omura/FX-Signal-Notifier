@@ -30,6 +30,12 @@ FUND_BIAS = {"USD_JPY":0.5, "EUR_JPY":0.4, "GBP_JPY":0.5, "AUD_JPY":0.4}
 SL_ATR_MULT = 1.0
 TP_SL_RATIO = 1.5
 
+# ===== 通知の宛先ルーティング（LINEの無料枠節約）=====
+# エントリーシグナルはLINEに送らず、メール＋ダッシュボードに残す（既定）。
+# LINEは「保有中の利確/損切りサイン」など“今すぐ判断が要る通知”だけに絞る。
+NOTIFY_ENTRY_TO_LINE = False
+NOTIFY_ENTRY_TO_MAIL = True
+
 VALID_BARS = 3
 MAX_CHASE_RATIO = 0.5
 
@@ -492,6 +498,21 @@ def position_advice(p, ticker, sc, prev_mfe=None):
             "profit_atr": round(profit_atr, 2), "retrace_atr": round(retrace_atr, 2), "mfe": round(mfe, 3)}
 
 
+def load_prev_signals():
+    """前回 status.json の pairs から各通貨の signal を読む（同じシグナルの再通知＝送りすぎを防ぐ）。"""
+    out = {}
+    if not os.path.exists(STATUS_FILE):
+        return out
+    try:
+        prev = json.load(open(STATUS_FILE, encoding="utf-8"))
+        for pr in prev.get("pairs", []):
+            if pr.get("symbol"):
+                out[pr["symbol"]] = pr.get("signal")
+    except Exception:
+        pass
+    return out
+
+
 def load_prev_state():
     """前回 status.json の open_positions から判定レベルとMFEを読む
        （MFE/判定はstatus.jsonに保存＝positions.jsonを毎回書き換えないことで競合を防ぐ）。"""
@@ -536,7 +557,7 @@ def check_positions(data, ticker, prev_state=None):
     return msgs, advice_map
 
 
-def build_status(ticker, data, market_open, stats=None, advice_map=None):
+def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_signals=None):
     pairs, notify = [], []
     blackout = in_blackout()
     now = datetime.datetime.now(JST)
@@ -576,7 +597,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None):
                          "stats_ts":st.get("stats_ts"), "stats_mode":st.get("stats_mode")})
         pairs.append(pair)
 
-        if market_open and sig and entry:
+        if market_open and sig and entry and sig != (prev_signals or {}).get(sym):
             rtxt = " / ".join(sc["reasons"])
             arrow = "以下" if sig == "買い" else "以上"
             stat_txt = ""
@@ -655,21 +676,28 @@ def main():
     data = load_positions()
     prev_stats = load_prev_stats()
     prev_state = load_prev_state()
+    prev_signals = load_prev_signals()
     stats = gather_stats(prev_stats)
     m1, c1 = auto_set_levels(data)
     m2, advice_map = check_positions(data, ticker, prev_state)
     if c1:  # positions.jsonの書込はauto_set（新規autoのTP/SL設定）時のみ＝競合を最小化
         save_positions(data)
-    notify = build_status(ticker, data, market_open, stats, advice_map)
-    msgs = m1 + m2 + notify
+    notify = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
+    # m1=推奨レベル設定（情報）, m2=保有中の利確/損切りサイン（要判断）, notify=エントリーシグナル
+    line_parts = list(m2) + (list(notify) if NOTIFY_ENTRY_TO_LINE else [])
+    mail_parts = list(m1) + list(m2) + (list(notify) if NOTIFY_ENTRY_TO_MAIL else [])
 
     if not market_open:
         print(f"[INFO] {now_str} 市場クローズ（エントリー判定スキップ）")
-    if not msgs:
+    if not (line_parts or mail_parts):
         print(f"[INFO] {now_str} 通知なし（mode={MODE}）。"); return
-    body = (f"📊 FX通知 [{MODE}]\n時刻: {now_str}\n\n" + "\n\n".join(msgs)
-            + "\n\n※スコアは目安です。最適値の保証ではなく自己責任で。")
-    print(body); notify_line(body); notify_mail(f"【FX/{MODE}】シグナル通知", body)
+    head = f"📊 FX通知 [{MODE}]\n時刻: {now_str}\n\n"
+    tail = "\n\n※スコアは目安です。最適値の保証ではなく自己責任で。"
+    if line_parts:
+        print("[LINE]\n" + "\n\n".join(line_parts))
+        notify_line(head + "\n\n".join(line_parts) + tail)
+    if mail_parts:
+        notify_mail(f"【FX/{MODE}】シグナル通知", head + "\n\n".join(mail_parts) + tail)
 
 
 if __name__ == "__main__":
