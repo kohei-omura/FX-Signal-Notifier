@@ -310,13 +310,38 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     entryBox=`<div class="entry ${vc}"><div class="ev">${v}</div>
       <div class="er">通知価格 <b>${p.entry_ref}</b> ／ 追い${lab} <b>${p.entry_limit}</b> ／ 期限 <b>${p.valid_until||'-'}</b>${cur!=null?' ／ 現在 <b>'+cur.toFixed(3)+'</b>':''}</div></div>`;
   }
+  // ライブ追撃可否（今この瞬間に追撃して良いか）
+  let chaseBadge='';
+  if(p.signal){
+    const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
+    let invalid=false;
+    if(p.valid_until_ts && now>p.valid_until_ts) invalid=true;
+    else if(cur!=null && p.signal==='買い' && p.entry_limit!=null && cur>p.entry_limit) invalid=true;
+    else if(cur!=null && p.signal==='売り' && p.entry_limit!=null && cur<p.entry_limit) invalid=true;
+    const adx=p.adx!=null?p.adx:0, rsi=p.rsi!=null?p.rsi:50;
+    const overheat=(p.signal==='買い'&&rsi>=70)||(p.signal==='売り'&&rsi<=30);
+    let badge,bc,note;
+    if(invalid){badge='⛔ 追撃見送り';bc='down';note='動きすぎ／期限切れ';}
+    else if(adx<20||overheat){badge='🟡 追撃は慎重';bc='';note=adx<20?'勢い弱め（ADX&lt;20）':'RSI過熱';}
+    else{badge='🟢 追撃可';bc='up';note='勢いあり（ADX '+fmt(p.adx)+'）';}
+    const aim=st&&st.chase?(st.chase.maxNo>=4?' ／ 目安 4本目以降':st.chase.maxNo>=1?' ／ 目安 '+st.chase.maxNo+'本目まで':' ／ 過去は追撃非推奨'):'';
+    chaseBadge=`<div class="entry ${bc}"><div class="ev">${badge}</div><div class="er">${note}${aim}</div></div>`;
+  }
+  // 回数別の追撃勝率（過去データ）
+  let chaseBox='';
+  if(st&&st.chase){const ch=st.chase;
+    const cells=ch.list.map(it=>`${it.no>=4?'4本目〜':it.no+'本目'} <b>${it.winRate}%</b><span style="opacity:.55;font-size:11px">(${it.n})</span>`).join(' ／ ');
+    const rec=ch.maxNo>=4?'4本目以降も分岐点超え':ch.maxNo>=1?`${ch.maxNo}本目まで`:'追撃は非推奨（1本目から分岐点未満）';
+    const lowN=ch.list.some(it=>it.n<10);
+    chaseBox=`<div class="entry"><div class="er">🔁 追撃の目安（過去データ）: <b>${rec}</b>（分岐点 ${ch.be}%）<br>回数別TP勝率 — ${cells}${lowN?'<br><span style="color:var(--gold);font-size:11px">※( )内は試行回数。少ない回数は参考程度に</span>':''}</div></div>`;
+  }
   return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
     <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip">ADX <b>${fmt(p.adx)}</b></span>
-    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${statBox}${entryBox}</div>`;}
+    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${statBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
@@ -441,8 +466,11 @@ function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.m
   const slp=a*SL_ATR_MULT/PS_,tpp=slp*TP_SL_RATIO,side=total>=P.th?'買い':(total<=-P.th?'売り':null);
   return side?{side,slp,tpp}:null;}
 function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
-function simStats(sym,oh,P,barMin){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;let i=warm;const wins=[],losses=[];
-  while(i<oh.length-1){const e=evalAt(sym,oh.slice(0,i+1),P);if(!e){i++;continue;}
+function precomputeSides(sym,oh,P,warm){const sides=new Array(oh.length).fill(null);
+  for(let i=warm;i<oh.length;i++){sides[i]=evalAt(sym,oh.slice(0,i+1),P);}return sides;}
+function simStats(sym,oh,P,barMin,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+  if(!sides)sides=precomputeSides(sym,oh,P,warm);let i=warm;const wins=[],losses=[];
+  while(i<oh.length-1){const e=sides[i];if(!e){i++;continue;}
     const entry=oh[i][2],tp=e.side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=e.side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
     let res=null,xj=null;for(let j=i+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
       if(e.side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
@@ -451,6 +479,24 @@ function simStats(sym,oh,P,barMin){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2
   const n=wins.length+losses.length;if(n<8)return null;
   const tm=median(wins),sm=median(losses);
   return{n,winRate:Math.round(wins.length/n*100),tpMin:tm!=null?tm*barMin:null,slMin:sm!=null?sm*barMin:null,ts:Date.now()};}
+// 追撃集計：シグナルが同方向で継続している間、決済→再エントリーを繰り返した場合の「N本目」の勝率
+function simChase(sym,oh,P,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+  if(!sides)sides=precomputeSides(sym,oh,P,warm);const rec={};let i=warm;
+  while(i<oh.length-1){const e0=sides[i];if(!e0){i++;continue;}
+    const side=e0.side;let entryNo=1,pos=i;
+    while(pos<oh.length-1){const e=sides[pos];if(!e||e.side!==side)break;
+      const entry=oh[pos][2],tp=side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
+      let res=null,xj=null;for(let j=pos+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
+        if(side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
+        else{if(h>=sl){res='sl';xj=j;break;}if(l<=tp){res='tp';xj=j;break;}}}
+      if(res==null)break;const k=Math.min(entryNo,4);if(!rec[k])rec[k]=[0,0];rec[k][1]++;if(res==='tp')rec[k][0]++;
+      entryNo++;pos=xj;}
+    let k2=i;while(k2<oh.length&&sides[k2]&&sides[k2].side===side)k2++;i=k2>i?k2:i+1;}
+  const list=[];for(let no=1;no<=4;no++){if(rec[no]){const w=rec[no][0],n=rec[no][1];list.push({no,n,winRate:Math.round(w/n*100)});}}
+  if(!list.length)return null;
+  const be=Math.round(100/(1+TP_SL_RATIO));let maxNo=0;
+  for(const it of list){if(it.no===maxNo+1&&it.winRate>=be+5&&it.n>=10)maxNo=it.no;else break;}
+  return{list,maxNo,be};}
 async function fetchHistStats(base,sym,interval,days){let rows={};for(let off=0;off>=-(days+1);off--){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${interval}&date=${jstYmd(off)}`;
   try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}}
   return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
@@ -462,7 +508,10 @@ async function refreshStats(force){
   try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
     const days=mode==='scalp'?3:7,cap=mode==='scalp'?1500:900,barMin=P.interval==='1min'?1:5;
     for(const sym of SYMS){let oh=await fetchHistStats(base,sym,P.interval,days);if(oh.length>cap)oh=oh.slice(-cap);
-      if(oh.length<120)continue;const st=simStats(sym,oh,P,barMin);if(st){st.mode=mode;STATS[mode+sym]=st;}
+      if(oh.length<120)continue;
+      const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5,sides=precomputeSides(sym,oh,P,warm);
+      const st=simStats(sym,oh,P,barMin,sides);const ch=simChase(sym,oh,P,sides);
+      if(st){st.mode=mode;if(ch)st.chase=ch;STATS[mode+sym]=st;}
       await new Promise(r=>setTimeout(r,0));}
     try{localStorage.setItem('fxnavi_stats',JSON.stringify(STATS));}catch(e){}
     render();
