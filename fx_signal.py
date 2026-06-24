@@ -445,8 +445,9 @@ def position_pl(p, ticker):
             "tp_price":round(tp_pr,3) if tp_pr else None, "sl_price":round(sl_pr,3) if sl_pr else None}
 
 
-def position_advice(p, ticker, sc):
-    """保有中の利確/損切り判定。p['mfe']（最高益価格）を更新し、推奨を返す。
+def position_advice(p, ticker, sc, prev_mfe=None):
+    """保有中の利確/損切り判定。最高益(MFE)は前回status.json由来の値から更新して返す
+       （positions.jsonは書き換えない＝アプリとのコミット競合を避ける）。
        未来予測ではなく、現在価格＋ライブシグナルから『降りるサインが出たか』を判定。"""
     sym = p.get("symbol"); side = p.get("side", "long")
     if sym not in ticker or not sc:
@@ -459,10 +460,9 @@ def position_advice(p, ticker, sc):
     profit = (cur - entry) * d
     profit_atr = (profit / a) if a else 0.0
     aligned = score * d
-    # 最高益(MFE)を更新
-    mfe = p.get("mfe")
+    # 最高益(MFE)を更新（保存先はstatus.json側）
+    mfe = prev_mfe
     mfe = (entry if mfe is None else (max(mfe, cur) if side == "long" else min(mfe, cur)))
-    p["mfe"] = round(mfe, 3)
     retrace = (mfe - cur) if side == "long" else (cur - mfe)
     retrace_atr = (retrace / a) if a else 0.0
     tp_pr, sl_pr = _tp_sl_prices(p)
@@ -492,39 +492,40 @@ def position_advice(p, ticker, sc):
             "profit_atr": round(profit_atr, 2), "retrace_atr": round(retrace_atr, 2), "mfe": round(mfe, 3)}
 
 
-def load_prev_adv():
-    """前回 status.json の open_positions から判定レベルを読む（positions.json未コミットでも重複通知を防ぐ保険）。"""
+def load_prev_state():
+    """前回 status.json の open_positions から判定レベルとMFEを読む
+       （MFE/判定はstatus.jsonに保存＝positions.jsonを毎回書き換えないことで競合を防ぐ）。"""
     out = {}
     if not os.path.exists(STATUS_FILE):
         return out
     try:
         prev = json.load(open(STATUS_FILE, encoding="utf-8"))
         for op in prev.get("open_positions", []):
-            if op.get("id") and op.get("adv_level"):
-                out[op["id"]] = op["adv_level"]
+            if op.get("id"):
+                out[op["id"]] = {"adv_level": op.get("adv_level"), "mfe": op.get("mfe")}
     except Exception:
         pass
     return out
 
 
-def check_positions(data, ticker, prev_adv=None):
-    prev_adv = prev_adv or {}
-    msgs, changed = [], False
+def check_positions(data, ticker, prev_state=None):
+    """保有ポジションを評価して通知メッセージと判定マップを返す。
+       MFE/判定はstatus.json側に保存するため、ここではpositions.jsonを書き換えない。"""
+    prev_state = prev_state or {}
+    msgs = []
     advice_map = {}
     for p in data.get("positions", []):
         if p.get("status", "open") != "open" or p.get("symbol") not in ticker:
             continue
         info = position_pl(p, ticker); side = info["side"]
-        old_mfe = p.get("mfe")
+        prev = prev_state.get(p.get("id"), {})
         sc = score_pair(p["symbol"], get_ohlc(p["symbol"]))
-        adv = position_advice(p, ticker, sc)
+        adv = position_advice(p, ticker, sc, prev.get("mfe"))
         print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} "
               f"{info['pips']:+}pips {info['yen']:+,}円" + (f" [{adv['label']} {adv['reason']}]" if adv else ""))
-        if p.get("mfe") != old_mfe:
-            changed = True
         if adv:
             advice_map[p.get("id")] = adv
-            prev_level = p.get("adv_level") or prev_adv.get(p.get("id"))
+            prev_level = prev.get("adv_level")
             if adv["level"] in ("take", "cut") and prev_level != adv["level"]:
                 kind = "利確" if adv["level"] == "take" else "損切り"
                 mark = "🎯" if adv["level"] == "take" else "🛑"
@@ -532,10 +533,7 @@ def check_positions(data, ticker, prev_adv=None):
                             f"  {adv['label']} — {adv['reason']}\n"
                             f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円\n"
                             f"  ※GMOで決済後、アプリに実際の結果を登録してください")
-                p["adv_level"] = adv["level"]; changed = True
-            elif p.get("adv_level") != adv["level"]:
-                p["adv_level"] = adv["level"]; changed = True
-    return msgs, changed, advice_map
+    return msgs, advice_map
 
 
 def build_status(ticker, data, market_open, stats=None, advice_map=None):
@@ -656,11 +654,11 @@ def main():
     ticker = fetch_ticker()
     data = load_positions()
     prev_stats = load_prev_stats()
-    prev_adv = load_prev_adv()
+    prev_state = load_prev_state()
     stats = gather_stats(prev_stats)
     m1, c1 = auto_set_levels(data)
-    m2, c2, advice_map = check_positions(data, ticker, prev_adv)
-    if c1 or c2:
+    m2, advice_map = check_positions(data, ticker, prev_state)
+    if c1:  # positions.jsonの書込はauto_set（新規autoのTP/SL設定）時のみ＝競合を最小化
         save_positions(data)
     notify = build_status(ticker, data, market_open, stats, advice_map)
     msgs = m1 + m2 + notify
