@@ -42,13 +42,23 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add positions.json status.json
+          git add status.json positions.json
           if git diff --staged --quiet; then echo "no changes"; exit 0; fi
           git commit -m "auto: update state [skip ci]"
-          # push失敗(他runとの競合等)に備えrebase＆リトライ
+          # 通知は前ステップで送信済み。状態保存(status.json)が競合しても“失敗にしない”。
+          # 競合時はアプリ側(リモートのpositions.json=追加/決済)を優先し、今回の保存は見送る（次回再生成）。
           for i in 1 2 3; do
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" \
-              && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            git fetch origin "${GITHUB_REF_NAME}"
+            # rebaseでは -X ours = 取り込み先(リモート)側を優先＝アプリの編集を保護
+            if git rebase -X ours "origin/${GITHUB_REF_NAME}"; then
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+                echo "pushed"; exit 0
+              fi
+            else
+              git rebase --abort 2>/dev/null || true
+              git reset --hard "origin/${GITHUB_REF_NAME}"
+              echo "conflict: skip state save this cycle (regenerates next run)"; exit 0
+            fi
             echo "push retry $i"; sleep 4
           done
-          echo "push failed after retries"; exit 1
+          echo "push contended; skip this cycle"; exit 0
