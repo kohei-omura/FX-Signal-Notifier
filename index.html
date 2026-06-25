@@ -595,14 +595,21 @@ async function load(){try{
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
   }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
 async function applyLive(){if(!LIVE_PRICE_URL)return;try{
-  const sep=LIVE_PRICE_URL.includes('?')?'&':'?';const r=await fetch(LIVE_PRICE_URL+sep+'t='+Date.now(),{cache:'no-store'});
-  const j=await r.json(),arr=j.data||j;if(Array.isArray(arr))arr.forEach(d=>PRICE[d.symbol]={bid:parseFloat(d.bid),ask:parseFloat(d.ask)});else Object.assign(PRICE,arr);
+  const base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  const url=base+'?path='+encodeURIComponent('/public/v1/ticker')+'&t='+Date.now();
+  const r=await fetch(url,{cache:'no-store'});
+  const j=await r.json(),arr=(j&&j.data)?j.data:(Array.isArray(j)?j:[]);
+  if(Array.isArray(arr))arr.forEach(d=>{if(d&&d.symbol&&!isNaN(parseFloat(d.bid)))PRICE[d.symbol]={bid:parseFloat(d.bid),ask:parseFloat(d.ask!=null?d.ask:d.bid)};});
   (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
 loadRisk();{const _c=$('#r_cap');if(_c)_c.value=RISK.cap;const _r=$('#r_risk');if(_r)_r.value=RISK.risk;const _m=$('#r_lev');if(_m)_m.value=RISK.lev;}
 load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);setInterval(()=>refreshStats(),1800000);}
-if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
+if('serviceWorker'in navigator){
+  let _refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(_refreshing)return;_refreshing=true;location.reload();});
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').then(reg=>{try{reg.update();}catch(e){}}).catch(()=>{}));
+}
 </script>
 <a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
 </body>
