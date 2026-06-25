@@ -688,11 +688,13 @@ def get_selected_mode():
 
 
 def main():
-    global MODE, P
+    global MODE, P, TECH_W, FUND_W
     sel = get_selected_mode()
     if sel != MODE:
         print(f"[INFO] モード切替: {MODE} → {sel}（mode.jsonの選択を反映）")
     MODE = sel; P = PARAMS.get(MODE, PARAMS["scalp"])
+    # スタイル別 テク:ファンダ 比率（短期=テク重視 / スイング=ファンダ重視）
+    TECH_W, FUND_W = (0.45, 0.55) if MODE == "swing" else (0.85, 0.15)
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     if os.environ.get("TEST_NOTIFY", "").lower() == "true":
         m = f"✅ テスト通知\n時刻: {now_str}\nLINEとメールの疎通確認です。"
