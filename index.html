@@ -112,10 +112,16 @@
       <div id="status" style="margin-top:4px"><span class="badge closed">— —</span></div>
       <div id="updated" style="margin-top:4px"></div>
       <div id="live" style="margin-top:4px"></div>
+      <div id="modesw" style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"></div>
     </div>
   </header>
 
   <h2>ペア別シグナル</h2>
+  <div id="riskbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--mut)">
+    <span>💴 資金</span><input id="r_cap" class="inp" inputmode="numeric" style="width:96px;padding:6px 8px" onchange="setRisk()">円
+    <span>リスク</span><input id="r_risk" class="inp" inputmode="decimal" style="width:54px;padding:6px 8px" onchange="setRisk()">%
+    <span style="opacity:.6">→ 各カードに推奨数量</span>
+  </div>
   <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
 
   <h2>保有ポジション（利確ナビ）<span class="sp"></span>
@@ -212,6 +218,13 @@ async function ghPut(c,data,sha,msg){const r=await fetch(`https://api.github.com
   {method:'PUT',headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},
    body:JSON.stringify({message:msg,content:b64enc(data),sha,branch:c.branch})});
   if(!r.ok){const t=await r.text();throw new Error('保存失敗 '+r.status+' '+t.slice(0,80));}return r.json();}
+async function ghPutFile(c,path,obj,msg){let sha=undefined;
+  try{const g=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}?ref=${c.branch}&t=${Date.now()}`,
+    {headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json'},cache:'no-store'});if(g.ok){sha=(await g.json()).sha;}}catch(e){}
+  const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}`,
+    {method:'PUT',headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},
+     body:JSON.stringify({message:msg,content:b64enc(obj),sha,branch:c.branch})});
+  if(!r.ok){const t=await r.text();throw new Error('保存失敗 '+r.status+' '+t.slice(0,80));}return r.json();}
 
 /* ---------- 操作 ---------- */
 async function addPos(){const c=needCfg();if(!c)return;
@@ -297,7 +310,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
   const tC=p.tech>=0?'up':'down';
   const st=STATS[(S.mode||'scalp')+p.symbol];
-  const statBox = st?`<div class="entry"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>約${st.tpMin!=null?st.tpMin:'—'}分</b> ／ 損切りまで <b>約${st.slMin!=null?st.slMin:'—'}分</b><br>📊 この設定のTP勝率 <b>${st.winRate}%</b>（直近${st.n}回・${(S.mode||'scalp')}）</div></div>`:'';
+  const statBox = st?`<div class="entry"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b><br>📊 この設定のTP勝率 <b>${st.winRate}%</b>（直近${st.n}回・${MODE_LABEL[S.mode||'scalp']||(S.mode||'scalp')}）</div></div>`:'';
   let entryBox='';
   if(p.signal && p.entry_ref!=null){
     const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
@@ -335,13 +348,18 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     const lowN=ch.list.some(it=>it.n<10);
     chaseBox=`<div class="entry"><div class="er">🔁 追撃の目安（過去データ）: <b>${rec}</b>（分岐点 ${ch.be}%）<br>回数別TP勝率 — ${cells}${lowN?'<br><span style="color:var(--gold);font-size:11px">※( )内は試行回数。少ない回数は参考程度に</span>':''}</div></div>`;
   }
+  // リスク基準の推奨数量
+  let lotBox='';
+  if(p.sl_pips){const L=recLot(p.sl_pips);
+    if(L){const u=Math.max(0,Math.round(L.units/100)*100),under=L.units<1000;
+      lotBox=`<div class="entry ${under?'down':''}"><div class="er">💴 推奨数量 <b>${u.toLocaleString()}通貨</b>（リスク¥${Math.round(L.riskYen)}=資金${RISK.risk}% ／ SL ${fmt(p.sl_pips)}p）${under?'<br><span style="color:var(--gold);font-size:11px">※目標リスクだと最小1,000通貨未満。最小ロットなら実リスク¥'+Math.round(L.minRisk)+'（資金'+L.minPct.toFixed(1)+'%）→ 資金増 or 見送り推奨</span>':''}</div></div>`;}}
   return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
     <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip">ADX <b>${fmt(p.adx)}</b></span>
-    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${statBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
+    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${statBox}${lotBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
@@ -356,8 +374,22 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
     ${bar}${advBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
     <div class="pact"><button class="btn sm" onclick="toggleClose('${p.id}')">決済</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
+function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
+  e.innerHTML=MODES.map(x=>`<button class="hbtn" onclick="setMode('${x}')" style="${x===m?'background:#cda86a;color:#1a1206;font-weight:700':''}">${MODE_LABEL[x]}</button>`).join('');}
+function applyModeOverride(){try{const o=localStorage.getItem('fxnavi_mode');if(o&&MODES.includes(o))S.mode=o;}catch(e){}}
+async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
+  try{localStorage.setItem('fxnavi_mode',m);}catch(e){}
+  S.mode=m;render();liveSignals();refreshStats(true);
+  const c=cfg();
+  if(c&&c.token&&c.owner&&c.repo){
+    try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'auto: set mode '+m+' [skip ci]');
+      toast('通知スタイルも'+MODE_LABEL[m]+'に切替（次回実行から反映）');}
+    catch(e){toast('画面は切替。通知反映は保存失敗: '+e.message);}
+  }else{toast('画面のみ切替。通知にも反映するには⚙でGitHub設定を');}
+}
 function render(){
-  $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+S.mode.toUpperCase():'')+(S.blackout?' ・指標警戒中':'');
+  renderModeSw();
+  $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
   $('#pairs').innerHTML=(S.pairs||[]).map(pairCard).join('')||'<div class="empty">データなし</div>';
   const op=computeOpen();
@@ -375,8 +407,20 @@ const W_EMA=0.35,W_MACD=0.25,W_RSI=0.20,W_BB=0.20,TECH_W=0.9,FUND_W=0.1;
 const SL_ATR_MULT=1.0,TP_SL_RATIO=1.5,VALID_BARS=3,MAX_CHASE_RATIO=0.5;
 const FUND_BIAS={USD_JPY:0.5,EUR_JPY:0.4,GBP_JPY:0.5,AUD_JPY:0.4};
 const SYMS=["USD_JPY","EUR_JPY","GBP_JPY","AUD_JPY"];
-const JS_PARAMS={scalp:{interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35},
-  day:{interval:'5min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40}};
+const BARMIN={'1min':1,'5min':5,'10min':10,'15min':15,'30min':30,'1hour':60,'4hour':240,'1day':1440};
+const MODES=['scalp','day','swing'];
+const MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング'};
+// slm=SL幅(ATR倍), tsr=TP:SL比, days/cap=統計の取得日数/上限本数。スタイルごとに足とTP/SL幅を変える
+const JS_PARAMS={
+  scalp:{interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35,slm:1.0,tsr:1.5,days:3,cap:1500},
+  day:{interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.3,tsr:1.6,days:8,cap:1000},
+  swing:{interval:'1hour',ema_f:12,ema_s:26,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000}};
+function holdTxt(min){if(min==null)return'—';if(min<120)return'約'+min+'分';const h=min/60;if(h<48)return'約'+(h>=10?Math.round(h):Math.round(h*10)/10)+'時間';return'約'+Math.round(h/24*10)/10+'日';}
+// リスク基準の数量計算（JPYペア: 1pip=0.01円/通貨）
+let RISK={cap:10000,risk:1};
+function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk};}catch(e){}}
+function setRisk(){const cap=Math.max(0,parseFloat(($('#r_cap')||{}).value)||0),risk=Math.max(0,parseFloat(($('#r_risk')||{}).value)||0);RISK={cap,risk};try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}render();}
+function recLot(slPips){if(!slPips||slPips<=0||!RISK.cap)return null;const riskYen=RISK.cap*RISK.risk/100,units=riskYen/(slPips*PS_),minRisk=1000*slPips*PS_;return{units,riskYen,minRisk,minPct:RISK.cap?minRisk/RISK.cap*100:0};}
 const cl=(x,lo=-1,hi=1)=>Math.max(lo,Math.min(hi,x)),r3=x=>x==null?null:Math.round(x*1000)/1000,r4=x=>x==null?null:Math.round(x*10000)/10000;
 function emaSeries(v,p){if(v.length<p)return Array(v.length).fill(null);const k=2/(p+1),o=Array(v.length).fill(null);let e=v.slice(0,p).reduce((a,b)=>a+b,0)/p;o[p-1]=e;for(let i=p;i<v.length;i++){e=v[i]*k+e*(1-k);o[i]=e;}return o;}
 function ema(v,p){const s=emaSeries(v,p);return s.length?s[s.length-1]:null;}
@@ -395,14 +439,19 @@ function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.ma
   const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
   const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),fund=cl(FUND_BIAS[sym]||0),total=cl(TECH_W*tech+FUND_W*fund);
   const reasons=[];if(Math.abs(emaSig)>0.2)reasons.push(`EMA${emaSig>0?'上':'下'}(${P.ema_f}vs${P.ema_s})`);if(Math.abs(macdSig)>0.2)reasons.push(`MACDヒスト${md[2]>0?'+':'-'}`);reasons.push(`RSI${Math.round(rv)}`);reasons.push(`ADX${Math.round(adxVal)}${adxVal>=25?'(強)':'(弱)'}`);
-  const slp=a*SL_ATR_MULT/PS_,tpp=slp*TP_SL_RATIO,side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  const win=closes.slice(-1-P.adx,-1),hh=win.length?Math.max(...win):price,ll=win.length?Math.min(...win):price;
+  const method=adxVal>=25?((price>hh||price<ll)?'ブレイク':'順張りMA'):(Math.abs(bbSig)>=0.8?'レンジ逆張り':'様子見');
+  reasons.unshift('手法:'+method);
+  const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
   return {price,ef,es,rsi:Math.round(rv*10)/10,adx:Math.round(adxVal*10)/10,atr:a,tp_pips:Math.round(tpp*10)/10,sl_pips:Math.round(slp*10)/10,
     tech:Math.round(tech*1000)/1000,fund:Math.round(fund*1000)/1000,score:Math.round(total*1000)/1000,side,reasons,
     ef_series:emaSeries(closes,P.ema_f).slice(-CHART_POINTS).map(r3),es_series:emaSeries(closes,P.ema_s).slice(-CHART_POINTS).map(r3),closes:closes.slice(-CHART_POINTS).map(r3)};}
 function jstYmd(off){return new Date(Date.now()+off*86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).replace(/-/g,'');}
-async function fetchKlines(base,sym,P,need){let rows={};for(const off of [0,-1,-2]){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${P.interval}&date=${jstYmd(off)}`;
-  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&last=400&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}
-  if(Object.keys(rows).length>=need)break;}return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+async function fetchKlines(base,sym,P,need){let rows={};const span=Math.max(3,P.days||3);
+  for(let off=0;off>=-(span+2)&&off>=-40;off--){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${P.interval}&date=${jstYmd(off)}`;
+    try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&last=600&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}
+    if(Object.keys(rows).length>=need&&off<=-2)break;}
+  return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
 // ライブLINE通知（Worker経由・新規シグナルのみ・連投防止）
 function notifyBase(){return LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');}
 function loadNotified(){try{return JSON.parse(localStorage.getItem('fxnavi_notified'))||{}}catch(e){return{}}}
@@ -416,7 +465,7 @@ let LIVE_CALC_BUSY=false;
 async function liveSignals(){
   if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
   const P=JS_PARAMS[S.mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
-  const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30,barMin=P.interval==='1min'?1:5,validMin=VALID_BARS*barMin;
+  const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30,barMin=BARMIN[P.interval]||1,validMin=VALID_BARS*barMin;
   LIVE_CALC_BUSY=true;
   const notified=loadNotified();
   try{
@@ -438,7 +487,7 @@ async function liveSignals(){
         if((!rec||rec.side!==sig)&&(!rec||now-rec.ts>180000)){
           const sg=sig==='買い'?'🟢買い':'🔴売り',arrow=sig==='買い'?'上限':'下限';
           const st=STATS[S.mode+sym];
-          const stTxt=st?`\n⏱想定保有 利確~${st.tpMin!=null?st.tpMin:'?'}分/損切~${st.slMin!=null?st.slMin:'?'}分・TP勝率${st.winRate}%(直近${st.n}回)`:'';
+          const stTxt=st?`\n⏱想定保有 利確~${holdTxt(st.tpMin)}/損切~${holdTxt(st.slMin)}・TP勝率${st.winRate}%(直近${st.n}回)`:'';
           const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}${stTxt}`;
           notifyLive(txt);notified[sym]={side:sig,ts:now};
         }
@@ -463,7 +512,7 @@ function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.m
   if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
   const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
   const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(TECH_W*tech+FUND_W*cl(FUND_BIAS[sym]||0));
-  const slp=a*SL_ATR_MULT/PS_,tpp=slp*TP_SL_RATIO,side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
   return side?{side,slp,tpp}:null;}
 function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
 function precomputeSides(sym,oh,P,warm){const sides=new Array(oh.length).fill(null);
@@ -506,7 +555,7 @@ async function refreshStats(force){
   if(fresh&&!force)return;
   STATS_BUSY=true;
   try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
-    const days=mode==='scalp'?3:7,cap=mode==='scalp'?1500:900,barMin=P.interval==='1min'?1:5;
+    const days=P.days||3,cap=P.cap||1000,barMin=BARMIN[P.interval]||1;
     for(const sym of SYMS){let oh=await fetchHistStats(base,sym,P.interval,days);if(oh.length>cap)oh=oh.slice(-cap);
       if(oh.length<120)continue;
       const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5,sides=precomputeSides(sym,oh,P,warm);
@@ -529,6 +578,7 @@ async function loadPositions(){
 async function load(){try{
   const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
+  applyModeOverride();
   if(!POS_BUSY){const np=await loadPositions(); if(np)POS=np;}
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
   }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
@@ -538,6 +588,7 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
+loadRisk();{const _c=$('#r_cap');if(_c)_c.value=RISK.cap;const _r=$('#r_risk');if(_r)_r.value=RISK.risk;}
 load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);setInterval(()=>refreshStats(),1800000);}
 if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
 </script>

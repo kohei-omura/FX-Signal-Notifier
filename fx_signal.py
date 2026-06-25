@@ -17,11 +17,15 @@ PRICE_TYPE = "BID"
 MODE = os.environ.get("MODE", "scalp").lower()
 PARAMS = {
     "scalp": {"interval":"1min","ema_f":5,"ema_s":13,"rsi":7,"macd":(6,13,5),
-              "bb":(20,2.0),"adx":14,"atr":14,"th":0.35},
-    "day":   {"interval":"5min","ema_f":9,"ema_s":21,"rsi":14,"macd":(12,26,9),
-              "bb":(20,2.0),"adx":14,"atr":14,"th":0.40},
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.35,"slm":1.0,"tsr":1.5},
+    "day":   {"interval":"15min","ema_f":9,"ema_s":21,"rsi":14,"macd":(12,26,9),
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.40,"slm":1.3,"tsr":1.6},
+    "swing": {"interval":"1hour","ema_f":12,"ema_s":26,"rsi":14,"macd":(12,26,9),
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.45,"slm":1.8,"tsr":1.8},
 }
+BARMIN = {"1min":1,"5min":5,"10min":10,"15min":15,"30min":30,"1hour":60,"4hour":240,"1day":1440}
 P = PARAMS.get(MODE, PARAMS["scalp"])
+WORKER_URL = os.environ.get("WORKER_URL", "https://fx-navi.koheiomura5414.workers.dev")
 
 W_EMA, W_MACD, W_RSI, W_BB = 0.35, 0.25, 0.20, 0.20
 TECH_W, FUND_W = 0.9, 0.1
@@ -49,8 +53,8 @@ ADX_WEAK  = 20.0   # ADXがこの値未満で勢い喪失
 
 # ===== シグナル統計（想定保有時間・TP勝率）：重いので約60分キャッシュ =====
 STATS_TTL_SEC = 3600
-STATS_DAYS = {"scalp": 3, "day": 7}
-STATS_MAX_BARS = {"scalp": 1000, "day": 600}
+STATS_DAYS = {"scalp": 3, "day": 8, "swing": 20}
+STATS_MAX_BARS = {"scalp": 1000, "day": 1000, "swing": 1000}
 
 NEWS_BLACKOUT = []
 BLACKOUT_MIN = 15
@@ -197,8 +201,8 @@ def adx(ohlc, p):
 
 
 def suggest_tp_sl(a):
-    sl_pips = a * SL_ATR_MULT / PIP_SIZE
-    tp_pips = sl_pips * TP_SL_RATIO
+    sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
+    tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
     return (round(tp_pips, 1), round(sl_pips, 1))
 
 
@@ -236,6 +240,11 @@ def score_pair(symbol, ohlc):
     if abs(macd_sig) > 0.2: reasons.append(f"MACDヒスト{'+' if md[2]>0 else '-'}")
     reasons.append(f"RSI{rv:.0f}")
     reasons.append(f"ADX{adx_val:.0f}{'(強)' if adx_val>=25 else '(弱)'}")
+    _win = closes[-1-P["adx"]:-1]
+    _hh = max(_win) if _win else price; _ll = min(_win) if _win else price
+    _method = (("ブレイク" if (price>_hh or price<_ll) else "順張りMA") if adx_val>=25
+               else ("レンジ逆張り" if abs(bb_sig)>=0.8 else "様子見"))
+    reasons.insert(0, "手法:"+_method)
 
     th = P["th"]
     side = "買い" if total >= th else ("売り" if total <= -th else None)
@@ -293,8 +302,8 @@ def eval_side(symbol, ohlc):
     side = "買い" if total >= th else ("売り" if total <= -th else None)
     if not side:
         return None
-    sl_pips = a * SL_ATR_MULT / PIP_SIZE
-    tp_pips = sl_pips * TP_SL_RATIO
+    sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
+    tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
     return side, sl_pips, tp_pips
 
 
@@ -311,7 +320,7 @@ def compute_signal_stats(symbol):
     if len(oh) < 120:
         return None
     warm = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 5
-    bar_min = 1 if P["interval"] == "1min" else 5
+    bar_min = BARMIN.get(P["interval"], 1)
     wins, losses = [], []
     n = len(oh); i = warm
     while i < n-1:
@@ -561,7 +570,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
     pairs, notify = [], []
     blackout = in_blackout()
     now = datetime.datetime.now(JST)
-    bar_min = 1 if P["interval"] == "1min" else 5
+    bar_min = BARMIN.get(P["interval"], 1)
     valid_min = VALID_BARS * bar_min
     for sym in SYMBOLS:
         sc = score_pair(sym, get_ohlc(sym))
@@ -665,7 +674,25 @@ def notify_mail(subject, body):
         print(f"[WARN] メール送信失敗: {e}", file=sys.stderr)
 
 
+MODE_FILE = "mode.json"
+def get_selected_mode():
+    """ダッシュボードのボタンが保存した mode.json を読む（Actionsのチェックアウト内のローカルファイル）。無ければenv MODE。"""
+    try:
+        if os.path.exists(MODE_FILE):
+            m = (json.load(open(MODE_FILE, encoding="utf-8")) or {}).get("mode", "").lower()
+            if m in PARAMS:
+                return m
+    except Exception as e:
+        print(f"[INFO] mode.json読込スキップ: {e}")
+    return MODE
+
+
 def main():
+    global MODE, P
+    sel = get_selected_mode()
+    if sel != MODE:
+        print(f"[INFO] モード切替: {MODE} → {sel}（mode.jsonの選択を反映）")
+    MODE = sel; P = PARAMS.get(MODE, PARAMS["scalp"])
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     if os.environ.get("TEST_NOTIFY", "").lower() == "true":
         m = f"✅ テスト通知\n時刻: {now_str}\nLINEとメールの疎通確認です。"
