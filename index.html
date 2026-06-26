@@ -232,11 +232,21 @@ async function addPos(){const c=needCfg();if(!c)return;
   const sym=$('#f_sym').value,side=$('#f_side').value,entry=parseFloat($('#f_entry').value),lot=parseInt($('#f_lot').value||'1000',10);
   if(!isFinite(entry)){toast('建値を入力してください');return;}
   const pos={id:'p'+Date.now(),symbol:sym,side,entry,lot,status:'open'};
+  let autoNote='';
   if($('#f_mode').value==='manual'){const tp=parseFloat($('#f_tp').value),sl=parseFloat($('#f_sl').value);
-    if(isFinite(tp))pos.tp_pips=tp;if(isFinite(sl))pos.sl_pips=sl;}else{pos.auto=true;}
+    if(isFinite(tp))pos.tp_pips=tp;if(isFinite(sl))pos.sl_pips=sl;}
+  else{
+    // 画面で選択中のスタイルのTP/SL（そのペアのライブ計算値）を付与し、サーバー側の再設定を止める
+    const lp=(S.pairs||[]).find(x=>x.symbol===sym);
+    if(lp&&lp.tp_pips!=null&&lp.sl_pips!=null){
+      pos.tp_pips=lp.tp_pips;pos.sl_pips=lp.sl_pips;if(lp.atr!=null)pos.atr_used=lp.atr;
+      pos.auto=true;pos.auto_set=true;pos.mode=S.mode;
+      autoNote=`（${MODE_LABEL[S.mode]||S.mode}: TP+${lp.tp_pips}/SL-${lp.sl_pips}pips）`;
+    }else{pos.auto=true;autoNote='（TP/SLは次回サーバー更新時に自動設定）';}
+  }
   POS_BUSY=true;
   try{toast('保存中…');const{data,sha}=await ghGet(c);data.positions=data.positions||[];data.positions.push(pos);
-    await ghPut(c,data,sha,'add '+sym);POS=data;render();toast('追加しました（通知/TP自動設定は次回更新時）');togglePanel('addPanel');
+    await ghPut(c,data,sha,'add '+sym+' [skip ci]');POS=data;render();toast('追加しました'+autoNote);togglePanel('addPanel');
     $('#f_entry').value='';}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
 function computeClose(p,price){const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000);
