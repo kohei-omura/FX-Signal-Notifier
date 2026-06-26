@@ -48,6 +48,7 @@ ADV_OPP   = 0.25   # スコア×保有方向 がこの値以下なら「逆シ�
 ADV_SUPP  = 0.15   # この値以上なら順方向継続（ホールド）
 ADV_DECAY = 0.10   # |スコア| がこの値未満なら勢い減衰
 TRAIL_ATR = 1.0    # 最高益から ×ATR 押し戻したらトレール利確
+TOUCH_LOOKBACK_MIN = 12  # B: cron間隔(最短5分)＋遅延を吸収。直近この分数の足の高安でTP/SLタッチを検出
 PROFIT_ATR = 1.0   # この含み益(×ATR)以上＋反転でしっかり利確
 ADX_WEAK  = 20.0   # ADXがこの値未満で勢い喪失
 
@@ -483,6 +484,18 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     tp_pr, sl_pr = _tp_sl_prices(p)
     hit_tp = tp_pr is not None and ((side == "long" and bid >= tp_pr) or (side == "short" and ask <= tp_pr))
     hit_sl = sl_pr is not None and ((side == "long" and bid <= sl_pr) or (side == "short" and ask >= sl_pr))
+    # B: cron実行の合間にTP/SLへ「タッチ」していたかを直近の足の高値/安値で救済（現在値が戻っていても拾う）
+    bm = BARMIN.get(P["interval"], 1)
+    nb = max(1, -(-TOUCH_LOOKBACK_MIN // bm))
+    rec = (get_ohlc(sym) or [])[-nb:]
+    if rec:
+        hi = max(b[0] for b in rec); lo = min(b[1] for b in rec)
+        if side == "long":
+            if tp_pr is not None and hi >= tp_pr: hit_tp = True
+            if sl_pr is not None and lo <= sl_pr: hit_sl = True
+        else:
+            if tp_pr is not None and lo <= tp_pr: hit_tp = True
+            if sl_pr is not None and hi >= sl_pr: hit_sl = True
     rsi_against = (side == "long" and rsi_v >= 70) or (side == "short" and rsi_v <= 30)
 
     if hit_sl:
