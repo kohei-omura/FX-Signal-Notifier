@@ -1,64 +1,44 @@
-name: FX Signal Notifier
+# .github/workflows/（あなたのPagesデプロイ用YAML）を、これで置き換えてください。
+# 変更点は2つだけ：
+#  ① concurrency に cancel-in-progress: true  → 二重デプロイの衝突(400エラー)を解消
+#  ② on.push.paths-ignore で status.json / positions.json / mode.json を除外
+#     → 通知ボットの自動コミットでPagesデプロイがムダにトリガーされるのStop（衝突の根本原因）
+#
+# ※ ファイル名は今お使いのものに合わせてOK（例: deploy.yml / pages.yml / static.yml）。
+#    中身を丸ごとこの内容に置き換えるのが安全です。
+
+name: Deploy to GitHub Pages
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   push:
-    paths:
-      - 'positions.json'    # ポジションを編集したら即実行（自動利確レベル設定＆通知）
+    branches: [main]
+    paths-ignore:
+      - 'status.json'      # 通知ボットが毎回更新するファイル。これでのデプロイは不要
+      - 'positions.json'   # アプリの追加/決済。Pages再デプロイは不要
+      - 'mode.json'         # スタイル切替。Pages再デプロイは不要
   workflow_dispatch:
-    inputs:
-      test:
-        description: 'テスト通知を送る（LINE/メールの疎通確認）'
-        type: boolean
-        default: false
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
+# 同じグループのデプロイは1つだけ。新しいデプロイが来たら進行中を自動キャンセル＝衝突しない
 concurrency:
-  group: fx-signal
-  cancel-in-progress: false
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  notify:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - name: Run signal & position check
-        env:
-          TEST_NOTIFY:               ${{ inputs.test }}
-          MODE:                      ${{ vars.MODE }}
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          GMAIL_ADDRESS:             ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
-          MAIL_TO:                   ${{ secrets.MAIL_TO }}
-        run: python fx_signal.py
-      - name: Commit dashboard state
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add status.json positions.json
-          if git diff --staged --quiet; then echo "no changes"; exit 0; fi
-          git commit -m "auto: update state [skip ci]"
-          # 通知は前ステップで送信済み。状態保存(status.json)が競合しても“失敗にしない”。
-          # 競合時はアプリ側(リモートのpositions.json=追加/決済)を優先し、今回の保存は見送る（次回再生成）。
-          for i in 1 2 3; do
-            git fetch origin "${GITHUB_REF_NAME}"
-            # rebaseでは -X ours = 取り込み先(リモート)側を優先＝アプリの編集を保護
-            if git rebase -X ours "origin/${GITHUB_REF_NAME}"; then
-              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
-                echo "pushed"; exit 0
-              fi
-            else
-              git rebase --abort 2>/dev/null || true
-              git reset --hard "origin/${GITHUB_REF_NAME}"
-              echo "conflict: skip state save this cycle (regenerates next run)"; exit 0
-            fi
-            echo "push retry $i"; sleep 4
-          done
-          echo "push contended; skip this cycle"; exit 0
+          path: '.'          # リポジトリ直下を公開（今の構成に合わせて変更可）
+      - id: deployment
+        uses: actions/deploy-pages@v5
