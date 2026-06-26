@@ -25,7 +25,6 @@ PARAMS = {
 }
 BARMIN = {"1min":1,"5min":5,"10min":10,"15min":15,"30min":30,"1hour":60,"4hour":240,"1day":1440}
 P = PARAMS.get(MODE, PARAMS["scalp"])
-WORKER_URL = os.environ.get("WORKER_URL", "https://fx-navi.koheiomura5414.workers.dev")
 
 W_EMA, W_MACD, W_RSI, W_BB = 0.35, 0.25, 0.20, 0.20
 TECH_W, FUND_W = 0.9, 0.1
@@ -689,14 +688,20 @@ def notify_mail(subject, body):
 
 MODE_FILE = "mode.json"
 def get_selected_mode():
-    """ダッシュボードのボタンが保存した mode.json を読む（Actionsのチェックアウト内のローカルファイル）。無ければenv MODE。"""
+    """モードの唯一の指示元は mode.json（ダッシュボードのスタイルボタンが書き込む）。
+       mode.json が無い/壊れている時だけ env MODE、それも無ければ既定 scalp。
+       どこから決めたかをログに必ず出す（設定の取り違えを一目で分かるように）。"""
     try:
         if os.path.exists(MODE_FILE):
             m = (json.load(open(MODE_FILE, encoding="utf-8")) or {}).get("mode", "").lower()
             if m in PARAMS:
+                print(f"[INFO] モード採用元: mode.json → {m}")
                 return m
+            print(f"[WARN] mode.jsonのmode値が不正: '{m}'。env/既定にフォールバック")
     except Exception as e:
         print(f"[INFO] mode.json読込スキップ: {e}")
+    src = "env MODE" if os.environ.get("MODE") else "既定"
+    print(f"[INFO] モード採用元: {src} → {MODE}（mode.json無し）")
     return MODE
 
 
@@ -704,7 +709,7 @@ def main():
     global MODE, P, TECH_W, FUND_W
     sel = get_selected_mode()
     if sel != MODE:
-        print(f"[INFO] モード切替: {MODE} → {sel}（mode.jsonの選択を反映）")
+        print(f"[INFO] モード切替: {MODE} → {sel}")
     MODE = sel; P = PARAMS.get(MODE, PARAMS["scalp"])
     # スタイル別 テク:ファンダ 比率（短期=テク重視 / スイング=ファンダ重視）
     TECH_W, FUND_W = (0.45, 0.55) if MODE == "swing" else (0.85, 0.15)

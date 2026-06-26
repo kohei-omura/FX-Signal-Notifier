@@ -117,6 +117,7 @@
   </header>
 
   <h2>ペア別シグナル</h2>
+  <div id="modewarn"></div>
   <div id="riskbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--mut)">
     <span>💴 資金</span><input id="r_cap" class="inp" inputmode="numeric" style="width:96px;padding:6px 8px" onchange="setRisk()">円
     <span>リスク</span><input id="r_risk" class="inp" inputmode="decimal" style="width:54px;padding:6px 8px" onchange="setRisk()">%
@@ -183,6 +184,7 @@
 <script>
 const $ = s => document.querySelector(s);
 let S={pairs:[]}, POS={positions:[]}, PRICE={};
+let MODEJSON=null; // mode.json（サーバー通知が使うモード）の現在値。画面と不一致なら警告
 let POS_BUSY=false; // 追加/決済/削除の書込中はポーリングで上書きしない
 const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
 // WorkerにNOTIFY_KEYを設定した場合のみ同じ値を入れる（任意）
@@ -398,12 +400,33 @@ async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
   const c=cfg();
   if(c&&c.token&&c.owner&&c.repo){
     try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'auto: set mode '+m+' [skip ci]');
+      MODEJSON=m;renderModeWarn();
       toast('通知スタイルも'+MODE_LABEL[m]+'に切替（次回実行から反映）');}
     catch(e){toast('画面は切替。通知反映は保存失敗: '+e.message);}
   }else{toast('画面のみ切替。通知にも反映するには⚙でGitHub設定を');}
 }
+// 画面モードに合わせて mode.json を上書き（通知モードを画面に同期）
+async function syncModeJson(){
+  const m=S.mode||'scalp',c=cfg();
+  if(!(c&&c.token&&c.owner&&c.repo)){toast('⚙でGitHub設定をすると同期できます');togglePanel('setPanel');return;}
+  try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
+    MODEJSON=m;renderModeWarn();toast('通知モードを'+(MODE_LABEL[m]||m)+'に同期しました（次回実行から反映）');}
+  catch(e){toast('同期失敗: '+e.message);}
+}
+// mode.json（通知モード）と画面モードの不一致を警告表示
+function renderModeWarn(){
+  const el=$('#modewarn');if(!el)return;
+  const screen=S.mode||'scalp';
+  if(MODEJSON && MODES.includes(MODEJSON) && MODEJSON!==screen){
+    el.innerHTML=`<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--down);border-radius:10px;background:rgba(255,122,138,.08);font-size:12.5px;color:var(--ink)">
+      ⚠️ 通知モードが画面と違います — 通知=<b>${MODE_LABEL[MODEJSON]||MODEJSON}</b> ／ 画面=<b>${MODE_LABEL[screen]||screen}</b>。
+      このままだと通知のTP/SL幅が画面とズレます。
+      <button class="btn sm" style="margin-left:6px" onclick="syncModeJson()">通知を画面に合わせる</button></div>`;
+  }else{el.innerHTML='';}
+}
 function render(){
   renderModeSw();
+  renderModeWarn();
   $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
   $('#pairs').innerHTML=(S.pairs||[]).map(pairCard).join('')||'<div class="empty">データなし</div>';
@@ -600,6 +623,7 @@ async function loadPositions(){
 async function load(){try{
   const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
+  try{const mr=await fetch('./mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();}}catch(e){}
   applyModeOverride();
   if(!POS_BUSY){const np=await loadPositions(); if(np)POS=np;}
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
