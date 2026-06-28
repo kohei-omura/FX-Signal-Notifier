@@ -117,6 +117,7 @@
   </header>
 
   <h2>ペア別シグナル</h2>
+  <div id="stalewarn"></div>
   <div id="modewarn"></div>
   <div id="riskbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--mut)">
     <span>💴 資金</span><input id="r_cap" class="inp" inputmode="numeric" style="width:96px;padding:6px 8px" onchange="setRisk()">円
@@ -185,6 +186,7 @@
 const $ = s => document.querySelector(s);
 let S={pairs:[]}, POS={positions:[]}, PRICE={};
 let MODEJSON=null; // mode.json（サーバー通知が使うモード）の現在値。画面と不一致なら警告
+let LAST_TICK_TS=0; // 最後にライブ価格(ticker)を取得できた時刻。古ければ警告
 let POS_BUSY=false; // 追加/決済/削除の書込中はポーリングで上書きしない
 const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
 // WorkerにNOTIFY_KEYを設定した場合のみ同じ値を入れる（任意）
@@ -424,9 +426,26 @@ function renderModeWarn(){
       <button class="btn sm" style="margin-left:6px" onclick="syncModeJson()">通知を画面に合わせる</button></div>`;
   }else{el.innerHTML='';}
 }
+// サーバー更新(status.json)とライブ価格(ticker)の停止を検知して警告
+function parseGenAt(s){if(!s)return null;const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if(!m)return null;return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`).getTime();}
+function ageTxt(ms){const s=Math.round(ms/1000);if(s<90)return s+'秒前';const mi=Math.round(s/60);if(mi<90)return mi+'分前';const h=mi/60;if(h<48)return Math.round(h)+'時間前';return Math.round(h/24)+'日前';}
+function renderStale(){
+  const el=$('#stalewarn');if(!el)return;const now=Date.now();const msgs=[];
+  const gt=parseGenAt(S.generated_at);
+  if(gt){const age=now-gt;
+    if(age>15*60000)msgs.push(`⚠️ サーバー更新が停止中（最終 <b>${ageTxt(age)}</b>）。価格は今ライブ値で表示中ですが、GitHub Actionsの「FX Signal Notifier」が動いているか確認してください。`);
+  }
+  if(LAST_TICK_TS && now-LAST_TICK_TS>60000)
+    msgs.push(`⚠️ ライブ価格の取得が停止（最終 <b>${ageTxt(now-LAST_TICK_TS)}</b>）。表示価格が実勢とズレている可能性があります。`);
+  el.innerHTML = msgs.length
+    ? `<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:rgba(205,168,106,.10);font-size:12.5px;color:var(--ink);line-height:1.7">${msgs.join('<br>')}</div>`
+    : '';
+}
 function render(){
   renderModeSw();
   renderModeWarn();
+  renderStale();
   $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
   $('#pairs').innerHTML=(S.pairs||[]).map(pairCard).join('')||'<div class="empty">データなし</div>';
@@ -437,7 +456,11 @@ function render(){
     return`<div class="hrow"><span class="l"><b>${h.symbol.replace('_','/')}</b> ${h.side==='long'?'買い':'売り'} · ${h.close_reason||''} · ${h.closed_at||''}</span>
       <span class="r"><span class="${cls}">${yen(h.close_yen)} / ${pips(h.close_pips)}</span><button class="x" onclick="delPos('${h.id}')">✕</button></span></div>`;}).join('')}</div>`
     :'<div class="empty">決済履歴なし</div>';}
-function setPriceFromStatus(){PRICE={};(S.pairs||[]).forEach(p=>{if(p.bid!=null)PRICE[p.symbol]={bid:p.bid,ask:(p.ask!=null?p.ask:p.bid)};});}
+function setPriceFromStatus(){
+  // status.jsonは古い場合がある。既にライブ値がある銘柄はそれを優先し、未取得の銘柄だけ種として入れる
+  // （毎回PRICEを空にして古い値で上書きすると、一瞬2日前の価格が表示され乖離して見える問題を防ぐ）
+  (S.pairs||[]).forEach(p=>{if(p.bid!=null&&!PRICE[p.symbol])PRICE[p.symbol]={bid:p.bid,ask:(p.ask!=null?p.ask:p.bid)};});
+}
 
 /* ====== ライブ計算（Workerでklines取得→画面側で再計算。Python版と一致） ====== */
 const CHART_POINTS=60, PS_=0.01;
@@ -634,6 +657,7 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   const r=await fetch(url,{cache:'no-store'});
   const j=await r.json(),arr=(j&&j.data)?j.data:(Array.isArray(j)?j:[]);
   if(Array.isArray(arr))arr.forEach(d=>{if(d&&d.symbol&&!isNaN(parseFloat(d.bid)))PRICE[d.symbol]={bid:parseFloat(d.bid),ask:parseFloat(d.ask!=null?d.ask:d.bid)};});
+  if(Array.isArray(arr)&&arr.length)LAST_TICK_TS=Date.now();
   (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
