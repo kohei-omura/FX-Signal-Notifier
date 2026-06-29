@@ -1,8 +1,6 @@
 name: FX Signal Notifier
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   push:
     paths:
       - 'positions.json'    # ポジションを編集したら即実行（自動利確レベル設定＆通知）
