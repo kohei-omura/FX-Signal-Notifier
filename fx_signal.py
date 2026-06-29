@@ -38,6 +38,9 @@ TP_SL_RATIO = 1.5
 # LINEは「保有中の利確/損切りサイン」など“今すぐ判断が要る通知”だけに絞る。
 NOTIFY_ENTRY_TO_LINE = False
 NOTIFY_ENTRY_TO_MAIL = True
+# ★LINE無料枠オーバー中の一時停止スイッチ。Falseの間はLINEに一切送らない（メールは通常どおり全送信）。
+#   来月、枠が復活したら True に戻す。Trueの時もLINEは利確/損切り(take/cut)の最重要サインだけに絞る。
+LINE_ENABLED = False
 
 VALID_BARS = 3
 MAX_CHASE_RATIO = 0.5
@@ -552,9 +555,12 @@ def load_prev_state():
 
 def check_positions(data, ticker, prev_state=None):
     """保有ポジションを評価して通知メッセージと判定マップを返す。
+       戻り値は (mail_msgs, line_msgs, advice_map)。
+       メール: 利確/損切り(take/cut) ＋『利確検討』(watch) を、判定が変わった時に送る（取りこぼし防止）。
+       LINE : 最重要の take/cut だけに絞る（無料枠の節約）。『様子見(明確なサインなし)』は通知しない。
        MFE/判定はstatus.json側に保存するため、ここではpositions.jsonを書き換えない。"""
     prev_state = prev_state or {}
-    msgs = []
+    mail_msgs, line_msgs = [], []
     advice_map = {}
     for p in data.get("positions", []):
         if p.get("status", "open") != "open" or p.get("symbol") not in ticker:
@@ -568,14 +574,21 @@ def check_positions(data, ticker, prev_state=None):
         if adv:
             advice_map[p.get("id")] = adv
             prev_level = prev.get("adv_level")
-            if adv["level"] in ("take", "cut") and prev_level != adv["level"]:
-                kind = "利確" if adv["level"] == "take" else "損切り"
-                mark = "🎯" if adv["level"] == "take" else "🛑"
-                msgs.append(f"{mark} {kind}サイン {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
-                            f"  {adv['label']} — {adv['reason']}\n"
-                            f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円\n"
-                            f"  ※GMOで決済後、アプリに実際の結果を登録してください")
-    return msgs, advice_map
+            changed = prev_level != adv["level"]
+            # 「利確検討(watch)」のうち“利確検討”ラベルだけ拾う（“様子見/明確なサインなし”は除外＝ノイズ抑制）
+            is_watch_actionable = adv["level"] == "watch" and "利確検討" in adv["label"]
+            if changed and (adv["level"] in ("take", "cut") or is_watch_actionable):
+                body = (f"{adv['label']} {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
+                        f"  {adv['reason']}\n"
+                        f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円")
+                tail = ("\n  ※GMOで決済後、アプリに実際の結果を登録してください"
+                        if adv["level"] in ("take", "cut") else "")
+                # メールには全部（利確/損切り/利確検討）
+                mail_msgs.append(body + tail)
+                # LINEには最重要(take/cut)だけ
+                if adv["level"] in ("take", "cut"):
+                    line_msgs.append(body + tail)
+    return mail_msgs, line_msgs, advice_map
 
 
 def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_signals=None):
@@ -726,13 +739,15 @@ def main():
     prev_signals = load_prev_signals()
     stats = gather_stats(prev_stats)
     m1, c1 = auto_set_levels(data)
-    m2, advice_map = check_positions(data, ticker, prev_state)
+    m2_mail, m2_line, advice_map = check_positions(data, ticker, prev_state)
     if c1:  # positions.jsonの書込はauto_set（新規autoのTP/SL設定）時のみ＝競合を最小化
         save_positions(data)
     notify = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
-    # m1=推奨レベル設定（情報）, m2=保有中の利確/損切りサイン（要判断）, notify=エントリーシグナル
-    line_parts = list(m2) + (list(notify) if NOTIFY_ENTRY_TO_LINE else [])
-    mail_parts = list(m1) + list(m2) + (list(notify) if NOTIFY_ENTRY_TO_MAIL else [])
+    # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
+    # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
+    line_parts = ((list(m2_line) + (list(notify) if NOTIFY_ENTRY_TO_LINE else [])) if LINE_ENABLED else [])
+    # メール: 推奨レベル設定 + 保有監視(利確/損切り/利確検討) + エントリー、すべて送る。
+    mail_parts = list(m1) + list(m2_mail) + (list(notify) if NOTIFY_ENTRY_TO_MAIL else [])
 
     if not market_open:
         print(f"[INFO] {now_str} 市場クローズ（エントリー判定スキップ）")
