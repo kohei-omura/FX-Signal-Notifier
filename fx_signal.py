@@ -59,8 +59,18 @@ STATS_TTL_SEC = 3600
 STATS_DAYS = {"scalp": 3, "day": 8, "swing": 20}
 STATS_MAX_BARS = {"scalp": 1000, "day": 1000, "swing": 1000}
 
-NEWS_BLACKOUT = []
-BLACKOUT_MIN = 15
+NEWS_BLACKOUT = []          # 手書きの予備リスト（"YYYY-MM-DD HH:MM"・全通貨一律）。通常は空でOK
+BLACKOUT_MIN = 15           # 発表前後この分数はエントリー見送り
+WARN_BEFORE_MIN = 60        # 保有ポジションは発表この分前から「まもなく発表」警告
+NEWS_FILE = "news_blackout.json"   # news-calendar.yml が毎日生成する自動取得カレンダー
+# 通貨ペア → 影響する国/通貨。クロス円なのでJPYは全ペア共通。AUDは最大輸出先の中国(CNY)も対象。
+PAIR_COUNTRIES = {
+    "USD_JPY": {"USD", "JPY"},
+    "EUR_JPY": {"EUR", "JPY"},
+    "GBP_JPY": {"GBP", "JPY"},
+    "AUD_JPY": {"AUD", "JPY", "CNY"},
+}
+_NEWS_CACHE = None
 
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
@@ -396,16 +406,64 @@ def gather_stats(prev):
     return stats
 
 
-def in_blackout():
-    now = datetime.datetime.now(JST).replace(tzinfo=None)
+def load_news_events():
+    """news_blackout.json を読み、(country, datetime(JST), title) のリストを返す（1回キャッシュ）。"""
+    global _NEWS_CACHE
+    if _NEWS_CACHE is not None:
+        return _NEWS_CACHE
+    out = []
+    try:
+        if os.path.exists(NEWS_FILE):
+            d = json.load(open(NEWS_FILE, encoding="utf-8"))
+            for e in d.get("events", []):
+                try:
+                    t = datetime.datetime.strptime(e["time"], "%Y-%m-%d %H:%M").replace(tzinfo=JST)
+                    out.append((e.get("country"), t, e.get("title", "")))
+                except Exception:
+                    pass
+    except Exception as ex:
+        print(f"[WARN] {NEWS_FILE}読込失敗: {ex}", file=sys.stderr)
+    _NEWS_CACHE = out
+    return out
+
+
+def in_blackout(symbol=None):
+    """発表前後 BLACKOUT_MIN 分はエントリー見送り。
+       symbol指定時は、そのペアに影響する国(PAIR_COUNTRIES)の指標だけで判定（通貨別）。"""
+    now = datetime.datetime.now(JST)
+    countries = PAIR_COUNTRIES.get(symbol) if symbol else None
+    # 自動取得分（news_blackout.json）
+    for c, t, _title in load_news_events():
+        if countries is not None and c not in countries:
+            continue
+        if abs((now - t).total_seconds()) <= BLACKOUT_MIN*60:
+            return True
+    # 手書き予備分（NEWS_BLACKOUT・全通貨一律・従来互換）
+    naive = now.replace(tzinfo=None)
     for s in NEWS_BLACKOUT:
         try:
             t = datetime.datetime.strptime(s, "%Y-%m-%d %H:%M")
-            if abs((now-t).total_seconds()) <= BLACKOUT_MIN*60:
+            if abs((naive - t).total_seconds()) <= BLACKOUT_MIN*60:
                 return True
         except Exception:
             pass
     return False
+
+
+def upcoming_news(symbol):
+    """保有ペアに影響する直近の重要指標を返す。
+       発表 WARN_BEFORE_MIN 分前 〜 発表後 BLACKOUT_MIN 分 の範囲にあれば (country, dt, title, 残り分) を返す。"""
+    now = datetime.datetime.now(JST)
+    countries = PAIR_COUNTRIES.get(symbol, set())
+    best = None
+    for c, t, title in load_news_events():
+        if c not in countries:
+            continue
+        dmin = (t - now).total_seconds() / 60.0
+        if -BLACKOUT_MIN <= dmin <= WARN_BEFORE_MIN:
+            if best is None or dmin < best[3]:
+                best = (c, t, title, dmin)
+    return best
 
 
 def load_positions():
@@ -475,6 +533,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     d = 1 if side == "long" else -1
     a = sc.get("atr") or 0.0
     score = sc.get("score", 0.0); rsi_v = sc.get("rsi", 50); adx_v = sc.get("adx", 0)
+    th = P.get("th", 0.40)   # 新規エントリー閾値。保有中スコアがこれを割る=シグナル弱化
     profit = (cur - entry) * d
     profit_atr = (profit / a) if a else 0.0
     aligned = score * d
@@ -499,6 +558,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
             if tp_pr is not None and lo <= tp_pr: hit_tp = True
             if sl_pr is not None and hi >= sl_pr: hit_sl = True
     rsi_against = (side == "long" and rsi_v >= 70) or (side == "short" and rsi_v <= 30)
+    nw = upcoming_news(sym)   # このペアに効く重要指標が接近していれば手仕舞い検討
 
     if hit_sl:
         level, label, reason = "cut", "🛑 損切り推奨", "SL到達"
@@ -506,13 +566,19 @@ def position_advice(p, ticker, sc, prev_mfe=None):
         level, label, reason = "cut", "🛑 損切り推奨", f"逆シグナル（スコア{score:+.2f}）で含み損"
     elif hit_tp:
         level, label, reason = "take", "🎯 利確推奨", "TP到達"
+    elif nw is not None:
+        when = f"約{int(nw[3])}分後" if nw[3] >= 0 else f"発表中(±{BLACKOUT_MIN}分)"
+        level, label, reason = "watch", "🟡 利確検討", f"まもなく重要指標（{nw[2]}/{when}）"
     elif profit_atr >= PROFIT_ATR and retrace_atr >= TRAIL_ATR:
         level, label, reason = "take", "🎯 利確推奨", f"高値から{retrace_atr:.1f}ATR押し戻し（トレール）"
     elif profit > 0 and aligned <= -ADV_OPP:
         level, label, reason = "take", "🎯 利確推奨", f"利益中に逆シグナル（スコア{score:+.2f}）"
-    elif profit > 0 and (abs(score) < ADV_DECAY or rsi_against or adx_v < ADX_WEAK):
-        why = "勢い減衰" if abs(score) < ADV_DECAY else ("RSI過熱" if rsi_against else "ADX低下")
-        level, label, reason = "watch", "🟡 利確検討", why
+    elif profit > 0 and (aligned < th or rsi_against or adx_v < ADX_WEAK):
+        rs = []
+        if aligned < th: rs.append(f"シグナル弱化(スコア{score:+.2f}/新規基準{th}未満)")
+        if rsi_against: rs.append("RSI過熱")
+        if adx_v < ADX_WEAK: rs.append("ADX低下")
+        level, label, reason = "watch", "🟡 利確検討", "・".join(rs)
     elif aligned >= ADV_SUPP:
         level, label, reason = "hold", "🟢 ホールド", f"シグナル順方向（スコア{score:+.2f}）"
     else:
@@ -593,7 +659,7 @@ def check_positions(data, ticker, prev_state=None):
 
 def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_signals=None):
     pairs, notify = [], []
-    blackout = in_blackout()
+    any_blackout = False
     now = datetime.datetime.now(JST)
     bar_min = BARMIN.get(P["interval"], 1)
     valid_min = VALID_BARS * bar_min
@@ -601,6 +667,10 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         sc = score_pair(sym, get_ohlc(sym))
         if not sc:
             continue
+        blackout = in_blackout(sym)          # 通貨別：このペアに効く指標の発表前後だけ停止
+        if blackout:
+            any_blackout = True
+        nw = upcoming_news(sym)              # このペアに近接する重要指標（画面表示用）
         sig = None if blackout else sc["side"]
         bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
 
@@ -623,6 +693,9 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             "score":sc["score"], "tech":sc["tech"], "fund":sc["fund"],
             "signal":sig, "bias":bias, "reasons":sc["reasons"],
             "closes":sc["closes"], "ema_f_series":sc["ef_series"], "ema_s_series":sc["es_series"],
+            "blackout": blackout,
+            "next_news": ({"title": nw[2], "time": nw[1].strftime("%H:%M"),
+                           "in_min": int(nw[3]), "country": nw[0]} if nw else None),
             **entry,
         }
         if st and st.get("n"):
@@ -662,7 +735,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
 
     status = {
         "generated_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
-        "market_open": market_open, "mode": MODE, "blackout": blackout,
+        "market_open": market_open, "mode": MODE, "blackout": any_blackout,
         "weights": {"tech": TECH_W, "fund": FUND_W},
         "pairs": pairs, "open_positions": open_pos, "closed_positions": closed_pos[-20:],
     }
