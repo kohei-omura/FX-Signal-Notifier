@@ -1,0 +1,48 @@
+name: News Calendar Fetch
+
+# 経済指標カレンダー(news_blackout.json)を毎日1回だけ更新する。
+# フィードは頻繁アクセス禁止のため、5分ごとのFX Signalとは別の軽量ワークフローに分離。
+# 日次更新なので多少の遅延は問題なし（指標発表の数時間前までに更新されればよい）。
+
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 毎日 06:00 JST（21:00 UTC）。週初も含め毎日取り直す
+  workflow_dispatch:        # 手動実行・将来Workerから叩く入口
+
+permissions:
+  contents: write
+
+concurrency:
+  group: news-calendar
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Fetch economic calendar
+        run: python fetch_news.py
+      - name: Commit news_blackout.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add news_blackout.json
+          if git diff --staged --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "auto: update news calendar [skip ci]"
+          for i in 1 2 3; do
+            git fetch origin "${GITHUB_REF_NAME}"
+            if git rebase "origin/${GITHUB_REF_NAME}"; then
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then echo "pushed"; exit 0; fi
+            else
+              git rebase --abort 2>/dev/null || true
+              git reset --hard "origin/${GITHUB_REF_NAME}"
+              echo "conflict: skip this cycle"; exit 0
+            fi
+            echo "push retry $i"; sleep 4
+          done
+          echo "push contended; skip"; exit 0
