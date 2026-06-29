@@ -325,7 +325,20 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
   const tC=p.tech>=0?'up':'down';
   const st=STATS[(S.mode||'scalp')+p.symbol];
-  const statBox = st?`<div class="entry"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b><br>📊 この設定のTP勝率 <b>${st.winRate}%</b>（直近${st.n}回・${MODE_LABEL[S.mode||'scalp']||(S.mode||'scalp')}）</div></div>`:'';
+  let statBox='';
+  if(st){
+    // 損益分岐勝率 be = 100/(1+RR)。RRは実際のTP:SL比から算出（無ければスタイル既定tsr）
+    const rr=(p.tp_pips&&p.sl_pips)?(p.tp_pips/p.sl_pips):((JS_PARAMS[S.mode||'scalp']||JS_PARAMS.scalp).tsr);
+    const be=100/(1+rr), beR=Math.round(be);
+    // 1回あたり期待値（R＝損切り1回分。勝ちは+RR、負けは-1）
+    const ev=(st.winRate/100)*rr-(1-st.winRate/100);
+    let cls,verdict;
+    if(st.winRate>=be+5){cls='up';verdict='✅ 期待値プラス傾向';}
+    else if(st.winRate>=be){cls='';verdict='🟡 ほぼ分岐点（僅差・慎重に）';}
+    else{cls='down';verdict='⛔ 期待値マイナス・エントリー見送り推奨';}
+    const evTxt=(ev>=0?'+':'')+ev.toFixed(2)+'R';
+    statBox=`<div class="entry ${cls}"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b><br>📊 TP勝率 <b>${st.winRate}%</b> ／ 損益分岐 <b>${beR}%</b>（RR 1:${rr.toFixed(1)}・直近${st.n}回）<br><b>${verdict}</b> <span style="opacity:.75">期待値 ${evTxt}/回</span></div></div>`;
+  }
   let entryBox='';
   if(p.signal && p.entry_ref!=null){
     const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
