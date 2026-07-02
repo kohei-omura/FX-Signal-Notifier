@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FX Navigator</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0a0d14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FX Navi">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d14;--panel:#11151f;--panel2:#161b27;--line:#222a3a;
+    --ink:#e8ecf4;--mut:#7e899e;--dim:#566074;
+    --up:#4ade9b;--down:#ff7a8a;--gold:#cda86a;--buy:#4ade9b;--sell:#ff7a8a;
+    --mono:'IBM Plex Mono',monospace;--jp:'Zen Kaku Gothic New',sans-serif;--serif:'Shippori Mincho',serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--jp);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(900px 500px at 80% -10%,rgba(205,168,106,.10),transparent 60%),radial-gradient(700px 500px at -10% 10%,rgba(74,222,155,.07),transparent 55%);}
+  .wrap{max-width:880px;margin:0 auto;padding:calc(18px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  .brand{font-family:var(--serif);font-size:26px;letter-spacing:.04em;line-height:1.1}
+  .brand small{display:block;font-family:var(--mono);font-size:10px;color:var(--gold);letter-spacing:.32em;text-transform:uppercase;margin-top:4px}
+  .meta{text-align:right;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:999px;letter-spacing:.08em;border:1px solid currentColor}
+  .open{color:var(--up)}.closed{color:var(--dim)}
+  h2{font-family:var(--serif);font-weight:600;font-size:15px;letter-spacing:.06em;margin:26px 0 12px;color:var(--ink);display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:18px;height:1px;background:var(--gold)}
+  h2 .sp{flex:1}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:620px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:14px 15px;opacity:0;transform:translateY(8px);animation:rise .5s ease forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .sym{font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:.02em}
+  .price{font-family:var(--mono);font-size:24px;font-weight:500}
+  .sig{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:8px}
+  .sig.buy{background:rgba(74,222,155,.12);color:var(--buy);border:1px solid rgba(74,222,155,.4)}
+  .sig.sell{background:rgba(255,122,138,.12);color:var(--sell);border:1px solid rgba(255,122,138,.4)}
+  .sig.none{color:var(--dim);border:1px solid var(--line)}
+  .tag{font-family:var(--mono);font-size:10px;color:var(--mut)}
+  .chips{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:7px;background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--mut)}
+  .chip b{color:var(--ink);font-weight:600}.chip.tp b{color:var(--up)}.chip.sl b{color:var(--down)}
+  svg{display:block;width:100%;height:64px;margin-top:11px;overflow:visible}
+  .rsiwrap{margin-top:11px}
+  .rsibar{position:relative;height:6px;border-radius:6px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+  .rsibar i{position:absolute;top:-1px;width:2px;height:8px;background:var(--ink);border-radius:2px}
+  .rsibar .zoneL{position:absolute;left:0;top:0;bottom:0;width:30%;background:rgba(74,222,155,.10)}
+  .rsibar .zoneR{position:absolute;right:0;top:0;bottom:0;width:30%;background:rgba(255,122,138,.10)}
+  .reasons{font-size:11px;color:var(--mut);margin-top:9px;line-height:1.6}
+  .pnl{font-family:var(--mono);font-size:22px;font-weight:600}
+  .up{color:var(--up)}.down{color:var(--down)}
+  .pside{font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px}
+  .pside.long{background:rgba(74,222,155,.12);color:var(--buy)}
+  .pside.short{background:rgba(255,122,138,.12);color:var(--sell)}
+  .range{position:relative;height:30px;margin-top:14px}
+  .track{position:absolute;top:13px;left:0;right:0;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--down),var(--dim),var(--up))}
+  .mark{position:absolute;top:6px;width:3px;height:17px;border-radius:2px;box-shadow:0 0 0 3px var(--bg)}
+  .rlabel{position:absolute;top:20px;font-family:var(--mono);font-size:9px;color:var(--dim)}
+  .pmeta{display:flex;gap:14px;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .pmeta b{color:var(--ink);font-weight:500}
+  .pact{display:flex;gap:8px;margin-top:12px}
+  .closebox{display:flex;gap:8px;margin-top:10px}
+  .entry{margin-top:11px;border-radius:10px;padding:9px 11px;border:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .entry.up{border-color:rgba(74,222,155,.45)}
+  .entry.down{border-color:rgba(255,122,138,.45)}
+  .entry .ev{font-family:var(--mono);font-size:12.5px;font-weight:600}
+  .entry.up .ev{color:var(--up)}.entry.down .ev{color:var(--down)}
+  .entry .er{font-family:var(--mono);font-size:10.5px;color:var(--mut);margin-top:4px;line-height:1.7}
+  .entry .er b{color:var(--ink)}
+  .hist{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line);font-size:12px}
+  .hrow:last-child{border-bottom:0}
+  .hrow .l{font-family:var(--mono);color:var(--mut)}.hrow .l b{color:var(--ink)}
+  .hrow .r{font-family:var(--mono);font-weight:600;display:flex;align-items:center;gap:10px}
+  .empty{color:var(--dim);font-size:12.5px;padding:14px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  footer{margin-top:30px;padding-top:16px;border-top:1px solid var(--line);font-size:10.5px;color:var(--dim);line-height:1.7}
+  /* controls */
+  .btn{font-family:var(--jp);font-size:12px;font-weight:700;color:var(--bg);background:var(--gold);border:0;border-radius:9px;padding:8px 14px;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--mut);border:1px solid var(--line)}
+  .btn.sm{padding:6px 11px;font-size:11px}
+  .btn.up{background:var(--up)}.btn.down{background:var(--down)}
+  .x{background:none;border:1px solid var(--line);color:var(--dim);border-radius:7px;padding:2px 8px;font-size:11px;cursor:pointer}
+  .hbtn{background:none;border:1px solid var(--line);color:var(--mut);border-radius:8px;padding:5px 10px;font-size:11px;font-family:var(--jp);cursor:pointer}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:12px}
+  .panel h3{font-family:var(--serif);font-size:14px;font-weight:600;margin-bottom:12px;color:var(--gold)}
+  .fld{margin-bottom:10px}
+  .fld label{display:block;font-size:11px;color:var(--mut);margin-bottom:4px;font-family:var(--mono)}
+  .inp,select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink);font-family:var(--mono);font-size:14px;padding:9px 11px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .note{font-size:10.5px;color:var(--dim);margin-top:6px;line-height:1.6}
+  .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1c2433;border:1px solid var(--line);color:var(--ink);font-size:12.5px;padding:10px 16px;border-radius:10px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:50;max-width:90%;text-align:center}
+  .toast.show{opacity:1}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">FX ナビゲーター<small>signal · take-profit</small></div>
+    <div class="meta">
+      <div id="clock">--:--:--</div>
+      <div id="status" style="margin-top:4px"><span class="badge closed">— —</span></div>
+      <div id="updated" style="margin-top:4px"></div>
+      <div id="live" style="margin-top:4px"></div>
+      <div id="modesw" style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"></div>
+    </div>
+  </header>
+
+  <h2>ペア別シグナル</h2>
+  <div id="stalewarn"></div>
+  <div id="modewarn"></div>
+  <div id="riskbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--mut)">
+    <span>💴 資金</span><input id="r_cap" class="inp" inputmode="numeric" style="width:96px;padding:6px 8px" onchange="setRisk()">円
+    <span>リスク</span><input id="r_risk" class="inp" inputmode="decimal" style="width:54px;padding:6px 8px" onchange="setRisk()">%
+    <span>レバ</span><input id="r_lev" class="inp" inputmode="numeric" style="width:48px;padding:6px 8px" onchange="setRisk()">倍
+    <span style="opacity:.6">→ 必要証拠金は価格から自動</span>
+  </div>
+  <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
+
+  <h2>保有ポジション（利確ナビ）<span class="sp"></span>
+    <button class="hbtn" onclick="togglePanel('addPanel')">＋ 追加</button>
+    <button class="hbtn" onclick="togglePanel('setPanel')">⚙</button>
+  </h2>
+
+  <div class="panel hide" id="addPanel">
+    <h3>ポジション追加</h3>
+    <div class="two">
+      <div class="fld"><label>通貨ペア</label>
+        <select id="f_sym"><option>USD_JPY</option><option>EUR_JPY</option><option selected>GBP_JPY</option><option>AUD_JPY</option></select></div>
+      <div class="fld"><label>売買</label>
+        <select id="f_side"><option value="long">買い (long)</option><option value="short">売り (short)</option></select></div>
+    </div>
+    <div class="two">
+      <div class="fld"><label>建値（約定価格）</label><input class="inp" id="f_entry" inputmode="decimal" placeholder="例 213.579"></div>
+      <div class="fld"><label>数量（通貨）</label><input class="inp" id="f_lot" inputmode="numeric" value="1000"></div>
+    </div>
+    <div class="fld"><label>利確/損切りの決め方</label>
+      <select id="f_mode" onchange="document.getElementById('pipsRow').classList.toggle('hide', this.value!=='manual')">
+        <option value="auto">ATRで自動推奨（おすすめ）</option>
+        <option value="manual">pipsを自分で指定</option>
+      </select></div>
+    <div class="two hide" id="pipsRow">
+      <div class="fld"><label>利確 pips</label><input class="inp" id="f_tp" inputmode="decimal" placeholder="例 15"></div>
+      <div class="fld"><label>損切り pips</label><input class="inp" id="f_sl" inputmode="decimal" placeholder="例 10"></div>
+    </div>
+    <button class="btn" onclick="addPos()">この内容で追加</button>
+    <div class="note">追加するとGitHubの positions.json に保存され、約1分で全画面に反映されます。</div>
+  </div>
+
+  <div class="panel hide" id="setPanel">
+    <h3>GitHub連携設定</h3>
+    <div class="fld"><label>GitHubトークン（fine-grained・対象リポジトリのContents:Read and write）</label>
+      <input class="inp" id="s_token" type="password" placeholder="github_pat_..."></div>
+    <div class="two">
+      <div class="fld"><label>オーナー（ユーザー名）</label><input class="inp" id="s_owner"></div>
+      <div class="fld"><label>リポジトリ名</label><input class="inp" id="s_repo"></div>
+    </div>
+    <div class="fld"><label>ブランチ</label><input class="inp" id="s_branch" value="main"></div>
+    <button class="btn" onclick="saveSet()">保存</button>
+    <div class="note">トークンはこの端末内（ブラウザ）にのみ保存され、リポジトリには書き込まれません。必ず「このリポジトリのみ・Contents権限のみ」のfine-grainedトークンを使ってください。</div>
+  </div>
+
+  <div class="grid" id="positions"></div>
+
+  <h2>決済履歴</h2>
+  <div id="history"></div>
+
+  <footer>
+    ※ ATR推奨は直近の値動きに見合った目安であり、未来の最適値や利益を保証する予測ではありません。売買・損益はすべて自己責任です。<br>
+    決済はアプリ側では自動で行いません。GMO等で決済後、各ポジションの「決済」から<b>実際の約定価格</b>を入力すると、その結果が履歴に残ります。
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let S={pairs:[]}, POS={positions:[]}, PRICE={};
+let MODEJSON=null; // mode.json（サーバー通知が使うモード）の現在値。画面と不一致なら警告
+let LAST_TICK_TS=0; // 最後にライブ価格(ticker)を取得できた時刻。古ければ警告
+let POS_BUSY=false; // 追加/決済/削除の書込中はポーリングで上書きしない
+const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
+// WorkerにNOTIFY_KEYを設定した場合のみ同じ値を入れる（任意）
+const NOTIFY_KEY = "高坂麗奈ちゃん";
+const PS = 0.01; // 円ペア 1pips
+
+const fmt=n=>(n===null||n===undefined)?'—':n;
+const yen=n=>(n===null||n===undefined)?'—':(n>=0?'+':'')+n.toLocaleString('ja-JP')+'円';
+const pips=n=>(n===null||n===undefined)?'':(n>=0?'+':'')+n.toFixed(1)+'pips';
+const nowJST=()=>new Date().toLocaleString('sv-SE',{timeZone:'Asia/Tokyo'}).replace(' ',' ').slice(0,16)+' JST';
+function clock(){$('#clock').textContent=new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false});}
+setInterval(clock,1000);clock();
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200);}
+function togglePanel(id){const el=document.getElementById(id);el.classList.toggle('hide');if(id==='setPanel'&&!el.classList.contains('hide'))fillSet();}
+
+/* ---------- GitHub 連携 ---------- */
+const LS='fxnavi_gh';
+function cfg(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return{}}}
+function setCfg(c){localStorage.setItem(LS,JSON.stringify(c));}
+function detect(){const h=location.hostname,p=location.pathname.split('/').filter(Boolean);let o='',r='';
+  if(h.endsWith('github.io')){o=h.split('.')[0];r=p[0]||(o+'.github.io');}return{owner:o,repo:r,branch:'main'};}
+function fillSet(){const c=cfg(),d=detect();$('#s_token').value=c.token||'';$('#s_owner').value=c.owner||d.owner||'';
+  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';}
+function saveSet(){const c={token:$('#s_token').value.trim(),owner:$('#s_owner').value.trim(),repo:$('#s_repo').value.trim(),branch:($('#s_branch').value.trim()||'main')};
+  if(!c.token||!c.owner||!c.repo){toast('トークン・オーナー・リポジトリを入力してください');return;}
+  setCfg(c);toast('保存しました');togglePanel('setPanel');}
+function needCfg(){const c=cfg();if(!c.token||!c.owner||!c.repo){toast('先に⚙でGitHub連携を設定してください');togglePanel('setPanel');return null;}return c;}
+const b64enc=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o,null,2))));
+const b64dec=s=>JSON.parse(decodeURIComponent(escape(atob(s.replace(/\n/g,'')))));
+async function ghGet(c){const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/positions.json?ref=${c.branch}&t=${Date.now()}`,
+  {headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json'},cache:'no-store'});
+  if(!r.ok)throw new Error('読込失敗 '+r.status);const j=await r.json();return{data:b64dec(j.content),sha:j.sha};}
+async function ghPut(c,data,sha,msg){const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/positions.json`,
+  {method:'PUT',headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},
+   body:JSON.stringify({message:msg,content:b64enc(data),sha,branch:c.branch})});
+  if(!r.ok){const t=await r.text();throw new Error('保存失敗 '+r.status+' '+t.slice(0,80));}return r.json();}
+async function ghPutFile(c,path,obj,msg){let sha=undefined;
+  try{const g=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}?ref=${c.branch}&t=${Date.now()}`,
+    {headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json'},cache:'no-store'});if(g.ok){sha=(await g.json()).sha;}}catch(e){}
+  const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}`,
+    {method:'PUT',headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},
+     body:JSON.stringify({message:msg,content:b64enc(obj),sha,branch:c.branch})});
+  if(!r.ok){const t=await r.text();throw new Error('保存失敗 '+r.status+' '+t.slice(0,80));}return r.json();}
+
+/* ---------- 操作 ---------- */
+async function addPos(){const c=needCfg();if(!c)return;
+  const sym=$('#f_sym').value,side=$('#f_side').value,entry=parseFloat($('#f_entry').value),lot=parseInt($('#f_lot').value||'1000',10);
+  if(!isFinite(entry)){toast('建値を入力してください');return;}
+  const pos={id:'p'+Date.now(),symbol:sym,side,entry,lot,status:'open'};
+  let autoNote='';
+  if($('#f_mode').value==='manual'){const tp=parseFloat($('#f_tp').value),sl=parseFloat($('#f_sl').value);
+    if(isFinite(tp))pos.tp_pips=tp;if(isFinite(sl))pos.sl_pips=sl;}
+  else{
+    // 画面で選択中のスタイルのTP/SL（そのペアのライブ計算値）を付与し、サーバー側の再設定を止める
+    const lp=(S.pairs||[]).find(x=>x.symbol===sym);
+    if(lp&&lp.tp_pips!=null&&lp.sl_pips!=null){
+      pos.tp_pips=lp.tp_pips;pos.sl_pips=lp.sl_pips;if(lp.atr!=null)pos.atr_used=lp.atr;
+      pos.auto=true;pos.auto_set=true;pos.mode=S.mode;
+      autoNote=`（${MODE_LABEL[S.mode]||S.mode}: TP+${lp.tp_pips}/SL-${lp.sl_pips}pips）`;
+    }else{pos.auto=true;autoNote='（TP/SLは次回サーバー更新時に自動設定）';}
+  }
+  POS_BUSY=true;
+  try{toast('保存中…');const{data,sha}=await ghGet(c);data.positions=data.positions||[];data.positions.push(pos);
+    await ghPut(c,data,sha,'add '+sym+' [skip ci]');POS=data;render();toast('追加しました'+autoNote);togglePanel('addPanel');
+    $('#f_entry').value='';}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
+
+function computeClose(p,price){const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000);
+  const diff=side==='long'?(price-entry):(entry-price);return{pips:+(diff/PS).toFixed(1),yen:Math.round(diff*lot),reason:diff>=0?'利確':'損切り'};}
+function toggleClose(id){const b=document.getElementById('cb_'+id);if(b)b.classList.toggle('hide');}
+async function doClose(id){const c=needCfg();if(!c)return;const price=parseFloat(document.getElementById('cp_'+id).value);
+  if(!isFinite(price)){toast('実際の約定価格を入力してください');return;}
+  POS_BUSY=true;
+  try{toast('保存中…');const{data,sha}=await ghGet(c);const p=(data.positions||[]).find(x=>x.id===id&&(x.status||'open')==='open');
+    if(!p){toast('対象が見つかりません');return;}const r=computeClose(p,price);
+    Object.assign(p,{status:'closed',close_price:price,close_pips:r.pips,close_yen:r.yen,close_reason:r.reason,closed_at:nowJST()});
+    await ghPut(c,data,sha,'close '+p.symbol);POS=data;render();toast(`決済しました：${r.reason} ${r.yen>=0?'+':''}${r.yen}円`);}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
+async function delPos(id){const c=needCfg();if(!c)return;if(!confirm('このポジション/履歴を削除しますか？'))return;
+  POS_BUSY=true;
+  try{const{data,sha}=await ghGet(c);data.positions=(data.positions||[]).filter(x=>x.id!==id);
+    await ghPut(c,data,sha,'delete '+id);POS=data;render();toast('削除しました');}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
+
+/* ---------- 計算/描画 ---------- */
+function tpsl(p){const side=p.side||'long',entry=+p.entry;let tp=(p.tp!=null)?+p.tp:null,sl=(p.sl!=null)?+p.sl:null;
+  if(tp===null&&p.tp_pips!=null)tp=side==='long'?entry+p.tp_pips*PS:entry-p.tp_pips*PS;
+  if(sl===null&&p.sl_pips!=null)sl=side==='long'?entry-p.sl_pips*PS:entry+p.sl_pips*PS;return[tp,sl];}
+function computeOpen(){return(POS.positions||[]).filter(p=>(p.status||'open')==='open').map(p=>{
+  const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000),q=PRICE[p.symbol];let cur=null,pp=null,yy=null;
+  if(q){const c2=side==='long'?q.bid:q.ask,diff=side==='long'?(c2-entry):(entry-c2);cur=+c2.toFixed(3);pp=+(diff/PS).toFixed(1);yy=Math.round(diff*lot);}
+  const[tp,sl]=tpsl(p);return{id:p.id,symbol:p.symbol,side,entry,lot,current:cur,pips:pp,yen:yy,
+    tp_price:tp!=null?+tp.toFixed(3):null,sl_price:sl!=null?+sl.toFixed(3):null};});}
+
+/* ---------- 保有ポジションの利確/損切り判定（建値ベース・シグナル監視） ---------- */
+const ADV_OPP=0.25, ADV_SUPP=0.15, ADV_DECAY=0.10, TRAIL_ATR=1.0, PROFIT_ATR=1.0, ADX_WEAK=20.0;
+function pairSig(sym){return (S.pairs||[]).find(x=>x.symbol===sym);}
+function loadMfe(){try{return JSON.parse(localStorage.getItem('fxnavi_mfe'))||{}}catch(e){return{}}}
+function saveMfe(o){try{localStorage.setItem('fxnavi_mfe',JSON.stringify(o));}catch(e){}}
+function posAdvice(p){
+  const ps=pairSig(p.symbol); if(!ps||p.current==null)return null;
+  const dir=p.side==='long'?1:-1, a=ps.atr||0, score=(ps.score!=null?ps.score:0), rsi=(ps.rsi!=null?ps.rsi:50), adx=(ps.adx!=null?ps.adx:0);
+  const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=score*dir;
+  const m=loadMfe(); let mfe=m[p.id]; mfe=(mfe==null)?p.entry:(p.side==='long'?Math.max(mfe,p.current):Math.min(mfe,p.current)); m[p.id]=+mfe.toFixed(3); saveMfe(m);
+  const retrace=(p.side==='long'?(mfe-p.current):(p.current-mfe)), retraceAtr=a?retrace/a:0;
+  const rsiAgainst=(p.side==='long'&&rsi>=70)||(p.side==='short'&&rsi<=30);
+  const hitTp=p.tp_price!=null&&((p.side==='long'&&p.current>=p.tp_price)||(p.side==='short'&&p.current<=p.tp_price));
+  const hitSl=p.sl_price!=null&&((p.side==='long'&&p.current<=p.sl_price)||(p.side==='short'&&p.current>=p.sl_price));
+  const sTxt=(score>=0?'+':'')+score.toFixed(2);
+  let level,label,reason;
+  if(hitSl){level='cut';label='🛑 損切り推奨';reason='SL到達';}
+  else if(aligned<=-ADV_OPP&&profit<=0){level='cut';label='🛑 損切り推奨';reason=`逆シグナル(スコア${sTxt})で含み損`;}
+  else if(hitTp){level='take';label='🎯 利確推奨';reason='TP到達';}
+  else if(profitAtr>=PROFIT_ATR&&retraceAtr>=TRAIL_ATR){level='take';label='🎯 利確推奨';reason=`高値から${retraceAtr.toFixed(1)}ATR押し戻し（トレール）`;}
+  else if(profit>0&&aligned<=-ADV_OPP){level='take';label='🎯 利確推奨';reason=`利益中に逆シグナル(スコア${sTxt})`;}
+  else if(profit>0&&(Math.abs(score)<ADV_DECAY||rsiAgainst||adx<ADX_WEAK)){level='watch';label='🟡 利確検討';reason=Math.abs(score)<ADV_DECAY?'勢い減衰':(rsiAgainst?'RSI過熱':'ADX低下');}
+  else if(aligned>=ADV_SUPP){level='hold';label='🟢 ホールド';reason=`シグナル順方向(スコア${sTxt})`;}
+  else{level='watch';label='🟡 様子見';reason='明確なサインなし'}
+  return {level,label,reason,cls:(level==='cut'?'down':(level==='take'||level==='hold')?'up':'')};
+}
+function checkPosNotify(){
+  let adv0;try{adv0=JSON.parse(localStorage.getItem('fxnavi_pos_adv'))||{}}catch(e){adv0={}}
+  let ch=false;
+  computeOpen().forEach(p=>{const a=posAdvice(p);if(!a)return;
+    if((a.level==='take'||a.level==='cut')&&adv0[p.id]!==a.level){
+      notifyLive(`${a.label} ${p.symbol.replace('_','/')}（${p.side==='long'?'買い':'売り'}）\n${a.reason}\n建値${p.entry} → 現在${p.current} / ${pips(p.pips)} / ${yen(p.yen)}\n※GMOで決済後アプリに結果を登録`);
+      adv0[p.id]=a.level;ch=true;
+    }else if(a.level!=='take'&&a.level!=='cut'&&(adv0[p.id]==='take'||adv0[p.id]==='cut')){adv0[p.id]=a.level;ch=true;}
+  });
+  if(ch){try{localStorage.setItem('fxnavi_pos_adv',JSON.stringify(adv0))}catch(e){}}
+}
+function spark(c,ss,ll){const W=300,H=64,pad=4;const all=[...c,...ss.filter(v=>v!=null),...ll.filter(v=>v!=null)];
+  if(all.length<2||c.length<2)return'';
+  const mn=Math.min(...all),mx=Math.max(...all),rng=(mx-mn)||1;const X=i=>pad+i*(W-2*pad)/((c.length-1)||1),Y=v=>pad+(H-2*pad)*(1-(v-mn)/rng);
+  const line=(a,col,w)=>{let d='',st=false;a.forEach((v,i)=>{if(v==null){st=false;return;}d+=(st?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';st=true;});
+    return`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`;};
+  return`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${line(c,'rgba(232,236,244,.35)',1)}${line(ll,'var(--gold)',1.4)}${line(ss,'var(--up)',1.4)}</svg>`;}
+function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
+  const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
+  const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
+  const tC=p.tech>=0?'up':'down';
+  const st=STATS[(S.mode||'scalp')+p.symbol];
+  let statBox='';
+  if(st){
+    // 損益分岐勝率 be = 100/(1+RR)。RRは実際のTP:SL比から算出（無ければスタイル既定tsr）
+    const rr=(p.tp_pips&&p.sl_pips)?(p.tp_pips/p.sl_pips):((JS_PARAMS[S.mode||'scalp']||JS_PARAMS.scalp).tsr);
+    const be=100/(1+rr), beR=Math.round(be);
+    // 1回あたり期待値（R＝損切り1回分。勝ちは+RR、負けは-1）
+    const ev=(st.winRate/100)*rr-(1-st.winRate/100);
+    let cls,verdict;
+    if(st.winRate>=be+5){cls='up';verdict='✅ 期待値プラス傾向';}
+    else if(st.winRate>=be){cls='';verdict='🟡 ほぼ分岐点（僅差・慎重に）';}
+    else{cls='down';verdict='⛔ 期待値マイナス・エントリー見送り推奨';}
+    const evTxt=(ev>=0?'+':'')+ev.toFixed(2)+'R';
+    statBox=`<div class="entry ${cls}"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b><br>📊 TP勝率 <b>${st.winRate}%</b> ／ 損益分岐 <b>${beR}%</b>（RR 1:${rr.toFixed(1)}・直近${st.n}回）<br><b>${verdict}</b> <span style="opacity:.75">期待値 ${evTxt}/回</span></div></div>`;
+  }
+  let entryBox='';
+  if(p.signal && p.entry_ref!=null){
+    const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
+    let v,vc;
+    if(p.valid_until_ts && now>p.valid_until_ts){v='⌛ 期限切れ・見送り';vc='down';}
+    else if(cur!=null && p.signal==='買い' && cur>p.entry_limit){v='⛔ 高く動きすぎ・見送り';vc='down';}
+    else if(cur!=null && p.signal==='売り' && cur<p.entry_limit){v='⛔ 安く動きすぎ・見送り';vc='down';}
+    else{const rem=p.valid_until_ts?Math.max(0,Math.round((p.valid_until_ts-now)/60000)):'?';v=`✅ エントリー可（残り約${rem}分）`;vc='up';}
+    const lab=p.signal==='買い'?'上限':'下限';
+    entryBox=`<div class="entry ${vc}"><div class="ev">${v}</div>
+      <div class="er">通知価格 <b>${p.entry_ref}</b> ／ 追い${lab} <b>${p.entry_limit}</b> ／ 期限 <b>${p.valid_until||'-'}</b>${cur!=null?' ／ 現在 <b>'+cur.toFixed(3)+'</b>':''}</div></div>`;
+  }
+  // ライブ追撃可否（今この瞬間に追撃して良いか）
+  let chaseBadge='';
+  if(p.signal){
+    const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
+    let invalid=false;
+    if(p.valid_until_ts && now>p.valid_until_ts) invalid=true;
+    else if(cur!=null && p.signal==='買い' && p.entry_limit!=null && cur>p.entry_limit) invalid=true;
+    else if(cur!=null && p.signal==='売り' && p.entry_limit!=null && cur<p.entry_limit) invalid=true;
+    const adx=p.adx!=null?p.adx:0, rsi=p.rsi!=null?p.rsi:50;
+    const overheat=(p.signal==='買い'&&rsi>=70)||(p.signal==='売り'&&rsi<=30);
+    let badge,bc,note;
+    if(invalid){badge='⛔ 追撃見送り';bc='down';note='動きすぎ／期限切れ';}
+    else if(adx<20||overheat){badge='🟡 追撃は慎重';bc='';note=adx<20?'勢い弱め（ADX&lt;20）':'RSI過熱';}
+    else{badge='🟢 追撃可';bc='up';note='勢いあり（ADX '+fmt(p.adx)+'）';}
+    const aim=st&&st.chase?(st.chase.maxNo>=4?' ／ 目安 4本目以降':st.chase.maxNo>=1?' ／ 目安 '+st.chase.maxNo+'本目まで':' ／ 過去は追撃非推奨'):'';
+    chaseBadge=`<div class="entry ${bc}"><div class="ev">${badge}</div><div class="er">${note}${aim}</div></div>`;
+  }
+  // 回数別の追撃勝率（過去データ）
+  let chaseBox='';
+  if(st&&st.chase){const ch=st.chase;
+    const cells=ch.list.map(it=>`${it.no>=4?'4本目〜':it.no+'本目'} <b>${it.winRate}%</b><span style="opacity:.55;font-size:11px">(${it.n})</span>`).join(' ／ ');
+    const rec=ch.maxNo>=4?'4本目以降も分岐点超え':ch.maxNo>=1?`${ch.maxNo}本目まで`:'追撃は非推奨（1本目から分岐点未満）';
+    const lowN=ch.list.some(it=>it.n<10);
+    chaseBox=`<div class="entry"><div class="er">🔁 追撃の目安（過去データ）: <b>${rec}</b>（分岐点 ${ch.be}%）<br>回数別TP勝率 — ${cells}${lowN?'<br><span style="color:var(--gold);font-size:11px">※( )内は試行回数。少ない回数は参考程度に</span>':''}</div></div>`;
+  }
+  // リスク基準の推奨数量（リスク上限と証拠金上限の小さい方）
+  let lotBox='';
+  if(p.sl_pips){const L=recLot(p.sl_pips,p.bid);
+    if(L){
+      if(L.units>=1000){const reason=L.bind==='margin'?'証拠金上限':'リスク上限';
+        lotBox=`<div class="entry"><div class="er">💴 推奨数量 <b>${L.units.toLocaleString()}通貨</b>（${reason}基準 ／ 必要証拠金¥${Math.round(L.marginPer1000)}/千通貨 ／ リスク¥${Math.round(L.riskYen)}=資金${RISK.risk}% ／ SL ${fmt(p.sl_pips)}p）</div></div>`;
+      }else{const why=L.marginUnits<1000?`証拠金不足（1,000通貨に¥${Math.round(L.marginPer1000)}必要・資金¥${Math.round(RISK.cap)}）`:`リスク過大（最小1,000通貨で実リスク¥${Math.round(L.minRisk)}=資金${L.minPct.toFixed(1)}%）`;
+        lotBox=`<div class="entry down"><div class="er">💴 推奨: <b>見送り</b> — ${why}</div></div>`;}
+    }}
+  return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
+    <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
+    <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
+    ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
+    <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip">ADX <b>${fmt(p.adx)}</b></span>
+    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${statBox}${lotBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
+function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
+  if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
+    let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
+    const L=p.side==='long'?'SL '+p.sl_price:'TP '+p.tp_price,R=p.side==='long'?'TP '+p.tp_price:'SL '+p.sl_price;
+    bar=`<div class="range"><div class="track"></div><div class="mark" style="left:calc(${pos}% - 1.5px);background:${p.pips>=0?'var(--up)':'var(--down)'}"></div>
+      <span class="rlabel" style="left:0">${L}</span><span class="rlabel" style="right:0">${R}</span></div>`;}
+  else if(p.current!=null){bar=`<div class="reasons">TP/SL未設定（autoは次回Action実行で自動設定）</div>`;}
+  const adv=posAdvice(p);
+  const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}</div></div>`:'';
+  return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span><span class="tag">建値 ${p.entry}</span></div>
+    <div class="row" style="margin-top:10px"><span class="pnl ${cls}">${yen(p.yen)}</span><span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span></div>
+    ${bar}${advBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
+    <div class="pact"><button class="btn sm" onclick="toggleClose('${p.id}')">決済</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
+    <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
+function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
+  e.innerHTML=MODES.map(x=>`<button class="hbtn" onclick="setMode('${x}')" style="${x===m?'background:#cda86a;color:#1a1206;font-weight:700':''}">${MODE_LABEL[x]}</button>`).join('');}
+function applyModeOverride(){try{const o=localStorage.getItem('fxnavi_mode');if(o&&MODES.includes(o))S.mode=o;}catch(e){}}
+async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
+  try{localStorage.setItem('fxnavi_mode',m);}catch(e){}
+  S.mode=m;render();liveSignals();refreshStats(true);
+  const c=cfg();
+  if(c&&c.token&&c.owner&&c.repo){
+    try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'auto: set mode '+m+' [skip ci]');
+      MODEJSON=m;renderModeWarn();
+      toast('通知スタイルも'+MODE_LABEL[m]+'に切替（次回実行から反映）');}
+    catch(e){toast('画面は切替。通知反映は保存失敗: '+e.message);}
+  }else{toast('画面のみ切替。通知にも反映するには⚙でGitHub設定を');}
+}
+// 画面モードに合わせて mode.json を上書き（通知モードを画面に同期）
+async function syncModeJson(){
+  const m=S.mode||'scalp',c=cfg();
+  if(!(c&&c.token&&c.owner&&c.repo)){toast('⚙でGitHub設定をすると同期できます');togglePanel('setPanel');return;}
+  try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
+    MODEJSON=m;renderModeWarn();toast('通知モードを'+(MODE_LABEL[m]||m)+'に同期しました（次回実行から反映）');}
+  catch(e){toast('同期失敗: '+e.message);}
+}
+// mode.json（通知モード）と画面モードの不一致を警告表示
+function renderModeWarn(){
+  const el=$('#modewarn');if(!el)return;
+  const screen=S.mode||'scalp';
+  if(MODEJSON && MODES.includes(MODEJSON) && MODEJSON!==screen){
+    el.innerHTML=`<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--down);border-radius:10px;background:rgba(255,122,138,.08);font-size:12.5px;color:var(--ink)">
+      ⚠️ 通知モードが画面と違います — 通知=<b>${MODE_LABEL[MODEJSON]||MODEJSON}</b> ／ 画面=<b>${MODE_LABEL[screen]||screen}</b>。
+      このままだと通知のTP/SL幅が画面とズレます。
+      <button class="btn sm" style="margin-left:6px" onclick="syncModeJson()">通知を画面に合わせる</button></div>`;
+  }else{el.innerHTML='';}
+}
+// サーバー更新(status.json)とライブ価格(ticker)の停止を検知して警告
+function parseGenAt(s){if(!s)return null;const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if(!m)return null;return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`).getTime();}
+function ageTxt(ms){const s=Math.round(ms/1000);if(s<90)return s+'秒前';const mi=Math.round(s/60);if(mi<90)return mi+'分前';const h=mi/60;if(h<48)return Math.round(h)+'時間前';return Math.round(h/24)+'日前';}
+function renderStale(){
+  const el=$('#stalewarn');if(!el)return;const now=Date.now();const msgs=[];
+  const gt=parseGenAt(S.generated_at);
+  if(gt){const age=now-gt;
+    if(age>15*60000)msgs.push(`⚠️ サーバー更新が停止中（最終 <b>${ageTxt(age)}</b>）。価格は今ライブ値で表示中ですが、GitHub Actionsの「FX Signal Notifier」が動いているか確認してください。`);
+  }
+  if(LAST_TICK_TS && now-LAST_TICK_TS>60000)
+    msgs.push(`⚠️ ライブ価格の取得が停止（最終 <b>${ageTxt(now-LAST_TICK_TS)}</b>）。表示価格が実勢とズレている可能性があります。`);
+  el.innerHTML = msgs.length
+    ? `<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:rgba(205,168,106,.10);font-size:12.5px;color:var(--ink);line-height:1.7">${msgs.join('<br>')}</div>`
+    : '';
+}
+function render(){
+  renderModeSw();
+  renderModeWarn();
+  renderStale();
+  $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
+  $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
+  $('#pairs').innerHTML=(S.pairs||[]).map(pairCard).join('')||'<div class="empty">データなし</div>';
+  const op=computeOpen();
+  $('#positions').innerHTML=op.length?op.map(posCard).join(''):'<div class="empty">保有ポジションなし — 「＋追加」から登録できます</div>';
+  const cp=(POS.positions||[]).filter(p=>p.status==='closed').reverse();
+  $('#history').innerHTML=cp.length?`<div class="hist">${cp.map(h=>{const cls=h.close_pips>=0?'up':'down';
+    return`<div class="hrow"><span class="l"><b>${h.symbol.replace('_','/')}</b> ${h.side==='long'?'買い':'売り'} · ${h.close_reason||''} · ${h.closed_at||''}</span>
+      <span class="r"><span class="${cls}">${yen(h.close_yen)} / ${pips(h.close_pips)}</span><button class="x" onclick="delPos('${h.id}')">✕</button></span></div>`;}).join('')}</div>`
+    :'<div class="empty">決済履歴なし</div>';}
+function setPriceFromStatus(){
+  // status.jsonは古い場合がある。既にライブ値がある銘柄はそれを優先し、未取得の銘柄だけ種として入れる
+  // （毎回PRICEを空にして古い値で上書きすると、一瞬2日前の価格が表示され乖離して見える問題を防ぐ）
+  (S.pairs||[]).forEach(p=>{if(p.bid!=null&&!PRICE[p.symbol])PRICE[p.symbol]={bid:p.bid,ask:(p.ask!=null?p.ask:p.bid)};});
+}
+
+/* ====== ライブ計算（Workerでklines取得→画面側で再計算。Python版と一致） ====== */
+const CHART_POINTS=60, PS_=0.01;
+const W_EMA=0.35,W_MACD=0.25,W_RSI=0.20,W_BB=0.20,TECH_W=0.9,FUND_W=0.1;
+// スタイル別 テク:ファンダ 比率（短期=テク重視 0.85:0.15 / スイング=ファンダ重視 0.45:0.55）
+function tfw(){return (S&&S.mode==='swing')?{t:0.45,f:0.55}:{t:0.85,f:0.15};}
+const SL_ATR_MULT=1.0,TP_SL_RATIO=1.5,VALID_BARS=3,MAX_CHASE_RATIO=0.5;
+const FUND_BIAS={USD_JPY:0.5,EUR_JPY:0.4,GBP_JPY:0.5,AUD_JPY:0.4};
+const SYMS=["USD_JPY","EUR_JPY","GBP_JPY","AUD_JPY"];
+const BARMIN={'1min':1,'5min':5,'10min':10,'15min':15,'30min':30,'1hour':60,'4hour':240,'1day':1440};
+const MODES=['scalp','day','swing'];
+const MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング'};
+// slm=SL幅(ATR倍), tsr=TP:SL比, days/cap=統計の取得日数/上限本数。スタイルごとに足とTP/SL幅を変える
+const JS_PARAMS={
+  scalp:{interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35,slm:1.0,tsr:1.5,days:3,cap:1500},
+  day:{interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.3,tsr:1.6,days:8,cap:1000},
+  swing:{interval:'1hour',ema_f:12,ema_s:26,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000}};
+function holdTxt(min){if(min==null)return'—';if(min<120)return'約'+min+'分';const h=min/60;if(h<48)return'約'+(h>=10?Math.round(h):Math.round(h*10)/10)+'時間';return'約'+Math.round(h/24*10)/10+'日';}
+// リスク基準の数量計算（JPYペア: 1pip=0.01円/通貨）
+let RISK={cap:10000,risk:1,lev:25};
+function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk,lev:+(o.lev||25)};}catch(e){}}
+function setRisk(){const cap=Math.max(0,parseFloat(($('#r_cap')||{}).value)||0),risk=Math.max(0,parseFloat(($('#r_risk')||{}).value)||0),lev=Math.max(1,parseFloat(($('#r_lev')||{}).value)||25);RISK={cap,risk,lev};try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}render();}
+// 必要証拠金(1,000通貨)=価格×1000÷レバ。推奨=リスク上限と証拠金上限の小さい方・1,000通貨刻み
+function recLot(slPips,price){if(!slPips||slPips<=0||!RISK.cap||!price)return null;
+  const riskYen=RISK.cap*RISK.risk/100,riskUnits=riskYen/(slPips*PS_);
+  const marginPer1000=price*1000/(RISK.lev||25),maxLots=marginPer1000>0?Math.floor(RISK.cap/marginPer1000):Infinity,marginUnits=maxLots*1000;
+  const units=Math.floor(Math.min(riskUnits,marginUnits)/1000)*1000,minRisk=1000*slPips*PS_;
+  return{units,riskUnits,marginUnits,marginPer1000,riskYen,minRisk,minPct:RISK.cap?minRisk/RISK.cap*100:0,bind:riskUnits<=marginUnits?'risk':'margin'};}
+const cl=(x,lo=-1,hi=1)=>Math.max(lo,Math.min(hi,x)),r3=x=>x==null?null:Math.round(x*1000)/1000,r4=x=>x==null?null:Math.round(x*10000)/10000;
+function emaSeries(v,p){if(v.length<p)return Array(v.length).fill(null);const k=2/(p+1),o=Array(v.length).fill(null);let e=v.slice(0,p).reduce((a,b)=>a+b,0)/p;o[p-1]=e;for(let i=p;i<v.length;i++){e=v[i]*k+e*(1-k);o[i]=e;}return o;}
+function ema(v,p){const s=emaSeries(v,p);return s.length?s[s.length-1]:null;}
+function rsiC(v,p){if(v.length<p+1)return null;const d=[];for(let i=1;i<v.length;i++)d.push(v[i]-v[i-1]);const g=d.map(x=>Math.max(x,0)),l=d.map(x=>Math.max(-x,0));let ag=g.slice(0,p).reduce((a,b)=>a+b,0)/p,al=l.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<d.length;i++){ag=(ag*(p-1)+g[i])/p;al=(al*(p-1)+l[i])/p;}return al===0?100:100-100/(1+ag/al);}
+function macdC(v,f,s,sig){const ef=emaSeries(v,f),es=emaSeries(v,s);const ml=v.map((_,i)=>(ef[i]!=null&&es[i]!=null)?ef[i]-es[i]:null);const vals=ml.filter(m=>m!=null);if(vals.length<sig+1)return null;const ss=emaSeries(vals,sig);if(ss[ss.length-1]==null||ss[ss.length-2]==null)return null;return [vals[vals.length-1],ss[ss.length-1],vals[vals.length-1]-ss[ss.length-1],vals[vals.length-2]-ss[ss.length-2]];}
+function bollC(v,p,k){if(v.length<p)return null;const w=v.slice(-p),mid=w.reduce((a,b)=>a+b,0)/p;const sd=Math.sqrt(w.reduce((a,b)=>a+(b-mid)**2,0)/p);return [mid,mid+k*sd,mid-k*sd,sd];}
+function atrC(o,p){if(o.length<p+1)return null;const tr=[];for(let i=1;i<o.length;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];tr.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}let a=tr.slice(0,p).reduce((x,y)=>x+y,0)/p;for(let i=p;i<tr.length;i++)a=(a*(p-1)+tr[i])/p;return a;}
+function adxC(o,p){if(o.length<2*p+1)return null;const pdm=[],mdm=[],tr=[];for(let i=1;i<o.length;i++){const h=o[i][0],l=o[i][1],ph=o[i-1][0],pl=o[i-1][1],pc=o[i-1][2];const up=h-ph,dn=pl-l;pdm.push((up>dn&&up>0)?up:0);mdm.push((dn>up&&dn>0)?dn:0);tr.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}const w=arr=>{let s=arr.slice(0,p).reduce((a,b)=>a+b,0);const o2=[s];for(let i=p;i<arr.length;i++){s=s-s/p+arr[i];o2.push(s);}return o2;};const at=w(tr),pd=w(pdm),md=w(mdm);const pdi=at.map((x,i)=>x?100*pd[i]/x:0),mdi=at.map((x,i)=>x?100*md[i]/x:0);const dx=pdi.map((x,i)=>100*Math.abs(x-mdi[i])/((x+mdi[i])||1));let av;if(dx.length<p)av=dx.reduce((a,b)=>a+b,0)/dx.length;else{av=dx.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<dx.length;i++)av=(av*(p-1)+dx[i])/p;}return [av,pdi[pdi.length-1],mdi[mdi.length-1]];}
+/* ====== O(n)系列インジケーター（プレフィックス完全一致を検証済み） ====== */
+function rsiSeries(v,p){const n=v.length,o=Array(n).fill(null);if(n<p+1)return o;
+  let ag=0,al=0;for(let i=1;i<=p;i++){const d=v[i]-v[i-1];ag+=Math.max(d,0);al+=Math.max(-d,0);}ag/=p;al/=p;
+  o[p]=al===0?100:100-100/(1+ag/al);
+  for(let i=p+1;i<n;i++){const d=v[i]-v[i-1];ag=(ag*(p-1)+Math.max(d,0))/p;al=(al*(p-1)+Math.max(-d,0))/p;o[i]=al===0?100:100-100/(1+ag/al);}
+  return o;}
+function macdHistSeries(v,f,s,sig){const n=v.length,hist=Array(n).fill(null),prev=Array(n).fill(null);
+  const ef=emaSeries(v,f),es=emaSeries(v,s);
+  let cnt=0,sum=0,se=null,k=2/(sig+1),lastHist=null;
+  for(let i=0;i<n;i++){
+    if(ef[i]==null||es[i]==null)continue;
+    const m=ef[i]-es[i];cnt++;
+    if(cnt<sig){sum+=m;continue;}
+    if(cnt===sig){sum+=m;se=sum/sig;lastHist=m-se;continue;}
+    const prevH=lastHist;se=m*k+se*(1-k);const h=m-se;
+    hist[i]=h;prev[i]=prevH;lastHist=h;
+  }
+  return {hist,prev};}
+function bollSeries(v,p){const n=v.length,mid=Array(n).fill(null),sd=Array(n).fill(null);
+  let s=0,s2=0;
+  for(let i=0;i<n;i++){s+=v[i];s2+=v[i]*v[i];
+    if(i>=p){s-=v[i-p];s2-=v[i-p]*v[i-p];}
+    if(i>=p-1){const m=s/p;mid[i]=m;sd[i]=Math.sqrt(Math.max(0,s2/p-m*m));}}
+  return {mid,sd};}
+function atrSeries(o,p){const n=o.length,out=Array(n).fill(null);if(n<p+1)return out;
+  let a=0;for(let i=1;i<=p;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];a+=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));}a/=p;
+  out[p]=a;
+  for(let i=p+1;i<n;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];const tr=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));a=(a*(p-1)+tr)/p;out[i]=a;}
+  return out;}
+function adxSeries(o,p){const n=o.length,out=Array(n).fill(null);if(n<2)return out;
+  let sTR=0,sPD=0,sMD=0,av=null,dxCnt=0,dxSum=0;
+  let prevH=o[0][0],prevL=o[0][1],prevC=o[0][2];
+  const trA=[],pdA=[],mdA=[];
+  for(let i=1;i<n;i++){
+    const h=o[i][0],l=o[i][1];
+    const up=h-prevH,dn=prevL-l;
+    const pdm=(up>dn&&up>0)?up:0,mdm=(dn>up&&dn>0)?dn:0;
+    const tr=Math.max(h-l,Math.abs(h-prevC),Math.abs(l-prevC));
+    prevH=h;prevL=l;prevC=o[i][2];
+    const d=i-1;trA.push(tr);pdA.push(pdm);mdA.push(mdm);
+    if(d<p-1)continue;
+    if(d===p-1){sTR=trA.reduce((a,b)=>a+b,0);sPD=pdA.reduce((a,b)=>a+b,0);sMD=mdA.reduce((a,b)=>a+b,0);}
+    else{sTR=sTR-sTR/p+tr;sPD=sPD-sPD/p+pdm;sMD=sMD-sMD/p+mdm;}
+    const pdi=sTR?100*sPD/sTR:0,mdi=sTR?100*sMD/sTR:0;
+    const dx=100*Math.abs(pdi-mdi)/((pdi+mdi)||1);
+    dxCnt++;
+    if(dxCnt<p){dxSum+=dx;out[i]=[dxSum/dxCnt,pdi,mdi];}
+    else if(dxCnt===p){dxSum+=dx;av=dxSum/p;out[i]=[av,pdi,mdi];}
+    else{av=(av*(p-1)+dx)/p;out[i]=[av,pdi,mdi];}
+  }
+  return out;}
+// 全バーの売買判定をO(n)で一括計算（evalAtのslice地獄を置換。判定は完全一致・約100倍高速）
+function buildEvalSeries(sym,o,P){
+  const c=o.map(r=>r[2]),n=c.length;
+  const ef=emaSeries(c,P.ema_f),es=emaSeries(c,P.ema_s);
+  const rsiS=rsiSeries(c,P.rsi);
+  const {hist,prev}=macdHistSeries(c,P.macd[0],P.macd[1],P.macd[2]);
+  const {mid,sd}=bollSeries(c,P.bb[0]);
+  const atrS=atrSeries(o,P.atr);
+  const adxS=adxSeries(o,P.adx);
+  const minLen=Math.max(P.ema_s,P.macd[1],P.adx*2)+2;
+  const fund=cl(FUND_BIAS[sym]||0),tf=tfw();
+  const out=new Array(n).fill(null);
+  for(let i=0;i<n;i++){
+    if(i+1<minLen)continue;
+    const e1=ef[i],e2=es[i],rv=rsiS[i],h=hist[i],ph=prev[i],m=mid[i],s2=sd[i],a=atrS[i],ax=adxS[i];
+    if(e1==null||e2==null||rv==null||h==null||ph==null||m==null||a==null||!ax)continue;
+    const adxVal=ax[0],adxf=Math.max(cl(adxVal/40,0,1),0.25);
+    let emaSig=cl((e1-e2)/(a||1e-9)),macdSig=cl(h/(0.6*(a||1e-9)));
+    if(h>ph)macdSig=cl(macdSig+0.1);else if(h<ph)macdSig=cl(macdSig-0.1);
+    const rsiSig=cl((rv-50)/50),bbSig=cl((c[i]-m)/(P.bb[1]*(s2||1e-9)));
+    const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(tf.t*tech+tf.f*fund);
+    const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+    out[i]=side?{side,slp,tpp}:null;
+  }
+  return out;}
+function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.max(P.ema_s,P.macd[1],P.adx*2)+2)return null;
+  const price=closes[closes.length-1],ef=ema(closes,P.ema_f),es=ema(closes,P.ema_s),rv=rsiC(closes,P.rsi);
+  const md=macdC(closes,P.macd[0],P.macd[1],P.macd[2]),bb=bollC(closes,P.bb[0],P.bb[1]),a=atrC(o,P.atr),ax=adxC(o,P.adx);
+  if([ef,es,rv,a].some(x=>x==null)||!md||!bb||!ax)return null;
+  const adxVal=ax[0];let adxf=Math.max(cl(adxVal/40,0,1),0.25);
+  let emaSig=cl((ef-es)/(a||1e-9)),macdSig=cl(md[2]/(0.6*(a||1e-9)));
+  if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
+  const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
+  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),fund=cl(FUND_BIAS[sym]||0),total=cl(tfw().t*tech+tfw().f*fund);
+  const reasons=[];if(Math.abs(emaSig)>0.2)reasons.push(`EMA${emaSig>0?'上':'下'}(${P.ema_f}vs${P.ema_s})`);if(Math.abs(macdSig)>0.2)reasons.push(`MACDヒスト${md[2]>0?'+':'-'}`);reasons.push(`RSI${Math.round(rv)}`);reasons.push(`ADX${Math.round(adxVal)}${adxVal>=25?'(強)':'(弱)'}`);
+  const win=closes.slice(-1-P.adx,-1),hh=win.length?Math.max(...win):price,ll=win.length?Math.min(...win):price;
+  const method=adxVal>=25?((price>hh||price<ll)?'ブレイク':'順張りMA'):(Math.abs(bbSig)>=0.8?'レンジ逆張り':'様子見');
+  reasons.unshift('手法:'+method);
+  const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  return {price,ef,es,rsi:Math.round(rv*10)/10,adx:Math.round(adxVal*10)/10,atr:a,tp_pips:Math.round(tpp*10)/10,sl_pips:Math.round(slp*10)/10,
+    tech:Math.round(tech*1000)/1000,fund:Math.round(fund*1000)/1000,score:Math.round(total*1000)/1000,side,reasons,
+    ef_series:emaSeries(closes,P.ema_f).slice(-CHART_POINTS).map(r3),es_series:emaSeries(closes,P.ema_s).slice(-CHART_POINTS).map(r3),closes:closes.slice(-CHART_POINTS).map(r3)};}
+function jstYmd(off){return new Date(Date.now()+off*86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).replace(/-/g,'');}
+/* 過去日のklinesは不変 → メモリキャッシュ（当日のみ毎回取得）。日次は並列取得で高速化 */
+const KCACHE={};
+async function fetchDay(base,sym,interval,off,last){
+  const date=jstYmd(off),key=sym+'|'+interval+'|'+date;
+  if(off<0&&KCACHE[key])return KCACHE[key];
+  const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${interval}&date=${date}`;
+  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}${last?'&last='+last:''}&t=${Date.now()}`,{cache:'no-store'});
+    const j=await r.json(),rows={};(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});
+    if(off<0&&Object.keys(rows).length)KCACHE[key]=rows;
+    return rows;}catch(e){return {};}}
+async function fetchKlines(base,sym,P,need){
+  const span=Math.max(3,P.days||3);let rows={},off=0;
+  while(off>=-40){
+    const lo=Math.max(-40,off-(off===0?span+2:4));const offs=[];
+    for(let d=off;d>=lo;d--)offs.push(d);
+    const parts=await Promise.all(offs.map(d=>fetchDay(base,sym,P.interval,d,600)));
+    parts.forEach(p=>Object.assign(rows,p));
+    off=lo-1;
+    if(Object.keys(rows).length>=need)break;}
+  return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+// ライブLINE通知（Worker経由・新規シグナルのみ・連投防止）
+function notifyBase(){return LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');}
+function loadNotified(){try{return JSON.parse(localStorage.getItem('fxnavi_notified'))||{}}catch(e){return{}}}
+function saveNotified(o){try{localStorage.setItem('fxnavi_notified',JSON.stringify(o));}catch(e){}}
+async function notifyLive(text){
+  if(!LIVE_PRICE_URL)return;
+  try{await fetch(notifyBase()+'?action=notify'+(NOTIFY_KEY?('&key='+encodeURIComponent(NOTIFY_KEY)):''),
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});}catch(e){}
+}
+let LIVE_CALC_BUSY=false,LIVE_LAST=0,LIVE_AT=0,LIVE_PAIRS={};
+async function liveSignals(){
+  if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
+  if(Date.now()-LIVE_LAST<30000)return; // load()とintervalの多重起動を抑制
+  const P=JS_PARAMS[S.mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30,barMin=BARMIN[P.interval]||1,validMin=VALID_BARS*barMin;
+  LIVE_CALC_BUSY=true;LIVE_LAST=Date.now();
+  const notified=loadNotified();
+  try{
+    // 4銘柄を並列取得（過去日はキャッシュ命中で通信ゼロ）
+    const datas=await Promise.all(SYMS.map(sym=>fetchKlines(base,sym,P,need).then(oh=>({sym,oh})).catch(()=>({sym,oh:[]}))));
+    for(const {sym,oh} of datas){
+      if(oh.length<30)continue;
+      const sc=scorePair(sym,oh,P);if(!sc)continue;
+      const sig=S.market_open?sc.side:null;
+      const pair={symbol:sym,bid:(PRICE[sym]?PRICE[sym].bid:r3(sc.price)),ask:(PRICE[sym]?PRICE[sym].ask:null),
+        rsi:sc.rsi,adx:sc.adx,ema_f:r3(sc.ef),ema_s:r3(sc.es),atr:r4(sc.atr),tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
+        score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:sc.score>=0?'買い優勢':'売り優勢',reasons:sc.reasons,
+        closes:sc.closes,ema_f_series:sc.ef_series,ema_s_series:sc.es_series};
+      if(sig){const ref=PRICE[sym]?PRICE[sym].bid:sc.price,mc=Math.round(sc.sl_pips*MAX_CHASE_RATIO*10)/10;
+        const limit=sig==='買い'?r3(ref+mc*PS_):r3(ref-mc*PS_),until=Date.now()+validMin*60000;
+        Object.assign(pair,{entry_ref:r3(ref),entry_limit:limit,maxchase_pips:mc,valid_minutes:validMin,
+          valid_until:new Date(until).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5),valid_until_ts:until});}
+      // 新規シグナルのみ通知（同一symは3分間は再通知しない）
+      const now=Date.now(),rec=notified[sym];
+      if(sig){
+        if((!rec||rec.side!==sig)&&(!rec||now-rec.ts>180000)){
+          const sg=sig==='買い'?'🟢買い':'🔴売り',arrow=sig==='買い'?'上限':'下限';
+          const st=STATS[S.mode+sym];
+          const stTxt=st?`\n⏱想定保有 利確~${holdTxt(st.tpMin)}/損切~${holdTxt(st.slMin)}・TP勝率${st.winRate}%(直近${st.n}回)`:'';
+          const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}${stTxt}`;
+          notifyLive(txt);notified[sym]={side:sig,ts:now};
+        }
+      }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
+      const idx=S.pairs.findIndex(p=>p.symbol===sym);if(idx>=0)S.pairs[idx]=pair;else S.pairs.push(pair);
+      LIVE_PAIRS[sym]=pair;LIVE_AT=Date.now();
+    }
+    saveNotified(notified);
+    render();
+    checkPosNotify();
+    $('#live').innerHTML='<span class="badge open">● LIVE計算 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
+  }finally{LIVE_CALC_BUSY=false;}
+}
+
+/* ====== シグナル統計：想定保有時間・TP勝率（重いので30分キャッシュ） ====== */
+let STATS={}, STATS_BUSY=false;
+try{STATS=JSON.parse(localStorage.getItem('fxnavi_stats'))||{};}catch(e){STATS={};}
+function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.macd[1],P.adx*2)+2)return null;
+  const price=c[c.length-1],ef=ema(c,P.ema_f),es=ema(c,P.ema_s),rv=rsiC(c,P.rsi),md=macdC(c,P.macd[0],P.macd[1],P.macd[2]),bb=bollC(c,P.bb[0],P.bb[1]),a=atrC(o,P.atr),ax=adxC(o,P.adx);
+  if([ef,es,rv,a].some(x=>x==null)||!md||!bb||!ax)return null;
+  const adxVal=ax[0],adxf=Math.max(cl(adxVal/40,0,1),0.25);
+  let emaSig=cl((ef-es)/(a||1e-9)),macdSig=cl(md[2]/(0.6*(a||1e-9)));
+  if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
+  const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
+  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(tfw().t*tech+tfw().f*cl(FUND_BIAS[sym]||0));
+  const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  return side?{side,slp,tpp}:null;}
+function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
+function precomputeSides(sym,oh,P,warm){const sides=buildEvalSeries(sym,oh,P);
+  for(let i=0;i<warm&&i<sides.length;i++)sides[i]=null;return sides;}
+function simStats(sym,oh,P,barMin,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+  if(!sides)sides=precomputeSides(sym,oh,P,warm);let i=warm;const wins=[],losses=[];
+  while(i<oh.length-1){const e=sides[i];if(!e){i++;continue;}
+    const entry=oh[i][2],tp=e.side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=e.side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
+    let res=null,xj=null;for(let j=i+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
+      if(e.side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
+      else{if(h>=sl){res='sl';xj=j;break;}if(l<=tp){res='tp';xj=j;break;}}}
+    if(res==null)break;(res==='tp'?wins:losses).push(xj-i);i=xj+1;}
+  const n=wins.length+losses.length;if(n<8)return null;
+  const tm=median(wins),sm=median(losses);
+  return{n,winRate:Math.round(wins.length/n*100),tpMin:tm!=null?tm*barMin:null,slMin:sm!=null?sm*barMin:null,ts:Date.now()};}
+// 追撃集計：シグナルが同方向で継続している間、決済→再エントリーを繰り返した場合の「N本目」の勝率
+function simChase(sym,oh,P,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+  if(!sides)sides=precomputeSides(sym,oh,P,warm);const rec={};let i=warm;
+  while(i<oh.length-1){const e0=sides[i];if(!e0){i++;continue;}
+    const side=e0.side;let entryNo=1,pos=i;
+    while(pos<oh.length-1){const e=sides[pos];if(!e||e.side!==side)break;
+      const entry=oh[pos][2],tp=side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
+      let res=null,xj=null;for(let j=pos+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
+        if(side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
+        else{if(h>=sl){res='sl';xj=j;break;}if(l<=tp){res='tp';xj=j;break;}}}
+      if(res==null)break;const k=Math.min(entryNo,4);if(!rec[k])rec[k]=[0,0];rec[k][1]++;if(res==='tp')rec[k][0]++;
+      entryNo++;pos=xj;}
+    let k2=i;while(k2<oh.length&&sides[k2]&&sides[k2].side===side)k2++;i=k2>i?k2:i+1;}
+  const list=[];for(let no=1;no<=4;no++){if(rec[no]){const w=rec[no][0],n=rec[no][1];list.push({no,n,winRate:Math.round(w/n*100)});}}
+  if(!list.length)return null;
+  const be=Math.round(100/(1+TP_SL_RATIO));let maxNo=0;
+  for(const it of list){if(it.no===maxNo+1&&it.winRate>=be+5&&it.n>=10)maxNo=it.no;else break;}
+  return{list,maxNo,be};}
+async function fetchHistStats(base,sym,interval,days){
+  const offs=[];for(let off=0;off>=-(days+1);off--)offs.push(off);
+  const parts=await Promise.all(offs.map(off=>fetchDay(base,sym,interval,off,0)));
+  const rows={};parts.forEach(p=>Object.assign(rows,p));
+  return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+async function refreshStats(force){
+  if(!LIVE_PRICE_URL||!S||!S.mode||STATS_BUSY)return;
+  const mode=S.mode,fresh=SYMS.some(sym=>STATS[mode+sym]&&(Date.now()-STATS[mode+sym].ts<1800000));
+  if(fresh&&!force)return;
+  STATS_BUSY=true;
+  try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+    const days=P.days||3,cap=P.cap||1000,barMin=BARMIN[P.interval]||1;
+    for(const sym of SYMS){let oh=await fetchHistStats(base,sym,P.interval,days);if(oh.length>cap)oh=oh.slice(-cap);
+      if(oh.length<120)continue;
+      const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5,sides=precomputeSides(sym,oh,P,warm);
+      const st=simStats(sym,oh,P,barMin,sides);const ch=simChase(sym,oh,P,sides);
+      if(st){st.mode=mode;if(ch)st.chase=ch;STATS[mode+sym]=st;}
+      await new Promise(r=>setTimeout(r,0));}
+    try{localStorage.setItem('fxnavi_stats',JSON.stringify(STATS));}catch(e){}
+    render();
+  }finally{STATS_BUSY=false;}}
+
+// 保有ポジションは「トークンがあればAPIから（正確・即時）／無ければPagesから」読む
+async function loadPositions(){
+  const c=cfg();
+  if(c.token&&c.owner&&c.repo){
+    try{const {data}=await ghGet(c); if(data&&Array.isArray(data.positions)) return data;}catch(e){}
+  }
+  try{const pr=await fetch('./positions.json?t='+Date.now(),{cache:'no-store'}); if(pr.ok) return await pr.json();}catch(e){}
+  return null; // 失敗時は現状維持（空で上書きしない）
+}
+function pruneLocal(){try{
+  const open=new Set((POS.positions||[]).filter(p=>(p.status||'open')==='open').map(p=>p.id));
+  const m=loadMfe();let ch=false;Object.keys(m).forEach(k=>{if(!open.has(k)){delete m[k];ch=true;}});if(ch)saveMfe(m);
+  let a;try{a=JSON.parse(localStorage.getItem('fxnavi_pos_adv'))||{}}catch(e){a={}}
+  let ch2=false;Object.keys(a).forEach(k=>{if(!open.has(k)){delete a[k];ch2=true;}});
+  if(ch2)localStorage.setItem('fxnavi_pos_adv',JSON.stringify(a));}catch(e){}}
+async function load(){try{
+  const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
+  if(sr.ok)S=await sr.json();
+  // ライブ計算済みの銘柄カードは古いstatus.jsonで上書きしない（値のチカチカ防止）
+  if(Date.now()-LIVE_AT<180000&&S&&S.pairs){
+    S.pairs.forEach((p,i)=>{if(LIVE_PAIRS[p.symbol])S.pairs[i]=LIVE_PAIRS[p.symbol];});
+    Object.keys(LIVE_PAIRS).forEach(sym=>{if(!S.pairs.some(p=>p.symbol===sym))S.pairs.push(LIVE_PAIRS[sym]);});
+  }
+  try{const mr=await fetch('./mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();}}catch(e){}
+  applyModeOverride();
+  if(!POS_BUSY){const np=await loadPositions(); if(np){POS=np;pruneLocal();}}
+  setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
+  }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
+async function applyLive(){if(!LIVE_PRICE_URL)return;try{
+  const base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  const url=base+'?path='+encodeURIComponent('/public/v1/ticker')+'&t='+Date.now();
+  const r=await fetch(url,{cache:'no-store'});
+  const j=await r.json(),arr=(j&&j.data)?j.data:(Array.isArray(j)?j:[]);
+  if(Array.isArray(arr))arr.forEach(d=>{if(d&&d.symbol&&!isNaN(parseFloat(d.bid)))PRICE[d.symbol]={bid:parseFloat(d.bid),ask:parseFloat(d.ask!=null?d.ask:d.bid)};});
+  if(Array.isArray(arr)&&arr.length)LAST_TICK_TS=Date.now();
+  (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
+  $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
+  }catch(e){}}
+loadRisk();{const _c=$('#r_cap');if(_c)_c.value=RISK.cap;const _r=$('#r_risk');if(_r)_r.value=RISK.risk;const _m=$('#r_lev');if(_m)_m.value=RISK.lev;}
+load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);setInterval(()=>refreshStats(),1800000);}
+if('serviceWorker'in navigator){
+  let _refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(_refreshing)return;_refreshing=true;location.reload();});
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').then(reg=>{try{reg.update();}catch(e){}}).catch(()=>{}));
+}
+</script>
+<a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
+</body>
+</html>
