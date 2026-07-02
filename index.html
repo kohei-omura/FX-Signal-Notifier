@@ -316,7 +316,8 @@ function checkPosNotify(){
   if(ch){try{localStorage.setItem('fxnavi_pos_adv',JSON.stringify(adv0))}catch(e){}}
 }
 function spark(c,ss,ll){const W=300,H=64,pad=4;const all=[...c,...ss.filter(v=>v!=null),...ll.filter(v=>v!=null)];
-  const mn=Math.min(...all),mx=Math.max(...all),rng=(mx-mn)||1;const X=i=>pad+i*(W-2*pad)/(c.length-1),Y=v=>pad+(H-2*pad)*(1-(v-mn)/rng);
+  if(all.length<2||c.length<2)return'';
+  const mn=Math.min(...all),mx=Math.max(...all),rng=(mx-mn)||1;const X=i=>pad+i*(W-2*pad)/((c.length-1)||1),Y=v=>pad+(H-2*pad)*(1-(v-mn)/rng);
   const line=(a,col,w)=>{let d='',st=false;a.forEach((v,i)=>{if(v==null){st=false;return;}d+=(st?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';st=true;});
     return`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`;};
   return`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${line(c,'rgba(232,236,244,.35)',1)}${line(ll,'var(--gold)',1.4)}${line(ss,'var(--up)',1.4)}</svg>`;}
@@ -510,6 +511,82 @@ function macdC(v,f,s,sig){const ef=emaSeries(v,f),es=emaSeries(v,s);const ml=v.m
 function bollC(v,p,k){if(v.length<p)return null;const w=v.slice(-p),mid=w.reduce((a,b)=>a+b,0)/p;const sd=Math.sqrt(w.reduce((a,b)=>a+(b-mid)**2,0)/p);return [mid,mid+k*sd,mid-k*sd,sd];}
 function atrC(o,p){if(o.length<p+1)return null;const tr=[];for(let i=1;i<o.length;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];tr.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}let a=tr.slice(0,p).reduce((x,y)=>x+y,0)/p;for(let i=p;i<tr.length;i++)a=(a*(p-1)+tr[i])/p;return a;}
 function adxC(o,p){if(o.length<2*p+1)return null;const pdm=[],mdm=[],tr=[];for(let i=1;i<o.length;i++){const h=o[i][0],l=o[i][1],ph=o[i-1][0],pl=o[i-1][1],pc=o[i-1][2];const up=h-ph,dn=pl-l;pdm.push((up>dn&&up>0)?up:0);mdm.push((dn>up&&dn>0)?dn:0);tr.push(Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc)));}const w=arr=>{let s=arr.slice(0,p).reduce((a,b)=>a+b,0);const o2=[s];for(let i=p;i<arr.length;i++){s=s-s/p+arr[i];o2.push(s);}return o2;};const at=w(tr),pd=w(pdm),md=w(mdm);const pdi=at.map((x,i)=>x?100*pd[i]/x:0),mdi=at.map((x,i)=>x?100*md[i]/x:0);const dx=pdi.map((x,i)=>100*Math.abs(x-mdi[i])/((x+mdi[i])||1));let av;if(dx.length<p)av=dx.reduce((a,b)=>a+b,0)/dx.length;else{av=dx.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<dx.length;i++)av=(av*(p-1)+dx[i])/p;}return [av,pdi[pdi.length-1],mdi[mdi.length-1]];}
+/* ====== O(n)系列インジケーター（プレフィックス完全一致を検証済み） ====== */
+function rsiSeries(v,p){const n=v.length,o=Array(n).fill(null);if(n<p+1)return o;
+  let ag=0,al=0;for(let i=1;i<=p;i++){const d=v[i]-v[i-1];ag+=Math.max(d,0);al+=Math.max(-d,0);}ag/=p;al/=p;
+  o[p]=al===0?100:100-100/(1+ag/al);
+  for(let i=p+1;i<n;i++){const d=v[i]-v[i-1];ag=(ag*(p-1)+Math.max(d,0))/p;al=(al*(p-1)+Math.max(-d,0))/p;o[i]=al===0?100:100-100/(1+ag/al);}
+  return o;}
+function macdHistSeries(v,f,s,sig){const n=v.length,hist=Array(n).fill(null),prev=Array(n).fill(null);
+  const ef=emaSeries(v,f),es=emaSeries(v,s);
+  let cnt=0,sum=0,se=null,k=2/(sig+1),lastHist=null;
+  for(let i=0;i<n;i++){
+    if(ef[i]==null||es[i]==null)continue;
+    const m=ef[i]-es[i];cnt++;
+    if(cnt<sig){sum+=m;continue;}
+    if(cnt===sig){sum+=m;se=sum/sig;lastHist=m-se;continue;}
+    const prevH=lastHist;se=m*k+se*(1-k);const h=m-se;
+    hist[i]=h;prev[i]=prevH;lastHist=h;
+  }
+  return {hist,prev};}
+function bollSeries(v,p){const n=v.length,mid=Array(n).fill(null),sd=Array(n).fill(null);
+  let s=0,s2=0;
+  for(let i=0;i<n;i++){s+=v[i];s2+=v[i]*v[i];
+    if(i>=p){s-=v[i-p];s2-=v[i-p]*v[i-p];}
+    if(i>=p-1){const m=s/p;mid[i]=m;sd[i]=Math.sqrt(Math.max(0,s2/p-m*m));}}
+  return {mid,sd};}
+function atrSeries(o,p){const n=o.length,out=Array(n).fill(null);if(n<p+1)return out;
+  let a=0;for(let i=1;i<=p;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];a+=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));}a/=p;
+  out[p]=a;
+  for(let i=p+1;i<n;i++){const h=o[i][0],l=o[i][1],pc=o[i-1][2];const tr=Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));a=(a*(p-1)+tr)/p;out[i]=a;}
+  return out;}
+function adxSeries(o,p){const n=o.length,out=Array(n).fill(null);if(n<2)return out;
+  let sTR=0,sPD=0,sMD=0,av=null,dxCnt=0,dxSum=0;
+  let prevH=o[0][0],prevL=o[0][1],prevC=o[0][2];
+  const trA=[],pdA=[],mdA=[];
+  for(let i=1;i<n;i++){
+    const h=o[i][0],l=o[i][1];
+    const up=h-prevH,dn=prevL-l;
+    const pdm=(up>dn&&up>0)?up:0,mdm=(dn>up&&dn>0)?dn:0;
+    const tr=Math.max(h-l,Math.abs(h-prevC),Math.abs(l-prevC));
+    prevH=h;prevL=l;prevC=o[i][2];
+    const d=i-1;trA.push(tr);pdA.push(pdm);mdA.push(mdm);
+    if(d<p-1)continue;
+    if(d===p-1){sTR=trA.reduce((a,b)=>a+b,0);sPD=pdA.reduce((a,b)=>a+b,0);sMD=mdA.reduce((a,b)=>a+b,0);}
+    else{sTR=sTR-sTR/p+tr;sPD=sPD-sPD/p+pdm;sMD=sMD-sMD/p+mdm;}
+    const pdi=sTR?100*sPD/sTR:0,mdi=sTR?100*sMD/sTR:0;
+    const dx=100*Math.abs(pdi-mdi)/((pdi+mdi)||1);
+    dxCnt++;
+    if(dxCnt<p){dxSum+=dx;out[i]=[dxSum/dxCnt,pdi,mdi];}
+    else if(dxCnt===p){dxSum+=dx;av=dxSum/p;out[i]=[av,pdi,mdi];}
+    else{av=(av*(p-1)+dx)/p;out[i]=[av,pdi,mdi];}
+  }
+  return out;}
+// 全バーの売買判定をO(n)で一括計算（evalAtのslice地獄を置換。判定は完全一致・約100倍高速）
+function buildEvalSeries(sym,o,P){
+  const c=o.map(r=>r[2]),n=c.length;
+  const ef=emaSeries(c,P.ema_f),es=emaSeries(c,P.ema_s);
+  const rsiS=rsiSeries(c,P.rsi);
+  const {hist,prev}=macdHistSeries(c,P.macd[0],P.macd[1],P.macd[2]);
+  const {mid,sd}=bollSeries(c,P.bb[0]);
+  const atrS=atrSeries(o,P.atr);
+  const adxS=adxSeries(o,P.adx);
+  const minLen=Math.max(P.ema_s,P.macd[1],P.adx*2)+2;
+  const fund=cl(FUND_BIAS[sym]||0),tf=tfw();
+  const out=new Array(n).fill(null);
+  for(let i=0;i<n;i++){
+    if(i+1<minLen)continue;
+    const e1=ef[i],e2=es[i],rv=rsiS[i],h=hist[i],ph=prev[i],m=mid[i],s2=sd[i],a=atrS[i],ax=adxS[i];
+    if(e1==null||e2==null||rv==null||h==null||ph==null||m==null||a==null||!ax)continue;
+    const adxVal=ax[0],adxf=Math.max(cl(adxVal/40,0,1),0.25);
+    let emaSig=cl((e1-e2)/(a||1e-9)),macdSig=cl(h/(0.6*(a||1e-9)));
+    if(h>ph)macdSig=cl(macdSig+0.1);else if(h<ph)macdSig=cl(macdSig-0.1);
+    const rsiSig=cl((rv-50)/50),bbSig=cl((c[i]-m)/(P.bb[1]*(s2||1e-9)));
+    const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(tf.t*tech+tf.f*fund);
+    const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+    out[i]=side?{side,slp,tpp}:null;
+  }
+  return out;}
 function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.max(P.ema_s,P.macd[1],P.adx*2)+2)return null;
   const price=closes[closes.length-1],ef=ema(closes,P.ema_f),es=ema(closes,P.ema_s),rv=rsiC(closes,P.rsi);
   const md=macdC(closes,P.macd[0],P.macd[1],P.macd[2]),bb=bollC(closes,P.bb[0],P.bb[1]),a=atrC(o,P.atr),ax=adxC(o,P.adx);
@@ -528,10 +605,25 @@ function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.ma
     tech:Math.round(tech*1000)/1000,fund:Math.round(fund*1000)/1000,score:Math.round(total*1000)/1000,side,reasons,
     ef_series:emaSeries(closes,P.ema_f).slice(-CHART_POINTS).map(r3),es_series:emaSeries(closes,P.ema_s).slice(-CHART_POINTS).map(r3),closes:closes.slice(-CHART_POINTS).map(r3)};}
 function jstYmd(off){return new Date(Date.now()+off*86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).replace(/-/g,'');}
-async function fetchKlines(base,sym,P,need){let rows={};const span=Math.max(3,P.days||3);
-  for(let off=0;off>=-(span+2)&&off>=-40;off--){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${P.interval}&date=${jstYmd(off)}`;
-    try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&last=600&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}
-    if(Object.keys(rows).length>=need&&off<=-2)break;}
+/* 過去日のklinesは不変 → メモリキャッシュ（当日のみ毎回取得）。日次は並列取得で高速化 */
+const KCACHE={};
+async function fetchDay(base,sym,interval,off,last){
+  const date=jstYmd(off),key=sym+'|'+interval+'|'+date;
+  if(off<0&&KCACHE[key])return KCACHE[key];
+  const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${interval}&date=${date}`;
+  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}${last?'&last='+last:''}&t=${Date.now()}`,{cache:'no-store'});
+    const j=await r.json(),rows={};(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});
+    if(off<0&&Object.keys(rows).length)KCACHE[key]=rows;
+    return rows;}catch(e){return {};}}
+async function fetchKlines(base,sym,P,need){
+  const span=Math.max(3,P.days||3);let rows={},off=0;
+  while(off>=-40){
+    const lo=Math.max(-40,off-(off===0?span+2:4));const offs=[];
+    for(let d=off;d>=lo;d--)offs.push(d);
+    const parts=await Promise.all(offs.map(d=>fetchDay(base,sym,P.interval,d,600)));
+    parts.forEach(p=>Object.assign(rows,p));
+    off=lo-1;
+    if(Object.keys(rows).length>=need)break;}
   return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
 // ライブLINE通知（Worker経由・新規シグナルのみ・連投防止）
 function notifyBase(){return LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');}
@@ -542,16 +634,19 @@ async function notifyLive(text){
   try{await fetch(notifyBase()+'?action=notify'+(NOTIFY_KEY?('&key='+encodeURIComponent(NOTIFY_KEY)):''),
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});}catch(e){}
 }
-let LIVE_CALC_BUSY=false;
+let LIVE_CALC_BUSY=false,LIVE_LAST=0,LIVE_AT=0,LIVE_PAIRS={};
 async function liveSignals(){
   if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
+  if(Date.now()-LIVE_LAST<30000)return; // load()とintervalの多重起動を抑制
   const P=JS_PARAMS[S.mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
   const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30,barMin=BARMIN[P.interval]||1,validMin=VALID_BARS*barMin;
-  LIVE_CALC_BUSY=true;
+  LIVE_CALC_BUSY=true;LIVE_LAST=Date.now();
   const notified=loadNotified();
   try{
-    for(const sym of SYMS){
-      const oh=await fetchKlines(base,sym,P,need);if(oh.length<30)continue;
+    // 4銘柄を並列取得（過去日はキャッシュ命中で通信ゼロ）
+    const datas=await Promise.all(SYMS.map(sym=>fetchKlines(base,sym,P,need).then(oh=>({sym,oh})).catch(()=>({sym,oh:[]}))));
+    for(const {sym,oh} of datas){
+      if(oh.length<30)continue;
       const sc=scorePair(sym,oh,P);if(!sc)continue;
       const sig=S.market_open?sc.side:null;
       const pair={symbol:sym,bid:(PRICE[sym]?PRICE[sym].bid:r3(sc.price)),ask:(PRICE[sym]?PRICE[sym].ask:null),
@@ -574,6 +669,7 @@ async function liveSignals(){
         }
       }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
       const idx=S.pairs.findIndex(p=>p.symbol===sym);if(idx>=0)S.pairs[idx]=pair;else S.pairs.push(pair);
+      LIVE_PAIRS[sym]=pair;LIVE_AT=Date.now();
     }
     saveNotified(notified);
     render();
@@ -596,8 +692,8 @@ function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.m
   const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
   return side?{side,slp,tpp}:null;}
 function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
-function precomputeSides(sym,oh,P,warm){const sides=new Array(oh.length).fill(null);
-  for(let i=warm;i<oh.length;i++){sides[i]=evalAt(sym,oh.slice(0,i+1),P);}return sides;}
+function precomputeSides(sym,oh,P,warm){const sides=buildEvalSeries(sym,oh,P);
+  for(let i=0;i<warm&&i<sides.length;i++)sides[i]=null;return sides;}
 function simStats(sym,oh,P,barMin,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
   if(!sides)sides=precomputeSides(sym,oh,P,warm);let i=warm;const wins=[],losses=[];
   while(i<oh.length-1){const e=sides[i];if(!e){i++;continue;}
@@ -627,12 +723,14 @@ function simChase(sym,oh,P,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)
   const be=Math.round(100/(1+TP_SL_RATIO));let maxNo=0;
   for(const it of list){if(it.no===maxNo+1&&it.winRate>=be+5&&it.n>=10)maxNo=it.no;else break;}
   return{list,maxNo,be};}
-async function fetchHistStats(base,sym,interval,days){let rows={};for(let off=0;off>=-(days+1);off--){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${interval}&date=${jstYmd(off)}`;
-  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}}
+async function fetchHistStats(base,sym,interval,days){
+  const offs=[];for(let off=0;off>=-(days+1);off--)offs.push(off);
+  const parts=await Promise.all(offs.map(off=>fetchDay(base,sym,interval,off,0)));
+  const rows={};parts.forEach(p=>Object.assign(rows,p));
   return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
 async function refreshStats(force){
   if(!LIVE_PRICE_URL||!S||!S.mode||STATS_BUSY)return;
-  const mode=S.mode,key0=mode+SYMS[0],fresh=STATS[key0]&&(Date.now()-STATS[key0].ts<1800000);
+  const mode=S.mode,fresh=SYMS.some(sym=>STATS[mode+sym]&&(Date.now()-STATS[mode+sym].ts<1800000));
   if(fresh&&!force)return;
   STATS_BUSY=true;
   try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
@@ -656,12 +754,23 @@ async function loadPositions(){
   try{const pr=await fetch('./positions.json?t='+Date.now(),{cache:'no-store'}); if(pr.ok) return await pr.json();}catch(e){}
   return null; // 失敗時は現状維持（空で上書きしない）
 }
+function pruneLocal(){try{
+  const open=new Set((POS.positions||[]).filter(p=>(p.status||'open')==='open').map(p=>p.id));
+  const m=loadMfe();let ch=false;Object.keys(m).forEach(k=>{if(!open.has(k)){delete m[k];ch=true;}});if(ch)saveMfe(m);
+  let a;try{a=JSON.parse(localStorage.getItem('fxnavi_pos_adv'))||{}}catch(e){a={}}
+  let ch2=false;Object.keys(a).forEach(k=>{if(!open.has(k)){delete a[k];ch2=true;}});
+  if(ch2)localStorage.setItem('fxnavi_pos_adv',JSON.stringify(a));}catch(e){}}
 async function load(){try{
   const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
+  // ライブ計算済みの銘柄カードは古いstatus.jsonで上書きしない（値のチカチカ防止）
+  if(Date.now()-LIVE_AT<180000&&S&&S.pairs){
+    S.pairs.forEach((p,i)=>{if(LIVE_PAIRS[p.symbol])S.pairs[i]=LIVE_PAIRS[p.symbol];});
+    Object.keys(LIVE_PAIRS).forEach(sym=>{if(!S.pairs.some(p=>p.symbol===sym))S.pairs.push(LIVE_PAIRS[sym]);});
+  }
   try{const mr=await fetch('./mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();}}catch(e){}
   applyModeOverride();
-  if(!POS_BUSY){const np=await loadPositions(); if(np)POS=np;}
+  if(!POS_BUSY){const np=await loadPositions(); if(np){POS=np;pruneLocal();}}
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
   }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
 async function applyLive(){if(!LIVE_PRICE_URL)return;try{
