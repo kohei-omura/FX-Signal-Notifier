@@ -50,6 +50,15 @@
   .chips{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
   .chip{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:7px;background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--mut)}
   .chip b{color:var(--ink);font-weight:600}.chip.tp b{color:var(--up)}.chip.sl b{color:var(--down)}
+  .adxb.ok{border-color:rgba(70,196,106,.5);color:var(--up)}.adxb.warn{border-color:rgba(232,201,106,.5)}
+  .adxb.hot{border-color:rgba(240,97,109,.5);color:var(--down)}.adxb.weak{opacity:.7}
+  .meter{margin-top:9px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);display:flex;align-items:center;gap:10px;cursor:pointer;font-size:15px}
+  .meter b{font-size:15px}.meter .mscore{margin-left:auto;font-family:var(--mono);font-size:13px;opacity:.85}
+  .meter .mdet{display:none;flex-basis:100%;font-size:11px;opacity:.8;font-family:var(--mono);margin-top:4px}
+  .meter.open .mdet{display:block}
+  .meter.ok{background:rgba(70,196,106,.1);border-color:rgba(70,196,106,.45)}
+  .meter.hold{background:rgba(232,201,106,.1);border-color:rgba(232,201,106,.4)}
+  .meter.no{background:rgba(240,97,109,.1);border-color:rgba(240,97,109,.4)}
   svg{display:block;width:100%;height:64px;margin-top:11px;overflow:visible}
   .rsiwrap{margin-top:11px}
   .rsibar{position:relative;height:6px;border-radius:6px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
@@ -170,6 +179,9 @@
     <div class="fld" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="s_zonesupp" onchange="try{this.checked?localStorage.setItem('fxnavi_zonesupp','1'):localStorage.removeItem('fxnavi_zonesupp');}catch(e){}">
       🕒 時間帯の新規通知を抑制（LINEの時間帯行を出さない・既定OFF）</label></div>
+    <div class="fld" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="s_oppsupp" onchange="try{this.checked?localStorage.setItem('fxnavi_oppsupp','1'):localStorage.removeItem('fxnavi_oppsupp');}catch(e){}">
+      ⚠ 長期環境に逆行するシグナルの新規通知を抑制（手仕舞い・ポジション通知は常に送信・既定OFF）</label></div>
     <button class="btn" onclick="saveSet()">保存</button>
     <div class="note">トークンはこの端末内（ブラウザ）にのみ保存され、リポジトリには書き込まれません。必ず「このリポジトリのみ・Contents権限のみ」のfine-grainedトークンを使ってください。</div>
   </div>
@@ -217,7 +229,7 @@ function setCfg(c){localStorage.setItem(LS,JSON.stringify(c));}
 function detect(){const h=location.hostname,p=location.pathname.split('/').filter(Boolean);let o='',r='';
   if(h.endsWith('github.io')){o=h.split('.')[0];r=p[0]||(o+'.github.io');}return{owner:o,repo:r,branch:'main'};}
 function fillSet(){const c=cfg(),d=detect();$('#s_token').value=c.token||'';$('#s_owner').value=c.owner||d.owner||'';
-  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';const zs=document.getElementById('s_zonesupp');if(zs)zs.checked=suppressZoneNotify();}
+  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';const zs=document.getElementById('s_zonesupp');if(zs)zs.checked=suppressZoneNotify();const os=document.getElementById('s_oppsupp');if(os)os.checked=suppressOppNotify();}
 function saveSet(){const c={token:$('#s_token').value.trim(),owner:$('#s_owner').value.trim(),repo:$('#s_repo').value.trim(),branch:($('#s_branch').value.trim()||'main')};
   if(!c.token||!c.owner||!c.repo){toast('トークン・オーナー・リポジトリを入力してください');return;}
   setCfg(c);toast('保存しました');togglePanel('setPanel');}
@@ -288,6 +300,13 @@ function computeOpen(){return(POS.positions||[]).filter(p=>(p.status||'open')===
 
 /* ---------- 保有ポジションの利確/損切り判定（建値ベース・シグナル監視） ---------- */
 const ADV_OPP=0.25, ADV_SUPP=0.15, ADV_DECAY=0.10, TRAIL_ATR=1.0, PROFIT_ATR=1.0, ADX_WEAK=20.0;
+// 拡張v3: 表示・通知レイヤーのみ（判定式・TP/SL・既存統計は不変）
+// コンフルエンス重み（総重み10）。コア=重み2 / 参考=重み1。調整可能。
+const CONFLUENCE_W={longEnv:2,adxBand:2,expectancy:2,dow:1,zone:1,granville:1,blackout:1};
+// 長期環境（4時間足EMA200）キャッシュ: sym -> {dir,slope,ema,ts}。TTL 12h。
+// 根拠(2023-2026実測507回): 逆行時勝率25.9%(-2364pips) / 一致時37.7%(+1963pips)
+const LONGENV={};
+try{const _le=JSON.parse(localStorage.getItem('fxnavi_longenv')||'{}');Object.assign(LONGENV,_le);}catch(e){}
 function pairSig(sym){return (S.pairs||[]).find(x=>x.symbol===sym);}
 function loadMfe(){try{return JSON.parse(localStorage.getItem('fxnavi_mfe'))||{}}catch(e){return{}}}
 function saveMfe(o){try{localStorage.setItem('fxnavi_mfe',JSON.stringify(o));}catch(e){}}
@@ -394,6 +413,50 @@ function granville(o,P){const c=o.map(r=>r[2]),baseP=(S&&S.mode==='swing'&&c.len
   cands.sort((a,b)=>(b.ev-a.ev)||(a.no-b.no));
   return {no:cands[0].no,side:cands[0].side,label:cands[0].label,base:baseP};}
 function suppressZoneNotify(){try{return localStorage.getItem('fxnavi_zonesupp')==='1';}catch(e){return false;}}
+function suppressOppNotify(){try{return localStorage.getItem('fxnavi_oppsupp')==='1';}catch(e){return false;}}
+function adxBand(adx){if(adx==null)return{cls:'',ic:'⚪',lab:'—'};if(adx>40)return{cls:'hot',ic:'🔴',lab:'過熱'};if(adx>=30)return{cls:'ok',ic:'🟢',lab:'推奨'};if(adx>=20)return{cls:'warn',ic:'🟡',lab:'注意'};return{cls:'weak',ic:'⚪',lab:'弱'};}
+function expectancyOK(pair,st){if(!st||!pair.tp_pips||!pair.sl_pips)return null;const rr=pair.tp_pips/pair.sl_pips,be=100/(1+rr);return st.winRate>be;}
+function longEnvAlign(pair){const le=pair.longEnv;if(!le||!pair.signal)return null;return (pair.signal==='買い'&&le.dir==='up')||(pair.signal==='売り'&&le.dir==='down');}
+function confluence(pair,st){const W=CONFLUENCE_W;let got=0;const total=10,det=[];
+  const add=(w,ok,lab)=>{if(ok===true){got+=w;det.push(lab+'✓');}else if(ok===false){det.push(lab+'✗');}else{det.push(lab+'—');}};
+  add(W.longEnv,longEnvAlign(pair),'長期');
+  add(W.adxBand,pair.adx!=null?(pair.adx>=30&&pair.adx<=40):null,'ADX');
+  add(W.expectancy,expectancyOK(pair,st),'期待値');
+  const dowOK=pair.dow&&pair.signal?((pair.signal==='買い'&&pair.dow.trend==='up')||(pair.signal==='売り'&&pair.dow.trend==='down')):null;
+  add(W.dow,dowOK,'ダウ');
+  add(W.zone,(ZONE&&(ZONE.zone==='golden'||ZONE.zone==='eu'||ZONE.zone==='gotobi')),'時間帯');
+  add(W.granville,pair.grv?[1,2].includes(pair.grv.no):null,'グランビル');
+  add(W.blackout,!S.blackout,'指標');
+  const pct=got/total;let mark,cls;
+  if(pct>=0.75){mark='🟢 エントリーOK';cls='ok';}else if(pct>=0.45){mark='🟡 保留・検討';cls='hold';}else{mark='🔴 見送り';cls='no';}
+  if(!pair.signal&&cls==='ok'){mark='🟡 保留・検討';cls='hold';}
+  return{mark,cls,got:Math.round(got*10)/10,total,pct:Math.round(pct*100),det};}
+function simStatsByCore(sym,oh,P,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+  if(!sides)sides=precomputeSides(sym,oh,P,warm);const closes=oh.map(r=>r[2]),e200=emaSeries(closes,200),adxS=adxSeries(oh,P.adx);
+  let i=warm;const B={2:[0,0],1:[0,0],0:[0,0]};
+  while(i<oh.length-1){const e=sides[i];if(!e){i++;continue;}
+    const entry=oh[i][2],tp=e.side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=e.side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
+    let res=null,xj=null;for(let j=i+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
+      if(e.side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
+      else{if(h>=sl){res='sl';xj=j;break;}if(l<=tp){res='tp';xj=j;break;}}}
+    if(res==null)break;
+    let core=0;const ev=e200[i],ev6=e200[i-6];
+    if(ev!=null&&ev6!=null){const up=ev-ev6>0,dn=ev-ev6<0;if((e.side==='買い'&&up)||(e.side==='売り'&&dn))core++;}
+    const ax=adxS[i];if(ax&&ax[0]>=30&&ax[0]<=40)core++;
+    if(res==='tp')B[core][0]++;else B[core][1]++;i=xj+1;}
+  const mk=b=>{const w=b[0],nn=w+b[1];return nn>=5?{wr:Math.round(w/nn*100),n:nn}:null;};
+  return{2:mk(B[2]),1:mk(B[1]),0:mk(B[0])};}
+async function refreshLongEnv(base,sym){try{
+  const c=LONGENV[sym];if(c&&Date.now()-c.ts<12*3600000)return c;
+  let rows={};for(let d=0;d<48&&Object.keys(rows).length<300;d++){const r=await fetchDay(base,sym,'4hour',d,600);Object.assign(rows,r);}
+  const oh=Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]),closes=oh.map(r=>r[2]);
+  if(closes.length<210)return null;
+  const es=emaSeries(closes,200),n=es.length,cur=es[n-1],prev=es[n-7];
+  if(cur==null||prev==null)return null;
+  const slope=cur-prev,dir=slope>0?'up':(slope<0?'down':'flat'),r={dir,slope,ema:r3(cur),ts:Date.now()};
+  LONGENV[sym]=r;try{localStorage.setItem('fxnavi_longenv',JSON.stringify(LONGENV));}catch(e){}return r;
+}catch(e){console.warn('longenv',sym,e);return null;}}
+async function ensureLongEnv(base){let changed=false;for(const sym of SYMS){const b=LONGENV[sym]&&LONGENV[sym].ts;const r=await refreshLongEnv(base,sym);if(r&&(!b||LONGENV[sym].ts!==b))changed=true;}if(changed)try{render();}catch(e){}}
 var ZONE=zoneNow();
 
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
@@ -486,13 +549,30 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   if(st&&st.dow){const m=st.dow.match,mm=st.dow.mismatch,a=[];
     a.push(m?`一致時 <b class="up">${m.wr}%</b>(${m.n})`:'一致時 —');a.push(mm?`不一致時 <b class="down">${mm.wr}%</b>(${mm.n})`:'不一致時 —');
     dowStatBox=`<div class="entry"><div class="er">📐 ダウ一致別TP勝率 — ${a.join(' ／ ')}</div></div>`;}
+  // 機能1: 長期環境ゲート表示
+  p.longEnv=LONGENV[p.symbol]||null;
+  let longEnvBox='';
+  if(p.longEnv){const le=p.longEnv,ic=le.dir==='up'?'📈上昇':(le.dir==='down'?'📉下降':'➡横ばい');
+    const al=longEnvAlign(p);const cons=al===true?'<b class="up">一致✓</b>':(al===false?'<b class="down">⚠逆行</b>':'');
+    longEnvBox=`<div class="entry"><div class="er">🌐 長期環境(4H EMA200) <b>${ic}</b> ${cons}</div></div>`;}
+  // 機能3: コンフルエンスメーター
+  const conf=confluence(p,st);
+  const meterExp=conf.det.join(' ');
+  const meter=`<div class="meter ${conf.cls}" onclick="this.classList.toggle('open')"><b>🎯 ${conf.mark}</b><span class="mscore">${conf.got}/10</span><div class="mdet">${conf.pct}%：${meterExp}</div></div>`;
+  // 統計: コア一致数別TP勝率
+  let coreStatBox='';
+  if(st&&st.core){const cc=st.core,seg=k=>cc[k]?`${k}/2:<b>${cc[k].wr}%</b>(${cc[k].n})`:`${k}/2:—`;
+    coreStatBox=`<div class="entry"><div class="er">🎯 コア一致別TP勝率 — ${seg(2)} ／ ${seg(1)} ／ ${seg(0)}</div></div>`;}
+  const ab=adxBand(p.adx);
   return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
+    ${meter}
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip">ADX <b>${fmt(p.adx)}</b></span>
-    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${lotBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>
+    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${coreStatBox}${lotBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
+function meterDetail(conf){return'';}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
@@ -743,6 +823,7 @@ async function liveSignals(){
   LIVE_CALC_BUSY=true;LIVE_LAST=Date.now();
   const notified=loadNotified();
   try{
+    ensureLongEnv(base); // 機能1: 4H EMA200長期環境を非同期取得（12hキャッシュ・判定には非干渉）
     // 4銘柄を並列取得（過去日はキャッシュ命中で通信ゼロ）
     const datas=await Promise.all(SYMS.map(sym=>fetchKlines(base,sym,P,need).then(oh=>({sym,oh})).catch(()=>({sym,oh:[]}))));
     for(const {sym,oh} of datas){
@@ -753,7 +834,7 @@ async function liveSignals(){
         rsi:sc.rsi,adx:sc.adx,ema_f:r3(sc.ef),ema_s:r3(sc.es),atr:r4(sc.atr),tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
         score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:sc.score>=0?'買い優勢':'売り優勢',reasons:sc.reasons,
         closes:sc.closes,ema_f_series:sc.ef_series,ema_s_series:sc.es_series};
-      pair.theo=theoPrice(sym,oh.map(r=>r[2]));pair.dow=dowStructure(oh);pair.grv=granville(oh,P);
+      pair.theo=theoPrice(sym,oh.map(r=>r[2]));pair.dow=dowStructure(oh);pair.grv=granville(oh,P);pair.longEnv=LONGENV[sym]||null;
       if(sig){const ref=PRICE[sym]?PRICE[sym].bid:sc.price,mc=Math.round(sc.sl_pips*MAX_CHASE_RATIO*10)/10;
         const limit=sig==='買い'?r3(ref+mc*PS_):r3(ref-mc*PS_),until=Date.now()+validMin*60000;
         Object.assign(pair,{entry_ref:r3(ref),entry_limit:limit,maxchase_pips:mc,valid_minutes:validMin,
@@ -770,7 +851,9 @@ async function liveSignals(){
           const dTxt=pair.dow?`\n📐ダウ ${pair.dow.icon}${pair.dow.label}`:'';
           const gTxt=pair.grv?`\n🎯グランビル ${pair.grv.label}`:'';
           const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}${stTxt}${zTxt}${dTxt}${gTxt}`;
-          notifyLive(txt);notified[sym]={side:sig,ts:now};
+          const cf=confluence(pair,STATS[S.mode+sym]);const txt2=txt+'\n🎯総合判定：'+cf.mark+'（'+cf.got+'/10）';
+          if(suppressOppNotify()&&longEnvAlign(pair)===false){/* ⚠逆行の新規通知を抑制（手仕舞い/ポジション通知は常に送信） */}
+          else{notifyLive(txt2);notified[sym]={side:sig,ts:now};}
         }
       }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
       const idx=S.pairs.findIndex(p=>p.symbol===sym);if(idx>=0)S.pairs[idx]=pair;else S.pairs.push(pair);
@@ -866,7 +949,7 @@ async function refreshStats(force){
       if(oh.length<120)continue;
       const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5,sides=precomputeSides(sym,oh,P,warm);
       const st=simStats(sym,oh,P,barMin,sides);const ch=simChase(sym,oh,P,sides);
-      if(st){st.mode=mode;if(ch)st.chase=ch;st.byZone=simStatsByZone(sym,oh,P,sides);st.dow=simStatsByDow(sym,oh,P,sides);STATS[mode+sym]=st;}
+      if(st){st.mode=mode;if(ch)st.chase=ch;st.byZone=simStatsByZone(sym,oh,P,sides);st.dow=simStatsByDow(sym,oh,P,sides);st.core=simStatsByCore(sym,oh,P,sides);STATS[mode+sym]=st;}
       await new Promise(r=>setTimeout(r,0));}
     try{localStorage.setItem('fxnavi_stats',JSON.stringify(STATS));}catch(e){}
     render();
