@@ -394,7 +394,7 @@ function granville(o,P){const c=o.map(r=>r[2]),baseP=(S&&S.mode==='swing'&&c.len
   cands.sort((a,b)=>(b.ev-a.ev)||(a.no-b.no));
   return {no:cands[0].no,side:cands[0].side,label:cands[0].label,base:baseP};}
 function suppressZoneNotify(){try{return localStorage.getItem('fxnavi_zonesupp')==='1';}catch(e){return false;}}
-let ZONE=zoneNow();
+var ZONE=zoneNow();
 
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
