@@ -35,12 +35,21 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
 </style></head>
 <body><div class="wrap">
 <a class="back" href="index.html">← ダッシュボードへ</a>
-<h1>FX Navi ツール</h1><div class="sub">JOURNAL · RISK · BACKTEST</div>
+<h1>FX Navi ツール</h1><div class="sub">JOURNAL ・ RISK ・ BACKTEST</div>
+<div id="todaybar" style="margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px"></div>
 <!-- WorkerのURL（バックテスト・スプレッド用。FX Naviと同じ） -->
 <script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";</script>
 
-<div class="sec">① 成績分析（トレード記録）</div>
+<div class="sec" data-sec="0" onclick="toggleSection('0')" style="cursor:pointer">① 成績分析（トレード記録）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
 <div class="card">
+  <div class="rowf">
+    <div><label>通貨ペア</label><select id="jp"><option>USD/JPY</option><option>EUR/JPY</option><option>GBP/JPY</option><option>AUD/JPY</option><option>その他</option></select></div>
+    <div><label>売買</label><select id="js"><option value="買い">買い</option><option value="売り">売り</option></select></div>
+    <div><label>損益(円)</label><input id="jy" type="number" inputmode="numbers" placeholder="例 90 / -59"></div>
+  </div>
+  <div class="rowf" style="margin-top:6px">
+    <div><label>マーク（総合判定に従ったか）</label><select id="jmark"><option value="">未記録</option><option value="🟢">🟢 OK</option><option value="🟡">🟡 保留</option><option value="🔴">🔴 見送り</option></select></div>
+  </div>
   <div class="rowf">
     <div><label>通貨ペア</label><select id="jp"><option>USD/JPY</option><option>EUR/JPY</option><option>GBP/JPY</option><option>AUD/JPY</option><option>その他</option></select></div>
     <div><label>売買</label><select id="js"><option value="買い">買い</option><option value="売り">売り</option></select></div>
@@ -52,11 +61,12 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <button class="bsub" onclick="toggleBox('iosbox')">📋 iPhone文字貼付</button>
     <button class="bsub" onclick="appSync()">アプリ決済を取込</button>
     <button class="bsub" onclick="toggleBox('pastebox')">数値貼付</button>
+    <button class="bsub" onclick="exportTradesCSV()">📤 CSV書き出し</button>
   </div>
   <div id="impmsg" class="note"></div>
   <div style="margin-top:4px"><button class="bsub" style="font-size:12px;padding:7px 10px" onclick="toggleBox('csvpastebox')">CSVが選べない時：中身を貼付</button></div>
   <div id="csvpastebox" style="display:none;margin-top:8px">
-    <label>ファイルAppでCSVを開く→画面を長押しまたは⋯→「すべて選択」→コピーし、ここに貼付</label>
+    <label>ファイルAppでCSVを開く→画面を長押しまたは…→「すべて選択」→コピーし、ここに貼付</label>
     <textarea id="csvpaste" placeholder="（CSVの中身を貼り付け：1行目は見出し）"></textarea>
     <button class="bsub" style="margin-top:8px" onclick="csvPaste()">読み込む</button>
   </div>
@@ -76,7 +86,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   </div>
   <!-- 確認して取込（全方式共通） -->
   <div id="pastebox" style="display:none;margin-top:10px">
-    <label>1行＝1取引。「ペア サイド 損益」も可（例: USD/JPY 買い 9 ／ GBP/JPY 売り -953）。数字だけでも可（その場合サイドは上の選択を使用）。</label>
+    <label>1行＝1取引。「ペア サイド 損益」も可（例：USD/JPY 買い 9 / GBP/JPY 売り -953）。数字だけでも可（その場合サイドは上の選択を使用）。</label>
     <textarea id="jpaste" placeholder="-59&#10;90&#10;-23&#10;31"></textarea>
     <button class="bsub" style="margin-top:8px" onclick="importPaste()">取り込む</button>
   </div>
@@ -84,12 +94,16 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <svg class="eq" id="eq" viewBox="0 0 320 120" preserveAspectRatio="none"></svg>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">ペア別</div>
   <table id="bypair"><thead><tr><th>ペア</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">月別サマリー</div>
+  <table id="bymonth"><thead><tr><th>月</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">マーク別成績（総合判定に従うと勝てているか）</div>
+  <table id="bymark"><thead><tr><th>マーク</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="tr" id="trlist"></div>
   <div style="margin-top:8px"><span class="del" onclick="clearTrades()">全削除</span></div>
   <div class="note">端末内に保存（localStorage）。GMOの約定履歴の決済損益(円)を入れると、勝率・期待値・PF・損益曲線が出ます。</div>
 </div>
 
-<div class="sec">② リスク / ロット計算</div>
+<div class="sec" data-sec="1" onclick="toggleSection('1')" style="cursor:pointer">② リスク / ロット計算<span class="secarrow" style="margin-left:auto;color:var(--mut)">▼</span></div>
 <div class="card">
   <div class="rowf">
     <div><label>資金(円)</label><input id="cap" type="number" value="10000"></div>
@@ -104,17 +118,18 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <div class="note">円ペア前提（1pip=0.01）。許容損失＝資金×リスク%。推奨通貨量＝許容損失 ÷ (SL pips × 0.01)。GMO最小は1,000通貨(0.1ロット)。</div>
 </div>
 
-<div class="sec">③ スプレッド / コスト判定</div>
+<div class="sec" data-sec="2" onclick="toggleSection('2')" style="cursor:pointer">③ スプレッド / コスト判定<span class="secarrow" style="margin-left:auto;color:var(--mut)">▼</span></div>
 <div class="card">
   <div class="rowf">
     <div><label>狙うTP(pips)</label><input id="ctp" type="number" value="2" step="0.1"></div>
     <div style="display:flex;align-items:flex-end"><button class="bgo" style="width:100%" onclick="loadSpreads()">現在のスプレッドを取得</button></div>
   </div>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="sprAuto" onchange="toggleSprAuto(this)" style="width:auto;margin:0">🔄 自動更新（30秒毎・週末休場中は停止）<span id="sprtime" style="margin-left:auto;color:var(--mut);font-size:11px"></span></label>
   <table id="sprtbl"><thead><tr><th>ペア</th><th>スプレッド</th><th>TP比</th><th>判定</th></tr></thead><tbody><tr><td colspan="4" style="text-align:center;color:#566">「取得」を押してください</td></tr></tbody></table>
   <div class="note">スプレッドが狙うTPの3割以上だとコスト負けしやすい→見送り推奨。要 WorkerのURL設定。あなたの小さな負けの多くはこのコスト負けが原因の可能性が高いです。</div>
 </div>
 
-<div class="sec">④ シグナルのバックテスト</div>
+<div class="sec" data-sec="3" onclick="toggleSection('3')" style="cursor:pointer">④ シグナルのバックテスト<span class="secarrow" style="margin-left:auto;color:var(--mut)">▼</span></div>
 <div class="card">
   <div class="rowf">
     <div><label>ペア</label><select id="bsym"><option>USD_JPY</option><option>EUR_JPY</option><option>GBP_JPY</option><option>AUD_JPY</option></select></div>
@@ -124,11 +139,18 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <div><label>期間(日)</label><input id="bdays" type="number" value="3"></div>
     <div><label>スプレッド(pips)</label><input id="bspr" type="number" value="0.4" step="0.1"></div>
   </div>
-  <button class="bgo" style="margin-top:10px" id="btbtn" onclick="runBacktest()">バックテスト実行</button>
+  <div class="rowf" style="margin-top:6px">
+    <div><label>資金(円)※②から引継</label><input id="bcap" type="number" value="10000"></div>
+    <div><label>リスク(%)※②から引継</label><input id="brisk" type="number" value="2"></div>
+  </div>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="btGreen" style="width:auto;margin:0">🟢 総合判定OKのみ（長期EMA200一致・ADX30-40・時間帯・ダウ一致の4項目中3以上で厳選）</label>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button class="bgo" style="flex:1" id="btbtn" onclick="runBacktest()">バックテスト実行</button>
+    <button class="bsub" style="flex:1" onclick="runBacktestAll()">4ペア一括実行</button>
+  </div>
   <div class="stat" id="btout" style="margin-top:10px"></div>
   <div id="btmsg" class="note"></div>
   <div class="note">直近データで、各シグナルをATR基準のTP/SL通りに取った場合を検証（スプレッド控除後）。要 WorkerのURL設定。過去成績は将来を保証しません。</div>
-</div>
 </div>
 <script src="tools.js"></script>
 </body></html>

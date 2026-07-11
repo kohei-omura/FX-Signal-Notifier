@@ -6,7 +6,8 @@ function loadTrades(){try{return JSON.parse(localStorage.getItem('fxnavi_trades'
 function saveTrades(t){localStorage.setItem('fxnavi_trades',JSON.stringify(t));}
 function addTrade(){
   const y=parseFloat($('#jy').value); if(isNaN(y)){alert('損益(円)を入力してください');return;}
-  const t=loadTrades(); t.push({pair:$('#jp').value,side:$('#js').value,yen:y,ts:Date.now()}); saveTrades(t); $('#jy').value=''; renderJournal();
+  const mk=($('#jmark')?$('#jmark').value:'')||'';
+  const t=loadTrades(); t.push({pair:$('#jp').value,side:$('#js').value,yen:y,ts:Date.now(),mark:mk}); saveTrades(t); $('#jy').value=''; renderJournal();
 }
 function importPaste(){
   const lines=$('#jpaste').value.split('\n').map(s=>s.trim()).filter(Boolean);
@@ -141,31 +142,82 @@ function renderJournal(){
   const gw=wins.reduce((a,b)=>a+b.yen,0), gl=Math.abs(losses.reduce((a,b)=>a+b.yen,0));
   const pf=gl?gw/gl:(gw>0?Infinity:0);
   const exp=n?net/n:0;
+  // ①-2: 最大DD・最大連敗・ペイオフレシオ
   let cum=0,peak=0,dd=0;const curve=[0];
   t.forEach(x=>{cum+=x.yen;curve.push(cum);peak=Math.max(peak,cum);dd=Math.min(dd,cum-peak);});
+  let ls=0,maxLS=0;t.forEach(x=>{if(x.yen<0){ls++;maxLS=Math.max(maxLS,ls);}else if(x.yen>0){ls=0;}});
+  const avgWin=wins.length?gw/wins.length:0,avgLose=losses.length?gl/losses.length:0;
+  const payoff=avgLose?avgWin/avgLose:(avgWin>0?Infinity:0);
   $('#kpis').innerHTML=`
-    <div class="kpi"><div class="l">取引数</div><div class="v">${n}</div></div>
     <div class="kpi"><div class="l">勝率</div><div class="v ${wr>=50?'up':'dn'}">${wr.toFixed(0)}%</div></div>
     <div class="kpi"><div class="l">純損益</div><div class="v ${net>=0?'up':'dn'}">${yen(net)}</div></div>
-    <div class="kpi"><div class="l">期待値/回</div><div class="v ${exp>=0?'up':'dn'}">${yen(exp)}</div></div>
     <div class="kpi"><div class="l">PF</div><div class="v ${pf>=1?'up':'dn'}">${pf===Infinity?'∞':pf.toFixed(2)}</div></div>
-    <div class="kpi"><div class="l">最大DD</div><div class="v dn">${Math.round(dd).toLocaleString()}円</div></div>`;
+    <div class="kpi"><div class="l">最大DD</div><div class="v dn">${Math.round(dd).toLocaleString()}円</div></div>
+    <div class="kpi"><div class="l">最大連敗</div><div class="v ${maxLS>=5?'dn':''}">${maxLS}</div></div>
+    <div class="kpi"><div class="l">ペイオフ</div><div class="v ${payoff>=1?'up':'dn'}">${payoff===Infinity?'∞':payoff.toFixed(2)}</div></div>`;
+  // ①-4: 損益曲線（0円破線＋DD区間を薄赤網掛け＋最終値ラベル）
   const W=320,H=120,mn=Math.min(...curve),mx=Math.max(...curve),rg=(mx-mn)||1;
   const X=i=>i/(curve.length-1||1)*W,Y=v=>H-((v-mn)/rg*(H-12))-6;
   let d='';curve.forEach((v,i)=>{d+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';});
   const zeroY=Y(0);
-  $('#eq').innerHTML=`<line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="#2a3340" stroke-width="1" stroke-dasharray="3 3"/><path d="${d}" fill="none" stroke="${net>=0?'#4ade9b':'#ff7a8a'}" stroke-width="2"/>`;
+  // ドローダウン区間（直近ピークを下回っている連続区間）を薄赤網掛け
+  let pk=curve[0],ddSeg='';let segStart=-1;
+  for(let i=0;i<curve.length;i++){if(curve[i]>=pk){if(segStart>=0){ddSeg+=`<rect x="${X(segStart).toFixed(1)}" y="0" width="${(X(i)-X(segStart)).toFixed(1)}" height="${H}" fill="rgba(255,122,138,.10)"/>`;segStart=-1;}pk=curve[i];}else{if(segStart<0)segStart=i;}}
+  if(segStart>=0)ddSeg+=`<rect x="${X(segStart).toFixed(1)}" y="0" width="${(W-X(segStart)).toFixed(1)}" height="${H}" fill="rgba(255,122,138,.10)"/>`;
+  const lastV=curve[curve.length-1],lx=Math.min(W-2,X(curve.length-1)),ly=Math.max(9,Math.min(H-2,Y(lastV)));
+  const lbl=n?`<text x="${(lx-2).toFixed(1)}" y="${(ly-4).toFixed(1)}" text-anchor="end" font-size="10" font-family="monospace" fill="${lastV>=0?'#4ade9b':'#ff7a8a'}">${(lastV>=0?'+':'')+Math.round(lastV).toLocaleString()}</text>`:'';
+  $('#eq').innerHTML=`${ddSeg}<line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="#2a3340" stroke-width="1" stroke-dasharray="3 3"/><path d="${d}" fill="none" stroke="${net>=0?'#4ade9b':'#ff7a8a'}" stroke-width="2"/>${lbl}`;
+  // ペア別
   const byp={};t.forEach(x=>{(byp[x.pair]=byp[x.pair]||[]).push(x);});
   $('#bypair').querySelector('tbody').innerHTML=Object.entries(byp).map(([p,arr])=>{
     const nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
     return `<tr><td>${p}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">記録なし</td></tr>';
+  // ①-3: 月別サマリー（日時なしは「日時なし」行）
+  const bym={};t.forEach(x=>{var k=x.ts?new Date(x.ts).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,7):'日時なし';(bym[k]=bym[k]||[]).push(x);});
+  var mkeys=Object.keys(bym).sort();
+  var mtb=document.querySelector('#bymonth tbody');
+  if(mtb)mtb.innerHTML=mkeys.map(function(k){var arr=bym[k],nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
+    return `<tr><td>${k}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">記録なし</td></tr>';
+  // ①-3: マーク別成績（未記録は除外）
+  var MK=[['🟢','🟢'],['🟡','🟡'],['🔴','🔴']];
+  var ktb=document.querySelector('#bymark tbody');
+  if(ktb)ktb.innerHTML=MK.map(function(m){var arr=t.filter(function(x){return x.mark===m[0];});if(!arr.length)return'';
+    var nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
+    return `<tr><td>${m[1]}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">マーク記録なし</td></tr>';
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
     const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
-    return `<div><span>${x.pair} ${sd}</span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
+    const dts=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'日時なし';
+    return `<div><span>${x.mark||''}${x.pair} ${sd} <span style="opacity:.6">${dts}</span></span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
+  renderTodaySummary();
 }
+// 共通UX-2: 今日の1行サマリー
+function renderTodaySummary(){var el=document.getElementById('todaybar');if(!el)return;
+  var today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'});
+  var tt=loadTrades().filter(function(x){return x.ts&&new Date(x.ts).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})===today;});
+  if(!tt.length){el.innerHTML='<span style="color:var(--mut)">今日の記録なし</span>';return;}
+  var w=tt.filter(function(x){return x.yen>0;}).length,l=tt.filter(function(x){return x.yen<0;}).length,net=tt.reduce(function(a,b){return a+b.yen;},0);
+  el.innerHTML='📅 今日：<b>'+w+'勝'+l+'敗</b> <b class="'+(net>=0?'good':'warn')+'">'+yen(net)+'</b>';
+}
+// ①-5: 全記録CSV書き出し（BOM付きUTF-8・GOV3の3段同期配布）
+function _toolsCsvDist(blob,filename){var file=null;try{file=new File([blob],filename,{type:blob.type});}catch(e){}
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],title:filename}).catch(function(){});return;}
+  try{var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);}catch(_e){}URL.revokeObjectURL(u);},150);return;}catch(e){}
+  try{window.open(URL.createObjectURL(blob),'_blank');}catch(e){}}
+function exportTradesCSV(){var t=loadTrades();
+  var rows=[['日時','ペア','売買','損益円','マーク']];
+  t.forEach(function(x){var dt=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}):'';rows.push([dt,x.pair,x.side||'',x.yen,x.mark||'']);});
+  var body='\ufeff'+rows.map(function(r){return r.map(function(c){c=(c==null?'':''+c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',');}).join('\r\n');
+  _toolsCsvDist(new Blob([body],{type:'text/csv;charset=utf-8'}),'fxnavi-trades.csv');}
+// 共通UX-1: セクションのアコーディオン
+function toggleSection(idx){try{var st=JSON.parse(localStorage.getItem('fxnavi_sec_open')||'null')||{0:true};st[idx]=!st[idx];localStorage.setItem('fxnavi_sec_open',JSON.stringify(st));applySections();}catch(e){}}
+function applySections(){var st;try{st=JSON.parse(localStorage.getItem('fxnavi_sec_open')||'null');}catch(e){st=null;}if(!st)st={0:true};
+  var secs=document.querySelectorAll('.sec[data-sec]');
+  secs.forEach(function(s){var idx=s.getAttribute('data-sec');var open=!!st[idx];s.setAttribute('data-open',open?'1':'0');
+    var card=s.nextElementSibling;if(card&&card.classList.contains('card'))card.style.display=open?'':'none';
+    var mk=s.querySelector('.secarrow');if(mk)mk.textContent=open?'▲':'▼';});}
 /* ============ ② リスク/ロット計算 ============ */
 function loadRisk(){try{return JSON.parse(localStorage.getItem('fxnavi_risk'))||{cap:10000,rpct:2,units:1000}}catch(e){return{cap:10000,rpct:2,units:1000}}}
-function calcRisk(){
+async function calcRisk(){
   const cap=parseFloat($('#cap').value),rpct=parseFloat($('#rpct').value),slp=parseFloat($('#slp').value),units=parseFloat($('#units').value);
   if([cap,rpct,slp,units].some(isNaN)){alert('数値を入力してください');return;}
   const allow=cap*rpct/100;
@@ -174,27 +226,63 @@ function calcRisk(){
   const maxSL=allow/(PS*units);
   localStorage.setItem('fxnavi_risk',JSON.stringify({cap,rpct,units}));
   const over=(lossAtUnits>allow);
+  // ②-3: ④バックテストの資金・リスク欄へ自動引き継ぎ
+  if($('#bcap'))$('#bcap').value=cap; if($('#brisk'))$('#brisk').value=rpct;
+  // ②-1: 証拠金チェック（レバ25倍・③と同じWorker経由レート／未取得は161円概算）
+  var rate=await getWorkerRate('USD_JPY'),approx=false; if(rate==null||!isFinite(rate)){rate=161;approx=true;}
+  var maxUnitsMargin=Math.floor(cap*25/rate/100)*100;
+  var marginOver=recUnits>maxUnitsMargin;
+  var effRisk=cap?(maxUnitsMargin*slp*PS/cap*100):0;
+  var marginBox=marginOver
+    ? `<div class="kpi" style="grid-column:span 3"><div class="l">証拠金チェック${approx?'（概算 1$≈161円）':''}</div><div class="v dn">⚠ 証拠金不足：実際は${maxUnitsMargin.toLocaleString()}通貨が上限（実効リスク${effRisk.toFixed(1)}%）</div></div>`
+    : `<div class="kpi" style="grid-column:span 3"><div class="l">証拠金チェック${approx?'（概算 1$≈161円）':''}</div><div class="v up">✅ 証拠金OK（上限${maxUnitsMargin.toLocaleString()}通貨）</div></div>`;
+  // ②-2: ケリー推奨（①記録 直近50件から勝率p・ペイオフb）
+  var kellyBox=_kellyRiskBox();
   $('#riskout').innerHTML=`
     <div class="kpi"><div class="l">許容損失</div><div class="v go">${Math.round(allow).toLocaleString()}円</div></div>
     <div class="kpi"><div class="l">推奨通貨量</div><div class="v">${recUnits.toLocaleString()}</div></div>
     <div class="kpi"><div class="l">この量での想定損失</div><div class="v ${over?'dn':'up'}">${Math.round(lossAtUnits).toLocaleString()}円</div></div>
     <div class="kpi"><div class="l">この量での最大SL</div><div class="v">${maxSL.toFixed(1)}pips</div></div>
-    <div class="kpi" style="grid-column:span 3"><div class="l">判定</div><div class="v ${over?'dn':'up'}">${over?'⚠ 今のSL/通貨量はリスク過大（許容超過）':'✅ 許容内。資金/リスク%を保存しました'}</div></div>`;
+    <div class="kpi" style="grid-column:span 3"><div class="l">判定</div><div class="v ${over?'dn':'up'}">${over?'⚠ 今のSL/通貨量はリスク過大（許容超過）':'✅ 許容内。資金/リスク%を保存しました'}</div></div>
+    ${marginBox}${kellyBox}`;
+}
+// Worker経由レート取得（③と同じ）。取得不可はnull
+async function getWorkerRate(sym){try{if(!LIVE_PRICE_URL)return null;var r=await fetch(LIVE_PRICE_URL.split('?')[0]+'?t='+Date.now(),{cache:'no-store'});var j=await r.json();var d=(j.data||[]).find(function(x){return x.symbol===sym;});if(d&&!isNaN(parseFloat(d.bid)))return parseFloat(d.bid);}catch(e){}return null;}
+// ②-2: 実績ベースのケリー推奨リスク%（f*=(b·p−(1−p))/b の1/4・上限2%・フルケリーは破産リスク大のため1/4採用）
+function _kellyRiskBox(){var t=loadTrades().slice(-50),n=t.length;
+  if(n<30)return `<div class="kpi" style="grid-column:span 3"><div class="l">実績ベース推奨リスク</div><div class="v">📊 記録蓄積中（n=${n}）</div></div>`;
+  var wins=t.filter(function(x){return x.yen>0;}),losses=t.filter(function(x){return x.yen<0;});
+  var p=wins.length/n,gw=wins.reduce(function(a,b){return a+b.yen;},0),gl=Math.abs(losses.reduce(function(a,b){return a+b.yen;},0));
+  var b=(losses.length&&gl)?((gw/Math.max(1,wins.length))/(gl/losses.length)):(gw>0?2:1);
+  var f=b>0?(b*p-(1-p))/b:0;
+  if(f<=0)return `<div class="kpi" style="grid-column:span 3"><div class="l">実績ベース推奨リスク</div><div class="v dn">推奨0%＝実績上エッジなし（勝率${(p*100).toFixed(0)}%/b${b.toFixed(2)}）</div></div>`;
+  var rec=Math.min(2,f/4*100);
+  return `<div class="kpi" style="grid-column:span 3"><div class="l">実績ベース推奨リスク（1/4ケリー）</div><div class="v go">${(Math.round(rec*100)/100)}%<span style="font-size:10px;color:var(--mut)"> （勝率${(p*100).toFixed(0)}%/b${b.toFixed(2)}/n${n}）</span></div></div>`;
 }
 /* ============ ③ スプレッド/コスト判定 ============ */
+// FX市場が休場か（JST土曜7時〜月曜7時）
+function isFxClosed(){var p=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Tokyo',weekday:'short',hour:'2-digit',hour12:false}).formatToParts(new Date());var wd='',h=0;p.forEach(function(x){if(x.type==='weekday')wd=x.value;if(x.type==='hour')h=+x.value;});
+  if(wd==='Sat'&&h>=7)return true; if(wd==='Sun')return true; if(wd==='Mon'&&h<7)return true; return false;}
 async function loadSpreads(){
   if(!LIVE_PRICE_URL){$('#sprtbl').querySelector('tbody').innerHTML='<tr><td colspan="4" class="warn" style="text-align:center">WorkerのURLを設定してください</td></tr>';return;}
+  if(isFxClosed()){$('#sprtbl').querySelector('tbody').innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--mut)">🛌 週末休場（JST土7時〜月7時）</td></tr>';var st0=document.getElementById('sprtime');if(st0)st0.textContent='';return;}
   const tp=parseFloat($('#ctp').value)||2;
   try{
     const r=await fetch(LIVE_PRICE_URL.split('?')[0]+'?t='+Date.now(),{cache:'no-store'});
     const j=await r.json();const want=['USD_JPY','EUR_JPY','GBP_JPY','AUD_JPY'];
     const rows=(j.data||[]).filter(d=>want.includes(d.symbol)).map(d=>{
-      const sp=(+d.ask - +d.bid)/PS, ratio=sp/tp, ok=ratio<0.3;
-      return `<tr><td>${d.symbol.replace('_','/')}</td><td>${sp.toFixed(1)}pips</td><td class="${ok?'good':'warn'}">${(ratio*100).toFixed(0)}%</td><td class="${ok?'good':'warn'}">${ok?'✅ 可':'⛔ コスト負け注意'}</td></tr>`;
+      const sp=(+d.ask - +d.bid)/PS, ratio=sp/tp;
+      // ③-2: 3段階（15%未満🟢 / 15〜30%🟡 / 30%以上🔴）
+      var cls,mk; if(ratio<0.15){cls='good';mk='🟢 良好';}else if(ratio<0.30){cls='warn';mk='🟡 注意';}else{cls='warn';mk='🔴 見送り';}
+      return `<tr><td>${d.symbol.replace('_','/')}</td><td>${sp.toFixed(1)}pips</td><td class="${cls}">${(ratio*100).toFixed(0)}%</td><td class="${cls}">${mk}</td></tr>`;
     }).join('');
     $('#sprtbl').querySelector('tbody').innerHTML=rows||'<tr><td colspan="4" style="text-align:center;color:#566">取得失敗</td></tr>';
+    var st=document.getElementById('sprtime');if(st)st.textContent='取得 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false});
   }catch(e){$('#sprtbl').querySelector('tbody').innerHTML='<tr><td colspan="4" class="warn" style="text-align:center">取得失敗</td></tr>';}
 }
+// ③-1: 自動更新トグル（ONで30秒毎・休場は停止）
+var _sprTimer=null;
+function toggleSprAuto(cb){try{if(cb.checked){localStorage.setItem('fxnavi_spr_auto','1');if(_sprTimer)clearInterval(_sprTimer);loadSpreads();_sprTimer=setInterval(function(){if(isFxClosed()){loadSpreads();}else{loadSpreads();}},30000);}else{localStorage.removeItem('fxnavi_spr_auto');if(_sprTimer){clearInterval(_sprTimer);_sprTimer=null;}}}catch(e){}}
 /* ============ ④ バックテスト（FX Naviエンジン） ============ */
 const W_EMA=.35,W_MACD=.25,W_RSI=.20,W_BB=.20,TECH_W=.9,FUND_W=.1;
 const FUND_BIAS={USD_JPY:0.5,EUR_JPY:0.4,GBP_JPY:0.5,AUD_JPY:0.4};
@@ -221,48 +309,110 @@ function sideAt(o,sym,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.m
 }
 function jstYmd(off){return new Date(Date.now()+off*86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}).replace(/-/g,'');}
 async function fetchHist(base,sym,interval,days){let rows={};for(let off=0;off>=-(days+1);off--){const path=`/public/v1/klines?symbol=${sym}&priceType=BID&interval=${interval}&date=${jstYmd(off)}`;
-  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close];});}catch(e){}}
+  try{const r=await fetch(`${base}?path=${encodeURIComponent(path)}&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();(j.data||[]).forEach(k=>{rows[+k.openTime]=[+k.high,+k.low,+k.close,+k.openTime];});}catch(e){}}
   return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+// ④-1: 簡易コンフルエンス（index.html同等・シグナル判定式は不変、集計フィルタのみ）
+function _zoneJSTgreen(ts){if(ts==null)return false;var pp=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Tokyo',hour:'2-digit',hour12:false}).formatToParts(new Date(ts));var h=0;pp.forEach(function(x){if(x.type==='hour')h=+x.value;});return (h>=16&&h<24);}
+function _dowTools(oh){var n=oh.length;if(n<11)return 'range';var H=[],L=[];for(var i=2;i<n-2;i++){var h=oh[i][0],l=oh[i][1];if(h>oh[i-1][0]&&h>oh[i-2][0]&&h>oh[i+1][0]&&h>oh[i+2][0])H.push(h);if(l<oh[i-1][1]&&l<oh[i-2][1]&&l<oh[i+1][1]&&l<oh[i+2][1])L.push(l);}if(H.length<2||L.length<2)return 'range';var h2=H.slice(-2),l2=L.slice(-2);if(h2[1]>h2[0]&&l2[1]>l2[0])return 'up';if(h2[1]<h2[0]&&l2[1]<l2[0])return 'down';return 'range';}
+function _confTools(oh,i,side,e200){var cnt=0;
+  var ev=e200[i],ev6=e200[i-6];if(ev!=null&&ev6!=null){if((side==='買い'&&ev-ev6>0)||(side==='売り'&&ev-ev6<0))cnt++;}
+  var ax=adxL(oh.slice(0,i+1),14);if(ax!=null&&ax>=30&&ax<=40)cnt++;
+  if(_zoneJSTgreen(oh[i][3]))cnt++;
+  var dw=_dowTools(oh.slice(0,i+1));if((side==='買い'&&dw==='up')||(side==='売り'&&dw==='down'))cnt++;
+  return cnt>=3;}
+function _statsOf(arr){var n=arr.length;if(!n)return null;var wins=arr.filter(x=>x.pips>0),losses=arr.filter(x=>x.pips<=0);
+  var net=arr.reduce((a,b)=>a+b.pips,0),wr=wins.length/n*100,gw=wins.reduce((a,b)=>a+b.pips,0),gl=Math.abs(losses.reduce((a,b)=>a+b.pips,0));
+  var pf=gl?gw/gl:Infinity,exp=net/n,cum=0,peak=0,dd=0;arr.forEach(x=>{cum+=x.pips;peak=Math.max(peak,cum);dd=Math.min(dd,cum-peak);});
+  return {n:n,wr:wr,net:net,pf:pf,exp:exp,dd:dd};}
+// ④-2: 資金シミュ（複利・スプレッド控除後。SL到達=リスク%損失として建玉）
+function _simOf(arr,cap,risk){if(!arr.length||!cap||!risk)return null;var c=cap,peak=cap,ddp=0;
+  arr.forEach(function(x){var r=x.slp?x.pips/x.slp:0;c=c*(1+r*risk/100);if(c<0)c=0;peak=Math.max(peak,c);if(peak>0)ddp=Math.min(ddp,(c-peak)/peak*100);});
+  return {finalCap:c,retPct:(c/cap-1)*100,maxDDpct:ddp};}
+async function runBacktestCore(sym,mode,days,spr){
+  const P=BP[mode],base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  let oh=await fetchHist(base,sym,P.interval,days);
+  const CAP=mode==='scalp'?2200:1200; if(oh.length>CAP)oh=oh.slice(-CAP);
+  if(oh.length<120)return {error:'データ不足'};
+  const closes=oh.map(r=>r[2]),e200=emaS(closes,200);
+  const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+  const trades=[];let i=warm;
+  while(i<oh.length-1){
+    const side=sideAt(oh.slice(0,i+1),sym,P);
+    if(!side){i++;continue;}
+    const a=atrL(oh.slice(0,i+1),P.atr); if(!a){i++;continue;}
+    const slp=a/PS, tpp=slp*1.5, entry=oh[i][2], entryIdx=i;
+    const tp=side==='買い'?entry+tpp*PS:entry-tpp*PS, sl=side==='買い'?entry-slp*PS:entry+slp*PS;
+    let exit=null;
+    for(let j=i+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
+      if(side==='買い'){if(l<=sl){exit=-slp;break;}if(h>=tp){exit=tpp;break;}}
+      else{if(h>=sl){exit=-slp;break;}if(l<=tp){exit=tpp;break;}}
+      i=j;}
+    if(exit==null)break;
+    const conf=_confTools(oh,entryIdx,side,e200);
+    trades.push({pips:exit-spr,slp:slp,conf:conf}); i++;
+  }
+  return {trades:trades,ohlen:oh.length};
+}
+function _kpiRow(label,s){if(!s)return `<div class="kpi" style="grid-column:span 3"><div class="l">${label}</div><div class="v">シグナルなし</div></div>`;
+  return `<div class="kpi"><div class="l">${label}・回数</div><div class="v">${s.n}</div></div>
+    <div class="kpi"><div class="l">勝率</div><div class="v ${s.wr>=50?'up':'dn'}">${s.wr.toFixed(0)}%</div></div>
+    <div class="kpi"><div class="l">純pips</div><div class="v ${s.net>=0?'up':'dn'}">${s.net>=0?'+':''}${s.net.toFixed(1)}</div></div>`;}
 async function runBacktest(){
   if(!LIVE_PRICE_URL){$('#btmsg').innerHTML='<span class="warn">WorkerのURL（LIVE_PRICE_URL）を tools.html に設定してください</span>';return;}
+  if(_btBusy)return; _btBusy=true;
   const sym=$('#bsym').value,mode=$('#bmode').value,days=Math.min(14,Math.max(1,parseInt($('#bdays').value)||3)),spr=parseFloat($('#bspr').value)||0;
-  const P=BP[mode],base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  const onlyGreen=$('#btGreen')&&$('#btGreen').checked;
+  const cap=parseFloat(($('#bcap')||{}).value)||0,risk=parseFloat(($('#brisk')||{}).value)||0;
   $('#btbtn').textContent='計算中…';$('#btbtn').disabled=true;$('#btmsg').textContent='';
   try{
-    let oh=await fetchHist(base,sym,P.interval,days);
-    const CAP=mode==='scalp'?2200:1200; if(oh.length>CAP)oh=oh.slice(-CAP);
-    if(oh.length<120){$('#btmsg').innerHTML='<span class="warn">データ不足（市場休場や期間不足）。期間を増やすか平日に実行してください</span>';return;}
-    const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
-    const trades=[];let i=warm;
-    while(i<oh.length-1){
-      const side=sideAt(oh.slice(0,i+1),sym,P);
-      if(!side){i++;continue;}
-      const a=atrL(oh.slice(0,i+1),P.atr); if(!a){i++;continue;}
-      const slp=a/PS, tpp=slp*1.5, entry=oh[i][2];
-      const tp=side==='買い'?entry+tpp*PS:entry-tpp*PS, sl=side==='買い'?entry-slp*PS:entry+slp*PS;
-      let exit=null;
-      for(let j=i+1;j<oh.length;j++){const h=oh[j][0],l=oh[j][1];
-        if(side==='買い'){if(l<=sl){exit=-slp;break;}if(h>=tp){exit=tpp;break;}}
-        else{if(h>=sl){exit=-slp;break;}if(l<=tp){exit=tpp;break;}}
-        i=j;}
-      if(exit==null)break;
-      trades.push(exit-spr); i++;
-    }
-    if(!trades.length){$('#btmsg').innerHTML='<span class="warn">この期間ではシグナル発生なし</span>';return;}
-    const wins=trades.filter(x=>x>0),losses=trades.filter(x=>x<=0);
-    const net=trades.reduce((a,b)=>a+b,0),wr=wins.length/trades.length*100;
-    const gw=wins.reduce((a,b)=>a+b,0),gl=Math.abs(losses.reduce((a,b)=>a+b,0));
-    const pf=gl?gw/gl:Infinity, exp=net/trades.length;
-    let cum=0,peak=0,dd=0;trades.forEach(x=>{cum+=x;peak=Math.max(peak,cum);dd=Math.min(dd,cum-peak);});
-    $('#btout').innerHTML=`
-      <div class="kpi"><div class="l">トレード</div><div class="v">${trades.length}</div></div>
-      <div class="kpi"><div class="l">勝率</div><div class="v ${wr>=50?'up':'dn'}">${wr.toFixed(0)}%</div></div>
-      <div class="kpi"><div class="l">合計</div><div class="v ${net>=0?'up':'dn'}">${net>=0?'+':''}${net.toFixed(1)}pips</div></div>
-      <div class="kpi"><div class="l">期待値/回</div><div class="v ${exp>=0?'up':'dn'}">${exp>=0?'+':''}${exp.toFixed(2)}pips</div></div>
-      <div class="kpi"><div class="l">PF</div><div class="v ${pf>=1?'up':'dn'}">${pf===Infinity?'∞':pf.toFixed(2)}</div></div>
-      <div class="kpi"><div class="l">最大DD</div><div class="v dn">${dd.toFixed(1)}pips</div></div>`;
-    $('#btmsg').innerHTML=`${sym} ${mode} 直近${oh.length}本・スプレッド${spr}pips控除後。${exp>=0?'<span class="good">期待値プラス＝エッジの可能性</span>':'<span class="warn">期待値マイナス＝この設定では不利</span>'}`;
-  }finally{$('#btbtn').textContent='バックテスト実行';$('#btbtn').disabled=false;}
+    const R=await runBacktestCore(sym,mode,days,spr);
+    if(R.error){$('#btmsg').innerHTML='<span class="warn">データ不足（市場休場や期間不足）。期間を増やすか平日に実行してください</span>';return;}
+    if(!R.trades.length){$('#btmsg').innerHTML='<span class="warn">この期間ではシグナル発生なし</span>';return;}
+    const all=_statsOf(R.trades), sel=_statsOf(R.trades.filter(x=>x.conf));
+    // ④-1: 全シグナル vs 🟢厳選 の並列
+    let html=`<div style="grid-column:span 3;font-size:11px;color:var(--mut);font-family:var(--mono)">全シグナル</div>${_kpiRow('全',all)}`;
+    if(onlyGreen)html+=`<div style="grid-column:span 3;font-size:11px;color:var(--gold);font-family:var(--mono);margin-top:4px">🟢 総合判定OKのみ（4項目中3以上）</div>${_kpiRow('🟢厳選',sel)}`;
+    // ④-2: 資金シミュ（複利）
+    const simSet=onlyGreen&&sel?R.trades.filter(x=>x.conf):R.trades;
+    const sim=_simOf(simSet,cap,risk);
+    if(sim)html+=`<div class="kpi"><div class="l">最終資金</div><div class="v ${sim.finalCap>=cap?'up':'dn'}">${Math.round(sim.finalCap).toLocaleString()}円</div></div>
+      <div class="kpi"><div class="l">収益率</div><div class="v ${sim.retPct>=0?'up':'dn'}">${sim.retPct>=0?'+':''}${sim.retPct.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="l">最大DD%</div><div class="v dn">${sim.maxDDpct.toFixed(1)}%</div></div>`;
+    $('#btout').innerHTML=html;
+    // ④-4: 免責＋サンプル注記
+    const useN=(onlyGreen&&sel)?sel.n:all.n;
+    $('#btmsg').innerHTML=`${sym} ${mode} 直近${R.ohlen}本・スプレッド${spr}pips控除後。サンプル${useN}件${useN<30?'（30件未満は参考値）':''}。<br>${all.exp>=0?'<span class="good">全シグナル期待値プラス</span>':'<span class="warn">全シグナル期待値マイナス</span>'}${onlyGreen&&sel?(sel.exp>=0?' ／ <span class="good">🟢厳選もプラス</span>':' ／ <span class="warn">🟢厳選はマイナス</span>'):''}<br><span style="color:var(--mut)">過去成績は将来を保証しません。</span>`;
+  }finally{$('#btbtn').textContent='バックテスト実行';$('#btbtn').disabled=false;_btBusy=false;}
 }
-loadRisk&&(()=>{const r=loadRisk();$('#cap').value=r.cap;$('#rpct').value=r.rpct;$('#units').value=r.units;})();
+// ④-3: 4ペア一括実行（順次・プログレス・二重実行防止）
+var _btBusy=false;
+async function runBacktestAll(){
+  if(!LIVE_PRICE_URL){$('#btmsg').innerHTML='<span class="warn">WorkerのURLを設定してください</span>';return;}
+  if(_btBusy)return; _btBusy=true;
+  const mode=$('#bmode').value,days=Math.min(14,Math.max(1,parseInt($('#bdays').value)||3)),spr=parseFloat($('#bspr').value)||0;
+  const onlyGreen=$('#btGreen')&&$('#btGreen').checked;
+  const cap=parseFloat(($('#bcap')||{}).value)||0,risk=parseFloat(($('#brisk')||{}).value)||0;
+  const syms=['USD_JPY','EUR_JPY','GBP_JPY','AUD_JPY'];
+  $('#btbtn').disabled=true;
+  try{
+    let allTr=[],rows='';
+    for(let k=0;k<syms.length;k++){
+      $('#btmsg').innerHTML=`⏳ 一括実行中… ${k+1}/${syms.length}（${syms[k].replace('_','/')}）`;
+      const R=await runBacktestCore(syms[k],mode,days,spr);
+      if(R.error||!R.trades.length){rows+=`<tr><td>${syms[k].replace('_','/')}</td><td colspan="3" style="text-align:center;color:var(--mut)">—</td></tr>`;continue;}
+      const set=onlyGreen?R.trades.filter(x=>x.conf):R.trades;const s=_statsOf(set)||{n:0,wr:0,net:0};
+      allTr=allTr.concat(set);
+      rows+=`<tr><td>${syms[k].replace('_','/')}</td><td>${s.n}</td><td class="${s.wr>=50?'good':'warn'}">${s.wr.toFixed(0)}%</td><td class="${s.net>=0?'good':'warn'}">${s.net>=0?'+':''}${s.net.toFixed(1)}</td></tr>`;
+    }
+    const tot=_statsOf(allTr),sim=_simOf(allTr,cap,risk);
+    const totRow=tot?`<tr style="border-top:2px solid var(--gold)"><td><b>合算</b></td><td><b>${tot.n}</b></td><td class="${tot.wr>=50?'good':'warn'}"><b>${tot.wr.toFixed(0)}%</b></td><td class="${tot.net>=0?'good':'warn'}"><b>${tot.net>=0?'+':''}${tot.net.toFixed(1)}</b></td></tr>`:'';
+    $('#btout').innerHTML=`<table style="grid-column:span 3"><thead><tr><th>ペア</th><th>回数</th><th>勝率</th><th>純pips</th></tr></thead><tbody>${rows}${totRow}</tbody></table>`
+      +(sim?`<div class="kpi"><div class="l">合算 最終資金</div><div class="v ${sim.finalCap>=cap?'up':'dn'}">${Math.round(sim.finalCap).toLocaleString()}円</div></div><div class="kpi"><div class="l">収益率</div><div class="v ${sim.retPct>=0?'up':'dn'}">${sim.retPct>=0?'+':''}${sim.retPct.toFixed(1)}%</div></div><div class="kpi"><div class="l">最大DD%</div><div class="v dn">${sim.maxDDpct.toFixed(1)}%</div></div>`:'');
+    $('#btmsg').innerHTML=`4ペア一括・${mode}・スプレッド${spr}pips控除後${onlyGreen?'・🟢厳選':''}。サンプル${tot?tot.n:0}件${(tot&&tot.n<30)?'（30件未満は参考値）':''}。<br><span style="color:var(--mut)">過去成績は将来を保証しません。</span>`;
+  }finally{$('#btbtn').disabled=false;_btBusy=false;}
+}
+loadRisk&&(()=>{const r=loadRisk();$('#cap').value=r.cap;$('#rpct').value=r.rpct;$('#units').value=r.units;
+  if($('#bcap'))$('#bcap').value=r.cap; if($('#brisk'))$('#brisk').value=r.rpct;})();
+try{if(localStorage.getItem('fxnavi_spr_auto')==='1'){var _sa=document.getElementById('sprAuto');if(_sa){_sa.checked=true;toggleSprAuto(_sa);}}}catch(e){}
 renderJournal();
+try{applySections();}catch(e){}
