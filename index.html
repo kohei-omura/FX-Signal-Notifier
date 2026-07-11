@@ -56,6 +56,15 @@
   .chip.cost.warn,.chip.regime.warn{border-color:rgba(232,201,106,.5)}
   .chip.cost.hot,.chip.regime.hot{border-color:rgba(240,97,109,.6);color:var(--down)}
   .chip.regime.weak{opacity:.75}
+  .card.simple .pdetail{display:none}
+  .card{transition:order .3s,transform .3s}
+  .dettog{margin-top:10px;width:100%;padding:7px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.03);color:var(--mut);font-size:12px;cursor:pointer}
+  .qabtn{margin-left:auto;padding:7px 12px;border:1px solid rgba(205,168,106,.5);border-radius:9px;background:rgba(205,168,106,.12);color:var(--gold);font-size:12.5px;font-weight:700;cursor:pointer}
+  .vtb{margin-left:4px;padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--mut);font-size:12px;cursor:pointer}
+  .vtb.on{background:#cda86a;color:#1a1206;font-weight:700;border-color:#cda86a}
+  #verdictbar{margin:0 0 12px;padding:10px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card);font-size:13px;cursor:pointer;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  #verdictbar.hot{border-color:rgba(205,168,106,.55);background:rgba(205,168,106,.10)}
+  #verdictbar .vseg{white-space:nowrap}
   .meter{margin-top:9px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);display:flex;align-items:center;gap:10px;cursor:pointer;font-size:15px}
   .meter b{font-size:15px}.meter .mscore{margin-left:auto;font-family:var(--mono);font-size:13px;opacity:.85}
   .meter .mdet{display:none;flex-basis:100%;font-size:11px;opacity:.8;font-family:var(--mono);margin-top:4px}
@@ -124,13 +133,17 @@
       <div id="clock">--:--:--</div>
       <div id="status" style="margin-top:4px"><span class="badge closed">— —</span></div>
       <div id="updated" style="margin-top:4px"></div>
+      <div id="swr" style="margin-top:2px;font-size:11px"></div>
       <div id="live" style="margin-top:4px"></div>
       <div id="fxzone" style="margin-top:4px;font-size:12px"></div>
       <div id="modesw" style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"></div>
     </div>
   </header>
 
-  <h2>ペア別シグナル</h2>
+  <div id="offlinebar"></div>
+  <div id="verdictbar" onclick="onVerdictTap(event)"><span class="vseg">読み込み中…</span></div>
+
+  <h2>ペア別シグナル <span id="viewtog" style="font-size:12px;font-weight:400;margin-left:8px"></span></h2>
   <div id="stalewarn"></div>
   <div id="modewarn"></div>
   <div id="riskbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--mut)">
@@ -189,6 +202,9 @@
     <div class="fld" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="s_lossstop" onchange="try{this.checked?localStorage.setItem('fxnavi_lossstop','1'):localStorage.removeItem('fxnavi_lossstop');}catch(e){}">
       ⛔ 連敗時（4連敗〜）に新規シグナル通知を自動停止（手仕舞い・ポジション通知は常に送信・既定OFF）</label></div>
+    <div class="fld" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="s_nosort" onchange="try{this.checked?localStorage.setItem('fxnavi_nosort','1'):localStorage.removeItem('fxnavi_nosort');}catch(e){}render();">
+      📌 ペアカードを固定順に戻す（🟢→🟡→🔴の自動ソートを止める・既定OFF）</label></div>
     <button class="btn" onclick="saveSet()">保存</button>
     <div class="note">トークンはこの端末内（ブラウザ）にのみ保存され、リポジトリには書き込まれません。必ず「このリポジトリのみ・Contents権限のみ」のfine-grainedトークンを使ってください。</div>
   </div>
@@ -236,7 +252,7 @@ function setCfg(c){localStorage.setItem(LS,JSON.stringify(c));}
 function detect(){const h=location.hostname,p=location.pathname.split('/').filter(Boolean);let o='',r='';
   if(h.endsWith('github.io')){o=h.split('.')[0];r=p[0]||(o+'.github.io');}return{owner:o,repo:r,branch:'main'};}
 function fillSet(){const c=cfg(),d=detect();$('#s_token').value=c.token||'';$('#s_owner').value=c.owner||d.owner||'';
-  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';const zs=document.getElementById('s_zonesupp');if(zs)zs.checked=suppressZoneNotify();const os=document.getElementById('s_oppsupp');if(os)os.checked=suppressOppNotify();const ls=document.getElementById('s_lossstop');if(ls)ls.checked=lossStopOn();}
+  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';const zs=document.getElementById('s_zonesupp');if(zs)zs.checked=suppressZoneNotify();const os=document.getElementById('s_oppsupp');if(os)os.checked=suppressOppNotify();const ls=document.getElementById('s_lossstop');if(ls)ls.checked=lossStopOn();var ns=document.getElementById('s_nosort');if(ns){try{ns.checked=localStorage.getItem('fxnavi_nosort')==='1';}catch(e){}}}
 function saveSet(){const c={token:$('#s_token').value.trim(),owner:$('#s_owner').value.trim(),repo:$('#s_repo').value.trim(),branch:($('#s_branch').value.trim()||'main')};
   if(!c.token||!c.owner||!c.repo){toast('トークン・オーナー・リポジトリを入力してください');return;}
   setCfg(c);toast('保存しました');togglePanel('setPanel');}
@@ -361,6 +377,14 @@ function fwdStats(){var f=loadFwd(),closed=f.filter(function(x){return !x.open&&
 function fwdEdge(){var s=fwdStats();if(s.n<30)return{status:'testing',n:s.n};
   var ab=s.closed.reduce(function(a,x){return a+(x.b||1.5);},0)/s.closed.length,be=1/(1+ab),wl=wilsonLower(s.wins,s.n,1.96);
   return wl>be?{status:'proven',n:s.n,wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10}:{status:'testing',n:s.n,wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10};}
+// 機能5: 体感速度改善（stale-while-revalidate）。klines等の既存通信最適化は不変
+function saveCache(){try{localStorage.setItem('fxnavi_cache_v1',JSON.stringify({S:S,POS:POS,ts:Date.now()}));}catch(e){}}
+function loadCache(){try{return JSON.parse(localStorage.getItem('fxnavi_cache_v1')||'null');}catch(e){return null;}}
+function setUpdating(on){var el=document.getElementById('swr');if(el)el.innerHTML=on?'<span style="color:var(--gold)">⟳ 更新中…</span>':'';}
+function showOffline(){try{var cch=loadCache();var el=document.getElementById('offlinebar');if(!el)return;
+  var mins=cch&&cch.ts?Math.max(0,Math.round((Date.now()-cch.ts)/60000)):null;
+  el.innerHTML='<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.04);font-size:12.5px;color:var(--mut)">📡 オフライン'+(mins!=null?'（'+mins+'分前の情報）':'（キャッシュ表示中）')+'</div>';}catch(e){}}
+function clearOffline(){var el=document.getElementById('offlinebar');if(el)el.innerHTML='';}
 const CONFLUENCE_W={longEnv:2,adxBand:2,expectancy:2,dow:1,zone:1,granville:1,blackout:1};
 // 長期環境（4時間足EMA200）キャッシュ: sym -> {dir,slope,ema,ts}。TTL 12h。
 // 根拠(2023-2026実測507回): 逆行時勝率25.9%(-2364pips) / 一致時37.7%(+1963pips)
@@ -630,15 +654,71 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   var costChip=_cr!=null?`<span class="chip cost ${_crCls}">コスト <b>${_cr.toFixed(0)}%</b>${_crWarn}</span>`:'';
   // 機能3: レジームチップ
   var regChip=p.regime?`<span class="chip regime ${p.regime.cls}">${p.regime.ic}レジーム <b>${p.regime.lab}</b>(${p.regime.pct}%)</span>`:'';
-  return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
+  // 機能1: シンプル/詳細（既存情報は全て詳細側に温存）
+  var _view='simple';try{_view=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}
+  var _acc=null;try{_acc=localStorage.getItem('fxnavi_acc_'+p.symbol);}catch(e){}
+  var _open=_acc!=null?(_acc==='1'):(_view==='detail');
+  // 機能4: 🟢/🟡カードにワンタップ登録ボタン（既存addPosフォームを事前入力して開くだけ）
+  var _qa=(p.signal&&(conf.cls==='ok'||conf.cls==='hold'))?`<button class="qabtn" onclick="quickAdd('${p.symbol}')">📥 この条件で登録</button>`:'';
+  return`<div class="card ${_open?'':'simple'}" data-sym="${p.symbol}" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     ${meter}
-    <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
+    <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
+    <div class="chips"><span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>
+    ${lotBox}
+    <button class="dettog" onclick="toggleDetail('${p.symbol}',this)">${_open?'▲ 詳細を閉じる':'▼ 詳細'}</button>
+    <div class="pdetail">
+    <div class="row" style="margin-top:8px"><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
-    ${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}
+    <div class="sparkwrap" style="position:relative">${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}${sparkSignal(p)}</div>
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}
-    <span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${coreStatBox}${lotBox}${entryBox}${chaseBadge}${chaseBox}</div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
+function toggleDetail(sym,btn){try{var card=btn.parentNode;var willOpen=card.classList.contains('simple');card.classList.toggle('simple',!willOpen);localStorage.setItem('fxnavi_acc_'+sym,willOpen?'1':'0');btn.textContent=willOpen?'▲ 詳細を閉じる':'▼ 詳細';}catch(e){}}
+function setView(v){try{localStorage.setItem('fxnavi_view',v);var i=0;var keys=[];for(i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('fxnavi_acc_')===0)keys.push(k);}keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}renderViewToggle();render();}
+function renderViewToggle(){var el=document.getElementById('viewtog');if(!el)return;var v='simple';try{v=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}
+  el.innerHTML='表示: <button class="vtb '+(v==='simple'?'on':'')+'" onclick="setView(\'simple\')">シンプル</button><button class="vtb '+(v==='detail'?'on':'')+'" onclick="setView(\'detail\')">詳細</button>';}
+// 機能4: ワンタップ登録（既存フォームを事前入力して開く）
+function quickAdd(sym){try{var p=(S.pairs||[]).find(function(x){return x.symbol===sym;});if(!p){toast('データ取得後にお試しください');return;}
+  var side=p.signal==='買い'?'long':(p.signal==='売り'?'short':'long');
+  var q=PRICE[sym],cur=q?(side==='long'?q.bid:(q.ask!=null?q.ask:q.bid)):p.bid;
+  if($('#f_sym'))$('#f_sym').value=sym;if($('#f_side'))$('#f_side').value=side;
+  if($('#f_entry'))$('#f_entry').value=cur!=null?(''+cur):'';
+  var L=(p.sl_pips!=null)?recLot(p.sl_pips,cur):null;if($('#f_lot')&&L&&L.units>=1000)$('#f_lot').value=L.units;
+  var mo=$('#f_mode');if(mo){mo.value='manual';var pr=document.getElementById('pipsRow');if(pr)pr.classList.remove('hide');}
+  if($('#f_tp')&&p.tp_pips!=null)$('#f_tp').value=p.tp_pips;if($('#f_sl')&&p.sl_pips!=null)$('#f_sl').value=p.sl_pips;
+  var pnl=document.getElementById('addPanel');if(pnl){pnl.classList.remove('hide');pnl.scrollIntoView({behavior:'smooth',block:'center'});}
+  toast('内容を確認して「追加」を押してください');}catch(e){toast('登録準備に失敗しました');}}
 function meterDetail(conf){return'';}
+// 機能6: シグナル発生ペアのみエントリー/TP/SL線＋ダウ▲▼をオーバーレイ（既存sparkは無改変）
+function sparkSignal(p){
+  if(!p||!p.signal)return'';var c=p.closes||[];if(c.length<2)return'';
+  var ss=(p.ema_f_series||[]),ll=(p.ema_s_series||[]);
+  var all=c.concat(ss.filter(function(v){return v!=null;}),ll.filter(function(v){return v!=null;}));if(all.length<2)return'';
+  var W=300,H=64,pad=4,mn=Math.min.apply(null,all),mx=Math.max.apply(null,all),rng=(mx-mn)||1;
+  var Y=function(v){return Math.max(pad,Math.min(H-pad,pad+(H-2*pad)*(1-(v-mn)/rng)));};
+  var side=p.signal==='買い'?'long':'short',entry=(p.entry_ref!=null?p.entry_ref:p.bid),tp=null,sl=null;
+  if(entry!=null&&p.tp_pips&&p.sl_pips){tp=side==='long'?entry+p.tp_pips*PS_:entry-p.tp_pips*PS_;sl=side==='long'?entry-p.sl_pips*PS_:entry+p.sl_pips*PS_;}
+  var el='';
+  if(entry!=null)el+='<line x1="0" y1="'+Y(entry).toFixed(1)+'" x2="'+W+'" y2="'+Y(entry).toFixed(1)+'" stroke="rgba(232,236,244,.55)" stroke-width="0.8"/>';
+  if(tp!=null)el+='<line x1="0" y1="'+Y(tp).toFixed(1)+'" x2="'+W+'" y2="'+Y(tp).toFixed(1)+'" stroke="var(--up)" stroke-width="1" stroke-dasharray="4 3"/>';
+  if(sl!=null)el+='<line x1="0" y1="'+Y(sl).toFixed(1)+'" x2="'+W+'" y2="'+Y(sl).toFixed(1)+'" stroke="var(--down)" stroke-width="1" stroke-dasharray="4 3"/>';
+  if(p.dow){if(p.dow.lastHigh!=null)el+='<text x="'+(W-7)+'" y="'+(Y(p.dow.lastHigh)-1).toFixed(1)+'" font-size="7" fill="var(--up)" text-anchor="middle">▲</text>';
+    if(p.dow.lastLow!=null)el+='<text x="'+(W-7)+'" y="'+(Y(p.dow.lastLow)+5).toFixed(1)+'" font-size="7" fill="var(--down)" text-anchor="middle">▼</text>';}
+  return'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="position:absolute;inset:0;pointer-events:none">'+el+'</svg>';
+}
+// 機能7: CSVエクスポート（BOM付きUTF-8・GOV3の3段配布）
+function _csvDist(blob,filename){var file=null;try{file=new File([blob],filename,{type:blob.type});}catch(e){}
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],title:filename}).catch(function(){});return;}
+  try{var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);}catch(_e){}URL.revokeObjectURL(u);},150);return;}catch(e){}
+  try{window.open(URL.createObjectURL(blob),'_blank');}catch(e){}}
+function _csvBody(rows){return '\ufeff'+rows.map(function(r){return r.map(function(x){x=(x==null?'':''+x);return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;}).join(',');}).join('\r\n');}
+function exportHistoryCSV(){var cp=(POS.positions||[]).filter(function(p){return p.status==='closed';});
+  var rows=[['日時','ペア','方向','数量','建値','決済値','損益pips','損益円']];
+  cp.forEach(function(h){rows.push([h.closed_at||'',h.symbol,h.side==='long'?'買い':'売り',h.lot||'',h.entry,h.close_price,h.close_pips,h.close_yen]);});
+  _csvDist(new Blob([_csvBody(rows)],{type:'text/csv;charset=utf-8'}),'fxnavi-history.csv');}
+function exportForwardCSV(){var f=loadFwd();var rows=[['日時','ペア','方向','建値','TP','SL','仮想R','マーク','モード','状態']];
+  f.forEach(function(e){rows.push([new Date(e.ts).toLocaleString('ja-JP'),e.sym,e.side==='long'?'買い':'売り',e.entry,e.tp,e.sl,(e.R!=null?e.R:''),(e.result||''),e.mode||'',e.open?'追跡中':'確定']);});
+  _csvDist(new Blob([_csvBody(rows)],{type:'text/csv;charset=utf-8'}),'fxnavi-forward.csv');}
+function onVerdictTap(e){try{var el=document.getElementById('pairs');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_e){}}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
@@ -713,7 +793,11 @@ function render(){
   renderStale();
   $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
-  $('#pairs').innerHTML=(S.pairs||[]).map(pairCard).join('')||'<div class="empty">データなし</div>';
+  renderViewToggle();
+  var _nosort=false;try{_nosort=localStorage.getItem('fxnavi_nosort')==='1';}catch(e){}
+  var _plist=(S.pairs||[]).slice();
+  if(!_nosort){var _rk={ok:0,hold:1,no:2};_plist.sort(function(a,b){var ca=confluence(a,STATS[(S.mode||'scalp')+a.symbol]),cb=confluence(b,STATS[(S.mode||'scalp')+b.symbol]);var r=(_rk[ca.cls]-_rk[cb.cls]);if(r!==0)return r;return Math.abs((b.score||0))-Math.abs((a.score||0));});}
+  $('#pairs').innerHTML=_plist.map(pairCard).join('')||'<div class="empty">データなし</div>';
   const op=computeOpen();
   $('#positions').innerHTML=op.length?op.map(posCard).join(''):'<div class="empty">保有ポジションなし — 「＋追加」から登録できます</div>';
   const cp=(POS.positions||[]).filter(p=>p.status==='closed').reverse();
@@ -723,6 +807,13 @@ function render(){
     :'<div class="empty">決済履歴なし</div>';
   renderExtras();}
 function renderExtras(){
+  // 機能2: 今日の結論バー（🟢数はカードと同一のconfluence判定＝常に一致）
+  var vb=document.getElementById('verdictbar');
+  if(vb){var greens=(S.pairs||[]).filter(function(p){return confluence(p,STATS[(S.mode||'scalp')+p.symbol]).cls==='ok';}).length;
+    var z=ZONE||zoneNow(),cd='';if(z&&z.nextGolden!=null){if(z.nextGolden===0)cd='◉開催中';else{var mm=Math.round(z.nextGolden/60000);cd='ゴールデンまで'+Math.floor(mm/60)+'h'+(mm%60)+'m';}}
+    var fs=fwdStats(),stk=modeStreak(S.mode||'scalp');
+    vb.className=greens>=1?'hot':'';
+    vb.innerHTML='<span class="vseg">🟢<b>'+greens+'</b>ペア 買い準備OK</span><span class="vseg">⏰ '+(cd||(z&&z.label)||'—')+'</span><span class="vseg">🔬 検証 n='+fs.n+'/30</span><span class="vseg">'+(stk>=4?'⛔連敗'+stk:'連敗:なし')+'</span>';}
   var st4=modeStreak(S.mode||'scalp'),pairsEl=document.getElementById('pairs'),lb=document.getElementById('lossbanner');
   if(st4>=4){if(!lb){lb=document.createElement('div');lb.id='lossbanner';lb.style.cssText='margin:0 0 10px;padding:10px 12px;border:1px solid var(--down);border-radius:10px;background:rgba(255,122,138,.12);font-size:13px;font-weight:700;color:var(--down)';if(pairsEl&&pairsEl.parentNode)pairsEl.parentNode.insertBefore(lb,pairsEl);}
     lb.style.display='';lb.innerHTML='⛔ '+(MODE_LABEL[S.mode]||S.mode)+'は'+st4+'連敗中。統計が回復するまで新規休止を推奨（リベンジトレード防止）';}
@@ -750,7 +841,8 @@ function renderFwdPanel(){
     +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 件数 <b>'+s.n+'</b></div>'+spark
     +'<div style="font-size:12px;color:var(--mut)">'+em+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">モード別：'+mb+'</div>'
-    +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率 で実証。🟢OK発生時に自動記録・最大300件ローテ。</div></div>';
+    +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率 で実証。🟢OK発生時に自動記録・最大300件ローテ。</div>'
+    +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="exportHistoryCSV()">📤 決済履歴CSV</button><button class="dettog" style="width:auto;flex:1" onclick="exportForwardCSV()">📤 前向き検証CSV</button></div></div>';
 }
 function setPriceFromStatus(){
   // status.jsonは古い場合がある。既にライブ値がある銘柄はそれを優先し、未取得の銘柄だけ種として入れる
@@ -1074,7 +1166,11 @@ function pruneLocal(){try{
   let a;try{a=JSON.parse(localStorage.getItem('fxnavi_pos_adv'))||{}}catch(e){a={}}
   let ch2=false;Object.keys(a).forEach(k=>{if(!open.has(k)){delete a[k];ch2=true;}});
   if(ch2)localStorage.setItem('fxnavi_pos_adv',JSON.stringify(a));}catch(e){}}
-async function load(){try{
+async function load(){
+  var _cacheShown=false;
+  if(!load._booted){load._booted=true;try{var cch=loadCache();if(cch&&cch.S){S=cch.S;if(cch.POS)POS=cch.POS;setPriceFromStatus();render();_cacheShown=true;}}catch(e){}}
+  setUpdating(true);
+  try{
   const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
   // ライブ計算済みの銘柄カードは古いstatus.jsonで上書きしない（値のチカチカ防止）
@@ -1086,7 +1182,10 @@ async function load(){try{
   applyModeOverride();
   if(!POS_BUSY){const np=await loadPositions(); if(np){POS=np;pruneLocal();}}
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
-  }catch(e){$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}
+  saveCache();setUpdating(false);clearOffline();
+  }catch(e){setUpdating(false);
+    if(_cacheShown||loadCache()){showOffline();}
+    else{$('#pairs').innerHTML='<div class="empty">読み込み失敗（Pages公開後に表示）<br>'+e.message+'</div>';}}}
 async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   const base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
   const url=base+'?path='+encodeURIComponent('/public/v1/ticker')+'&t='+Date.now();
