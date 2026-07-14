@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-14 15:20 JST",
+  "generated_at": "2026-07-14 15:21 JST",
   "market_open": true,
   "mode": "day",
   "blackout": false,
@@ -222,22 +222,22 @@
       "hold_sl_min": 75,
       "tp_winrate": 38,
       "stats_n": 24,
-      "stats_ts": 1784006443,
+      "stats_ts": 1784010116,
       "stats_mode": "day"
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 184.834,
-      "ask": 184.839,
-      "rsi": 39.3,
+      "bid": 184.838,
+      "ask": 184.843,
+      "rsi": 39.7,
       "adx": 17.4,
-      "ema_f": 184.878,
+      "ema_f": 184.879,
       "ema_s": 184.893,
       "atr": 0.0525,
       "tp_pips": 10.9,
       "sl_pips": 6.8,
-      "score": -0.214,
-      "tech": -0.322,
+      "score": -0.211,
+      "tech": -0.319,
       "fund": 0.4,
       "signal": null,
       "bias": "売り優勢",
@@ -245,7 +245,7 @@
         "手法:レンジ逆張り",
         "EMA下(9vs21)",
         "MACDヒスト-",
-        "RSI39",
+        "RSI40",
         "ADX17(弱)"
       ],
       "closes": [
@@ -308,7 +308,7 @@
         184.887,
         184.874,
         184.847,
-        184.835
+        184.838
       ],
       "ema_f_series": [
         185.129,
@@ -370,7 +370,7 @@
         184.906,
         184.9,
         184.889,
-        184.878
+        184.879
       ],
       "ema_s_series": [
         185.168,
@@ -445,17 +445,17 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 216.803,
-      "ask": 216.812,
-      "rsi": 43.6,
+      "bid": 216.802,
+      "ask": 216.811,
+      "rsi": 43.7,
       "adx": 12.8,
       "ema_f": 216.851,
-      "ema_s": 216.848,
+      "ema_s": 216.849,
       "atr": 0.0648,
       "tp_pips": 13.5,
       "sl_pips": 8.4,
-      "score": -0.08,
-      "tech": -0.183,
+      "score": -0.077,
+      "tech": -0.179,
       "fund": 0.5,
       "signal": null,
       "bias": "売り優勢",
@@ -524,7 +524,7 @@
         216.919,
         216.863,
         216.84,
-        216.802
+        216.803
       ],
       "ema_f_series": [
         217.155,
@@ -648,7 +648,7 @@
         216.854,
         216.854,
         216.853,
-        216.848
+        216.849
       ],
       "blackout": false,
       "next_news": null,
@@ -661,24 +661,24 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 112.505,
-      "ask": 112.512,
-      "rsi": 57.9,
+      "bid": 112.511,
+      "ask": 112.518,
+      "rsi": 58.9,
       "adx": 36.8,
-      "ema_f": 112.514,
+      "ema_f": 112.515,
       "ema_s": 112.474,
       "atr": 0.0512,
       "tp_pips": 10.7,
       "sl_pips": 6.7,
-      "score": 0.362,
-      "tech": 0.356,
+      "score": 0.377,
+      "tech": 0.373,
       "fund": 0.4,
       "signal": null,
       "bias": "買い優勢",
       "reasons": [
         "手法:順張りMA",
         "EMA上(9vs21)",
-        "RSI58",
+        "RSI59",
         "ADX37(強)"
       ],
       "closes": [
@@ -741,7 +741,7 @@
         112.544,
         112.534,
         112.528,
-        112.505
+        112.51
       ],
       "ema_f_series": [
         112.58,
@@ -803,7 +803,7 @@
         112.507,
         112.513,
         112.516,
-        112.514
+        112.515
       ],
       "ema_s_series": [
         112.558,
@@ -877,25 +877,7 @@
       "stats_mode": "day"
     }
   ],
-  "open_positions": [
-    {
-      "id": "p1784001467424",
-      "symbol": "AUD_JPY",
-      "side": "long",
-      "entry": 112.488,
-      "lot": 3000.0,
-      "current": 112.505,
-      "pips": 1.7,
-      "yen": 51,
-      "tp_price": 112.608,
-      "sl_price": 112.413,
-      "adv_level": "watch",
-      "adv_label": "🟡 利確検討",
-      "adv_reason": "シグナル弱化(スコア+0.36/新規基準0.4未満)",
-      "mfe": 112.578,
-      "profit_atr": 0.33
-    }
-  ],
+  "open_positions": [],
   "closed_positions": [
     {
       "id": "p1783959770473",
@@ -951,6 +933,17 @@
       "close_yen": -122,
       "close_reason": "損切り",
       "closed_at": "2026-07-14 06:37 JST"
+    },
+    {
+      "id": "p1784001467424",
+      "symbol": "AUD_JPY",
+      "side": "long",
+      "entry": 112.488,
+      "close_price": 112.507,
+      "close_pips": 1.9,
+      "close_yen": 57,
+      "close_reason": "利確",
+      "closed_at": "2026-07-14 15:21 JST"
     }
   ]
 }
