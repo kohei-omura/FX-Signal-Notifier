@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-17 20:20 JST",
+  "generated_at": "2026-07-17 20:23 JST",
   "market_open": true,
   "mode": "day",
   "blackout": false,
@@ -12,21 +12,21 @@
       "symbol": "USD_JPY",
       "bid": 162.351,
       "ask": 162.356,
-      "rsi": 47.6,
+      "rsi": 47.3,
       "adx": 16.1,
-      "ema_f": 162.37,
+      "ema_f": 162.369,
       "ema_s": 162.369,
       "atr": 0.0543,
       "tp_pips": 11.3,
       "sl_pips": 7.1,
-      "score": 0.062,
-      "tech": -0.016,
+      "score": 0.058,
+      "tech": -0.02,
       "fund": 0.5,
       "signal": null,
       "bias": "買い優勢",
       "reasons": [
         "手法:様子見",
-        "RSI48",
+        "RSI47",
         "ADX16(弱)"
       ],
       "closes": [
@@ -89,7 +89,7 @@
         162.391,
         162.358,
         162.351,
-        162.351
+        162.349
       ],
       "ema_f_series": [
         162.395,
@@ -151,7 +151,7 @@
         162.386,
         162.38,
         162.374,
-        162.37
+        162.369
       ],
       "ema_s_series": [
         162.395,
@@ -226,17 +226,17 @@
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 185.57,
-      "ask": 185.575,
-      "rsi": 34.3,
+      "bid": 185.55,
+      "ask": 185.555,
+      "rsi": 32.2,
       "adx": 22.9,
-      "ema_f": 185.651,
-      "ema_s": 185.713,
-      "atr": 0.0778,
+      "ema_f": 185.647,
+      "ema_s": 185.711,
+      "atr": 0.0779,
       "tp_pips": 16.2,
       "sl_pips": 10.1,
-      "score": -0.351,
-      "tech": -0.484,
+      "score": -0.381,
+      "tech": -0.519,
       "fund": 0.4,
       "signal": null,
       "bias": "売り優勢",
@@ -244,7 +244,7 @@
         "手法:レンジ逆張り",
         "EMA下(9vs21)",
         "MACDヒスト-",
-        "RSI34",
+        "RSI32",
         "ADX23(弱)"
       ],
       "closes": [
@@ -307,7 +307,7 @@
         185.665,
         185.531,
         185.558,
-        185.57
+        185.549
       ],
       "ema_f_series": [
         185.779,
@@ -369,7 +369,7 @@
         185.742,
         185.699,
         185.671,
-        185.651
+        185.647
       ],
       "ema_s_series": [
         185.796,
@@ -431,7 +431,7 @@
         185.765,
         185.744,
         185.727,
-        185.713
+        185.711
       ],
       "blackout": false,
       "next_news": null,
@@ -444,24 +444,24 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 218.168,
-      "ask": 218.177,
-      "rsi": 33.3,
+      "bid": 218.121,
+      "ask": 218.13,
+      "rsi": 28.4,
       "adx": 41.1,
-      "ema_f": 218.202,
-      "ema_s": 218.327,
-      "atr": 0.108,
-      "tp_pips": 22.5,
-      "sl_pips": 14.0,
-      "score": -0.391,
-      "tech": -0.549,
+      "ema_f": 218.192,
+      "ema_s": 218.323,
+      "atr": 0.1086,
+      "tp_pips": 22.6,
+      "sl_pips": 14.1,
+      "score": -0.44,
+      "tech": -0.605,
       "fund": 0.5,
-      "signal": null,
+      "signal": "売り",
       "bias": "売り優勢",
       "reasons": [
         "手法:順張りMA",
         "EMA下(9vs21)",
-        "RSI33",
+        "RSI28",
         "ADX41(強)"
       ],
       "closes": [
@@ -524,7 +524,7 @@
         218.132,
         218.073,
         218.127,
-        218.17
+        218.121
       ],
       "ema_f_series": [
         218.801,
@@ -586,7 +586,7 @@
         218.27,
         218.231,
         218.21,
-        218.202
+        218.192
       ],
       "ema_s_series": [
         218.842,
@@ -648,10 +648,16 @@
         218.393,
         218.364,
         218.343,
-        218.327
+        218.323
       ],
       "blackout": false,
       "next_news": null,
+      "entry_ref": 218.121,
+      "entry_limit": 218.051,
+      "maxchase_pips": 7.0,
+      "valid_minutes": 45,
+      "valid_until": "21:08",
+      "valid_until_ts": 1784290096077,
       "hold_tp_min": 60,
       "hold_sl_min": 68,
       "tp_winrate": 36,
@@ -661,17 +667,17 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 113.129,
-      "ask": 113.136,
-      "rsi": 31.5,
+      "bid": 113.122,
+      "ask": 113.129,
+      "rsi": 31.0,
       "adx": 37.7,
-      "ema_f": 113.189,
+      "ema_f": 113.188,
       "ema_s": 113.251,
       "atr": 0.0647,
       "tp_pips": 13.5,
       "sl_pips": 8.4,
-      "score": -0.464,
-      "tech": -0.616,
+      "score": -0.477,
+      "tech": -0.632,
       "fund": 0.4,
       "signal": "売り",
       "bias": "売り優勢",
@@ -742,7 +748,7 @@
         113.217,
         113.167,
         113.139,
-        113.129
+        113.122
       ],
       "ema_f_series": [
         113.591,
@@ -804,7 +810,7 @@
         113.234,
         113.221,
         113.205,
-        113.189
+        113.188
       ],
       "ema_s_series": [
         113.606,
@@ -870,12 +876,12 @@
       ],
       "blackout": false,
       "next_news": null,
-      "entry_ref": 113.129,
-      "entry_limit": 113.087,
+      "entry_ref": 113.122,
+      "entry_limit": 113.08,
       "maxchase_pips": 4.2,
       "valid_minutes": 45,
-      "valid_until": "21:05",
-      "valid_until_ts": 1784289946201,
+      "valid_until": "21:08",
+      "valid_until_ts": 1784290096077,
       "hold_tp_min": 105,
       "hold_sl_min": 60,
       "tp_winrate": 22,
@@ -884,25 +890,7 @@
       "stats_mode": "day"
     }
   ],
-  "open_positions": [
-    {
-      "id": "p1784284175513",
-      "symbol": "GBP_JPY",
-      "side": "short",
-      "entry": 218.195,
-      "lot": 1000.0,
-      "current": 218.177,
-      "pips": 1.8,
-      "yen": 18,
-      "tp_price": 217.963,
-      "sl_price": 218.34,
-      "adv_level": "watch",
-      "adv_label": "🟡 利確検討",
-      "adv_reason": "シグナル弱化(スコア-0.39/新規基準0.4未満)",
-      "mfe": 218.032,
-      "profit_atr": 0.17
-    }
-  ],
+  "open_positions": [],
   "closed_positions": [
     {
       "id": "p1784136080370",
@@ -980,6 +968,17 @@
       "close_yen": -18,
       "close_reason": "損切り",
       "closed_at": "2026-07-17 19:30 JST"
+    },
+    {
+      "id": "p1784284175513",
+      "symbol": "GBP_JPY",
+      "side": "short",
+      "entry": 218.195,
+      "close_price": 218.145,
+      "close_pips": 5,
+      "close_yen": 50,
+      "close_reason": "利確",
+      "closed_at": "2026-07-17 20:22 JST"
     }
   ]
 }
