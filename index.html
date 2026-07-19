@@ -173,6 +173,81 @@
 .pachi-toggle{display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;
   padding:4px 9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04)}
 .pachi-toggle.on{border-color:var(--gold,#ffd24a);color:var(--gold,#ffd24a);background:rgba(255,210,74,.08)}
+
+/* ══ 液晶パネル（メイン演出画面） ══
+   本物のパチンコの核: 3列の図柄スクロール＋保留4玉＋テーマ背景。
+   スクロールは transform:translateY のみ（reflow回避）。 */
+.pachi-lcd{position:relative;height:132px;margin:6px 0 4px;border-radius:10px;overflow:hidden;
+  background:var(--pc-bg,#0a1428);border:2px solid var(--pc-c2,#0b3a6b);
+  box-shadow:inset 0 0 24px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.04);isolation:isolate}
+/* テーマ背景（動くグラデ層＋パーティクル層） */
+.pachi-lcd-bg{position:absolute;inset:0;z-index:0;opacity:.9;
+  background:var(--pc-bg,#0a1428);background-size:200% 200%;animation:pcBgFlow 8s ease-in-out infinite}
+@keyframes pcBgFlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.pachi-lcd-parts{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.pachi-particle{position:absolute;border-radius:50%;opacity:.5;will-change:transform;
+  animation:pcRise linear infinite}
+@keyframes pcRise{0%{transform:translateY(140px) scale(.6);opacity:0}
+  15%{opacity:.6}100%{transform:translateY(-20px) scale(1);opacity:0}}
+/* リールエリア（3列） */
+.pachi-reels{position:absolute;left:0;right:0;top:8px;z-index:2;display:flex;justify-content:center;
+  gap:8px;height:82px;pointer-events:none}
+.pachi-col{position:relative;width:52px;height:82px;border-radius:8px;overflow:hidden;
+  background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);
+  box-shadow:inset 0 6px 10px rgba(0,0,0,.5),inset 0 -6px 10px rgba(0,0,0,.5)}
+.pachi-strip{position:absolute;left:0;right:0;top:0;will-change:transform}
+.pachi-sym{height:82px;display:flex;align-items:center;justify-content:center;
+  font-family:'Cinzel',serif;font-weight:900;font-size:44px;line-height:1;
+  color:var(--pc-c1,#3aa0ff);text-shadow:0 0 12px var(--pc-c1,#3aa0ff),0 2px 3px #000}
+/* 通常回転（各列で速度をずらす） */
+.pachi-col.spin .pachi-strip{animation:pcSpin var(--spd,.5s) linear infinite}
+@keyframes pcSpin{from{transform:translateY(0)}to{transform:translateY(-410px)}} /* 5図柄×82px */
+/* 停止した図柄はクッキリ発光 */
+.pachi-col.stop .pachi-sym.hit{color:var(--pc-accent,#7fd0ff);
+  text-shadow:0 0 18px var(--pc-accent,#7fd0ff),0 0 6px #fff,0 2px 3px #000}
+/* 保留玉（液晶下辺に最大4つ） */
+.pachi-holds{position:absolute;left:0;right:0;bottom:6px;z-index:3;display:flex;
+  justify-content:center;gap:9px;pointer-events:none}
+.pachi-hold{width:15px;height:15px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 35% 30%,#fff,var(--h,#9fb4d0) 70%);
+  box-shadow:0 0 6px var(--h,#9fb4d0),inset 0 -2px 3px rgba(0,0,0,.4);
+  transition:background .5s ease,box-shadow .5s ease}
+.pachi-hold.next{outline:2px solid rgba(255,255,255,.5);outline-offset:1px}
+.h-white{--h:#d8e0ec} .h-blue{--h:#4aa0ff} .h-green{--h:#3ad06a}
+.h-red{--h:#ff4a4a} .h-gold{--h:#ffd24a}
+.h-rainbow{--h:#fff;background:conic-gradient(#ff4a4a,#ffd24a,#3ad06a,#4aa0ff,#c07aff,#ff4a4a);
+  animation:pcRainbow 1.4s linear infinite;box-shadow:0 0 10px #fff}
+@keyframes pcRainbow{to{transform:rotate(360deg)}}
+/* 保留が育つ瞬間のポップ */
+@keyframes pcHoldGrow{0%{transform:scale(1)}40%{transform:scale(1.7)}100%{transform:scale(1)}}
+.pachi-hold.grow{animation:pcHoldGrow .6s ease-out}
+
+/* リーチ発展段階: 背景をバトル調に（色濃く・速く） */
+.pachi-lcd.pachi-dev-sp .pachi-lcd-bg{animation-duration:4s;filter:saturate(1.4) brightness(1.1)}
+.pachi-lcd.pachi-dev-spsp .pachi-lcd-bg{animation-duration:2.2s;filter:saturate(1.8) brightness(1.2) contrast(1.1)}
+.pachi-lcd.pachi-dev-zenkaiten .pachi-lcd-bg{animation-duration:1.4s;filter:saturate(2) brightness(1.35) hue-rotate(10deg)}
+.pachi-lcd.pachi-dev-spsp,.pachi-lcd.pachi-dev-zenkaiten{border-color:var(--gold,#ffd24a)}
+/* 疑似連バッジ */
+.pachi-pseudo{position:absolute;top:10px;right:12px;z-index:5;font-weight:900;font-size:15px;
+  color:#fff;text-shadow:0 0 8px var(--pc-c1,#3aa0ff),0 2px 3px #000;pointer-events:none;
+  transform:scale(0);animation:pcPop .5s ease-out forwards}
+@keyframes pcPop{0%{transform:scale(0)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+/* チャンスアップ複合バッジ */
+.pachi-cu{position:absolute;left:8px;bottom:26px;z-index:5;font-size:10px;font-weight:700;
+  padding:2px 7px;border-radius:6px;border:1px solid currentColor;background:rgba(0,0,0,.45);
+  pointer-events:none;letter-spacing:.02em}
+.pachi-cu-strong .pachi-frame{box-shadow:inset 0 0 30px var(--cu-glow,#ffd24a),0 0 12px var(--cu-glow,#ffd24a)}
+/* PUSHボタン演出（装飾のみ・発注しない） */
+.pachi-push{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);z-index:6;
+  font-family:inherit;font-weight:900;font-size:15px;letter-spacing:.06em;color:#2a1f05;
+  padding:7px 22px;border-radius:22px;border:none;cursor:pointer;
+  background:radial-gradient(circle at 50% 30%,#ffe89a,#ffcf3a 70%);
+  box-shadow:0 3px 0 #b8901a,0 0 14px rgba(255,210,74,.6);animation:pcBtnPulse 1s ease-in-out infinite}
+.pachi-push:active{transform:translateX(-50%) translateY(2px);box-shadow:0 1px 0 #b8901a}
+@keyframes pcBtnPulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.08)}}
+.pachi-push-res{position:absolute;left:0;right:0;top:52%;text-align:center;z-index:7;pointer-events:none;
+  font-weight:900;font-size:18px;text-shadow:0 0 10px currentColor,0 2px 4px #000;
+  transform:translateY(-50%) scale(0);animation:pcPop .5s ease-out forwards}
 </style>
 </head>
 <body>
@@ -285,6 +360,8 @@ const PACHI_KEY='fxnavi_pachi';               // 演出モードON/OFF（既定O
 const PACHI_MUTE_KEY='fxnavi_pachi_mute';     // 音ミュート（既定ミュート）
 function pachiOn(){try{return localStorage.getItem(PACHI_KEY)==='1';}catch(e){return false;}}
 function pachiMuted(){try{return localStorage.getItem(PACHI_MUTE_KEY)!=='0';}catch(e){return true;}}
+const PACHI_LEVEL_KEY='fxnavi_pachi_level';     // 派手さ: low/normal/high（既定 normal）
+function pachiLevel(){try{return localStorage.getItem(PACHI_LEVEL_KEY)||'normal';}catch(e){return 'normal';}}
 
 // 4台テーマ（通貨ペアの性格から作った独自テーマ。色・絵文字・BGM調性のみ）
 const PACHI_THEMES={
@@ -302,6 +379,57 @@ const PACHI_THEMES={
     scale:[0,2,4,5,7,9,11], key:349.23, wave:'sine', tempo:112},
 };
 function pachiTheme(sym){return PACHI_THEMES[sym]||PACHI_THEMES.USD_JPY;}
+
+// 保留色マッピング（本物の序列 白<青<緑<赤<金<虹）。段階1で実データ分布を検証済み。
+// pct は既存 confluence の値をそのまま使う（新規計算なし）。
+function horyuColor(conf){
+  if(!conf) return 'white';
+  if(PACHI_DEMO_RAINBOW) return 'rainbow';           // デモ/確認用の一時的な虹
+  const p=conf.pct||0;
+  if(p>=95) return 'rainbow';
+  if(p>=80) return 'gold';
+  if(conf.cls==='ok'||p>=60) return 'red';
+  if(conf.cls==='hold'||p>=40) return 'green';
+  if(p>=20) return 'blue';
+  return 'white';
+}
+const HOLD_CLASS={white:'h-white',blue:'h-blue',green:'h-green',red:'h-red',gold:'h-gold',rainbow:'h-rainbow'};
+// デモ用虹フラグ: コンソール/ボタンから pachiDemoRainbow(true) で全保留を虹にできる（確認用）
+let PACHI_DEMO_RAINBOW=false;
+function pachiDemoRainbow(on){ PACHI_DEMO_RAINBOW=!!on; try{render();}catch(e){} }
+// 図柄セット（テーマごとに雰囲気の違う文字。オリジナル・実在ロゴ不使用）
+const REEL_SYMBOLS={
+  USD_JPY:['7','3','8','1','9'], EUR_JPY:['★','7','3','9','5'],
+  GBP_JPY:['7','8','2','6','9'], AUD_JPY:['7','5','3','貝','9'],
+};
+function reelSymbols(sym){return REEL_SYMBOLS[sym]||REEL_SYMBOLS.USD_JPY;}
+
+// リーチ発展段階を conf から決める（段階1で got:0-11 / pct:0-100 を検証済み）
+//   normal（ノーマル）→ sp（疑似2連・SP発展）→ spsp（疑似3連・最上位）→ zenkaiten（全回転・当確級）
+function reachStage(conf){
+  if(!conf) return {stage:'normal', pseudo:1, label:'リーチ'};
+  if(conf.pct>=95) return {stage:'zenkaiten', pseudo:3, label:'全回転！？'};
+  if(conf.got>=7)  return {stage:'spsp', pseudo:3, label:'SPSPリーチ!!'};
+  if(conf.got>=4)  return {stage:'sp',   pseudo:2, label:'SPリーチ発展！'};
+  return {stage:'normal', pseudo:1, label:'リーチ'};
+}
+// チャンスアップ複合数: そのペアが持つ一致要素を数える（既存の boolean のみ・新規計算なし）
+function chanceUps(pair, conf){
+  const cu=[];
+  if(!pair) return cu;
+  if(pair.dow && pair.signal && ((pair.signal==='買い'&&pair.dow.trend==='up')||(pair.signal==='売り'&&pair.dow.trend==='down'))) cu.push('ダウ一致');
+  if(pair.longEnv && pair.signal && ((pair.signal==='買い'&&pair.longEnv.dir==='up')||(pair.signal==='売り'&&pair.longEnv.dir==='down'))) cu.push('長期環境');
+  if(pair.grv && [1,2].includes(pair.grv.no)) cu.push('グランビル');
+  if(pair.adx!=null && pair.adx>=30 && pair.adx<=40) cu.push('ADX帯');
+  if(pair.regime && pair.regime.pct>=20 && pair.regime.pct<=80) cu.push('レジーム');
+  return cu;
+}
+// チャンスアップのエフェクト色（複合数と pct から。白<青<緑<赤<金）
+function cuColor(conf){
+  const p=conf?conf.pct:0;
+  if(p>=80) return '#ffd24a'; if(p>=60) return '#ff4a4a';
+  if(p>=45) return '#3ad06a'; if(p>=25) return '#4aa0ff'; return '#e8eef7';
+}
 
 // 状態マシン: pair と保有ポジションから演出状態を導出（判定式は不変）
 function pachiState(pair, openPos){
@@ -340,11 +468,25 @@ const PachiSound=(function(){
     }catch(e){ ctx=null; }
     return ctx;
   }
-  function unlock(){ // ユーザー操作内で呼ぶ（iOS対策）
+  function unlock(){ // ユーザー操作内で同期的に呼ぶ（iOS対策）
     const c=ensure(); if(!c) return false;
-    if(c.state==='suspended'){ try{ c.resume(); }catch(e){} }
-    unlocked=true; return true;
+    // resume() は Promise。完了を確認してから unlocked を立てる。
+    // クリックハンドラ内で同期的に resume を呼ぶこと自体が iOS の発音条件。
+    if(c.state==='suspended'){
+      try{
+        const p=c.resume();
+        if(p && typeof p.then==='function'){
+          p.then(()=>{ unlocked=true; }, ()=>{});
+        }
+      }catch(e){}
+    }
+    // 既に running なら即座に、suspended でも resume 発行済みなら次tick で有効化。
+    if(c.state==='running') unlocked=true;
+    // フォールバック: 一部環境で state 遷移が遅い場合に備え、短時間後にも確認
+    setTimeout(()=>{ if(c.state==='running') unlocked=true; }, 60);
+    return c.state==='running';
   }
+  function isReady(){ return !!ctx && ctx.state==='running' && unlocked; }
   function tone(freq,start,dur,wave,gain){
     if(!ctx) return;
     const o=ctx.createOscillator(), g=ctx.createGain();
@@ -358,7 +500,8 @@ const PachiSound=(function(){
   }
   function noteFreq(key,semi){ return key*Math.pow(2,semi/12); }
   function startBGM(sym){
-    if(pachiMuted()||!unlocked) return;
+    // 3条件: 演出ON かつ ミュート解除 かつ AudioContext ready。1つでも欠ければ無音。
+    if(!pachiOn()||pachiMuted()||!isReady()) return;
     const c=ensure(); if(!c) return;
     if(bgmTimer&&curSym===sym) return;
     stopBGM(); curSym=sym;
@@ -375,7 +518,7 @@ const PachiSound=(function(){
   }
   function stopBGM(){ if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=null; } curSym=null; }
   function sfx(kind,sym){
-    if(pachiMuted()||!unlocked) return;
+    if(!pachiOn()||pachiMuted()||!isReady()) return;
     const c=ensure(); if(!c) return;
     const th=pachiTheme(sym||curSym||'USD_JPY'), k=th.key;
     if(kind==='reach'){                        // 心拍風の低音2連
@@ -386,9 +529,21 @@ const PachiSound=(function(){
       [0,-2,-4,-7].forEach((s,i)=>tone(noteFreq(k,s),i*0.14,0.3,'triangle',0.35));
     }else if(kind==='kakuhen'){                // 確変: 1.3倍テンポ上ハモリ
       [0,7,12,7,12,16].forEach((s,i)=>tone(noteFreq(k,s+12),i*0.07,0.25,th.wave,0.3));
+    }else if(kind==='horyu'){                  // 保留変化: 「ピロン」2音
+      tone(noteFreq(k,7),0,0.12,'sine',0.3); tone(noteFreq(k,12),0.09,0.14,'sine',0.32);
+    }else if(kind==='horyuBig'){               // 金/虹昇格: 豪華な上昇アルペジオ
+      [0,4,7,12,16].forEach((s,i)=>tone(noteFreq(k,s+7),i*0.06,0.22,'triangle',0.34));
+    }else if(kind==='reachDev'){               // SP発展: 上昇する緊迫音
+      [0,3,7,10,14].forEach((s,i)=>tone(noteFreq(k,s),i*0.08,0.3,th.wave,0.32));
+    }else if(kind==='pseudo'){                 // 疑似連: 「ズドン」低音の連打
+      tone(k*0.35,0,0.16,'square',0.5); tone(k*0.35,0.14,0.16,'square',0.45);
+    }else if(kind==='zenkaiten'){              // 全回転: 荘厳な和音
+      [0,4,7,12].forEach(s=>tone(noteFreq(k,s),0,0.8,'sine',0.28));
+    }else if(kind==='button'){                 // ボタンPUSH
+      tone(k*1.5,0,0.08,'square',0.4); tone(k*2,0.06,0.12,'square',0.35);
     }
   }
-  return {unlock,startBGM,stopBGM,sfx,
+  return {unlock,startBGM,stopBGM,sfx,isReady,
     muted:()=>pachiMuted(),
     setMute:(m)=>{try{localStorage.setItem(PACHI_MUTE_KEY,m?'1':'0');}catch(e){} if(m)stopBGM();}};
 })();
@@ -984,11 +1139,94 @@ function render(){
 /* パチンコ演出をカードに適用（DOM構築後・transform/opacityのみ）。
    OFF時は演出DOMを生成しないため性能影響ゼロ。判定・数値表示はそのまま。 */
 let _pachiPrev={};   // symbol → 直前の状態（状態変化時のみSFX/演出を出す）
+let _preread={};     // symbol → 先読み演出を発火済みか（signal点灯ごとに1回）
+/* 液晶パネルを生成/更新する（3列図柄＋保留4玉＋テーマ背景）。
+   状態(stt)で図柄の回転/停止を切り替える。DOMは初回のみ生成し以後は再利用。 */
+function buildLcd(card, sym, th, stt, holds){
+  let lcd=card.querySelector('.pachi-lcd');
+  if(!lcd){
+    lcd=document.createElement('div'); lcd.className='pachi-lcd';
+    // 背景層
+    const bg=document.createElement('div'); bg.className='pachi-lcd-bg'; bg.style.background=th.bg; lcd.appendChild(bg);
+    // パーティクル層
+    const parts=document.createElement('div'); parts.className='pachi-lcd-parts';
+    const pn=(pachiLevel()==='low')?4:(pachiLevel()==='high'?12:8);
+    for(let i=0;i<pn;i++){ const p=document.createElement('div'); p.className='pachi-particle';
+      const sz=3+Math.random()*5; p.style.width=sz+'px'; p.style.height=sz+'px';
+      p.style.left=(Math.random()*100)+'%'; p.style.background=(i%2?th.accent:th.c1);
+      p.style.animationDuration=(3+Math.random()*4)+'s'; p.style.animationDelay=(Math.random()*4)+'s';
+      parts.appendChild(p); }
+    lcd.appendChild(parts);
+    // リール3列
+    const reels=document.createElement('div'); reels.className='pachi-reels';
+    const syms=reelSymbols(sym);
+    for(let c=0;c<3;c++){
+      const col=document.createElement('div'); col.className='pachi-col spin';
+      col.style.setProperty('--spd',(0.42+c*0.06)+'s');
+      const strip=document.createElement('div'); strip.className='pachi-strip';
+      // 5図柄を縦に並べる（82px×5=410px。ループ用に先頭図柄をもう1つ足す）
+      for(let k=0;k<6;k++){ const s=document.createElement('div'); s.className='pachi-sym';
+        s.textContent=syms[k%syms.length]; strip.appendChild(s); }
+      col.appendChild(strip); reels.appendChild(col);
+    }
+    lcd.appendChild(reels);
+    // 保留玉
+    const hd=document.createElement('div'); hd.className='pachi-holds';
+    for(let i=0;i<4;i++){ const h=document.createElement('div'); h.className='pachi-hold h-white'; hd.appendChild(h); }
+    lcd.appendChild(hd);
+    // 液晶はカード最上部（銘柄行の直後）に差し込む
+    const firstRow=card.querySelector('.row');
+    if(firstRow && firstRow.nextSibling) card.insertBefore(lcd, firstRow.nextSibling);
+    else card.appendChild(lcd);
+  }
+  // テーマ色を注入
+  lcd.style.setProperty('--pc-bg',th.bg);
+  lcd.style.setProperty('--pc-c1',th.c1);
+  lcd.style.setProperty('--pc-c2',th.c2);
+  lcd.style.setProperty('--pc-accent',th.accent);
+  // 図柄の回転/停止（リーチ以上で中央以外を止めて2つ揃い、確変/大当たりで全停止）
+  const cols=lcd.querySelectorAll('.pachi-col');
+  const reach=(stt.s==='reach'), win=(stt.s==='oatari'||stt.s==='kakuhen');
+  cols.forEach((col,ci)=>{
+    col.classList.remove('spin','stop');
+    if(win){ col.classList.add('stop'); }
+    else if(reach){ if(ci===1) col.classList.add('spin'); else col.classList.add('stop'); }
+    else { col.classList.add('spin'); }
+    // 停止時は先頭図柄をヒット表示
+    const first=col.querySelector('.pachi-sym');
+    if(first){ first.classList.toggle('hit', col.classList.contains('stop')); }
+  });
+  // 保留玉の色を更新。前回より色が格上げされた玉は「育つ」アニメ＋音（先読み演出）。
+  // 色の序列（数値が大きいほどアツい）。前回色を lcd に記憶して比較する。
+  const RANK={white:0,blue:1,green:2,red:3,gold:4,rainbow:5};
+  const prev=lcd._holdColors||[];
+  const hs=lcd.querySelectorAll('.pachi-hold');
+  let grewTop=null;   // 昇格した中で最上位の色（音の種類決定用）
+  hs.forEach((h,i)=>{
+    const col=holds[i]||'white';
+    const cls=HOLD_CLASS[col]||'h-white';
+    const grew=(RANK[col]||0)>(RANK[prev[i]]||0);   // 前回より格上げ
+    h.className='pachi-hold '+cls+(i===0?' next':'')+(grew?' grow':'');
+    if(grew){
+      if(grewTop==null || (RANK[col]||0)>(RANK[grewTop]||0)) grewTop=col;
+      // アニメ再生後にgrowクラスを外す（次回再発火のため）
+      (function(node){ setTimeout(()=>{ if(node&&node.classList) node.classList.remove('grow'); },650); })(h);
+    }
+  });
+  lcd._holdColors=holds.slice();   // 今回の色を記憶
+  // 昇格音: 金/虹は豪華、それ以外は通常。初回描画(prev空)では鳴らさない。
+  if(grewTop && prev.length){
+    if(grewTop==='rainbow'||grewTop==='gold') PachiSound.sfx('horyuBig', sym);
+    else PachiSound.sfx('horyu', sym);
+  }
+  return lcd;
+}
+
 function applyPachi(){
   const root=document.body;
   if(!pachiOn()){
     root.classList.remove('pachi');
-    document.querySelectorAll('.pachi-frame,.pachi-reel,.pachi-cutin,.pachi-pips,.pachi-oatari-lab,.pachi-tenraku-lab,.pachi-dark,.pachi-confetti,.pachi-rain').forEach(n=>n.remove());
+    document.querySelectorAll('.pachi-lcd,.pachi-frame,.pachi-reel,.pachi-cutin,.pachi-pips,.pachi-oatari-lab,.pachi-tenraku-lab,.pachi-dark,.pachi-confetti,.pachi-rain,.pachi-pseudo,.pachi-cu,.pachi-push,.pachi-push-res').forEach(n=>n.remove());
     document.querySelectorAll('.card').forEach(c=>{c.className=c.className.replace(/pachi-st-\w+/g,'').trim();});
     PachiSound.stopBGM();
     return;
@@ -1016,25 +1254,109 @@ function applyPachi(){
     card.style.setProperty('--pc-accent',th.accent);
     // 既存の演出DOM/状態クラスを掃除
     card.className=card.className.replace(/pachi-st-\w+/g,'').trim();
-    card.querySelectorAll('.pachi-frame,.pachi-reel,.pachi-cutin,.pachi-pips,.pachi-oatari-lab,.pachi-tenraku-lab,.pachi-dark,.pachi-confetti,.pachi-rain').forEach(n=>n.remove());
+    card.querySelectorAll('.pachi-frame,.pachi-reel,.pachi-cutin,.pachi-pips,.pachi-oatari-lab,.pachi-tenraku-lab,.pachi-dark,.pachi-confetti,.pachi-rain,.pachi-pseudo,.pachi-push-res').forEach(n=>n.remove());
 
     card.classList.add('pachi-st-'+stt.s);
     const frame=document.createElement('div'); frame.className='pachi-frame'; card.appendChild(frame);
-    const reel=document.createElement('div'); reel.className='pachi-reel'; reel.textContent=th.emoji; card.appendChild(reel);
+
+    // 液晶パネル（3列図柄＋保留4玉）。保留色は confluence の判定から決める。
+    const st4=STATS?STATS[((S.mode||'swing')+sym)]:null;
+    const conf=(typeof confluence==='function')?confluence(pair, st4):null;
+    // 第1保留=当該変動の色。残り3つは弱め（装飾ダミー：既存データからの派生のみ）
+    const c0=horyuColor(conf);
+    const decay={rainbow:'gold',gold:'red',red:'green',green:'blue',blue:'white',white:'white'};
+    const holds=[c0, decay[c0]||'white', 'white', 'white'];
+    // 先読み演出: signal が新規点灯した変動では、第1保留を一旦 white から描画し、
+    // 次の描画で本来の色へ「育つ」（buildLcd の格上げ判定でアニメ＋音が発火する）。
+    const sigOn=(pair.signal==='買い'||pair.signal==='売り');
+    if(sigOn && !_preread[sym]){
+      _preread[sym]=true;
+      holds[0]='white';                                  // まず白で見せる
+      const lcdEl=card.querySelector('.pachi-lcd');
+      if(lcdEl) lcdEl._holdColors=holds.slice();          // 次回比較の基準を白にしておく
+      // 少し遅らせて本来の色へ昇格（育成アニメが走る）
+      (function(cardRef,symRef,thRef,sttRef,realHolds){
+        setTimeout(()=>{ try{
+          const l=cardRef.querySelector('.pachi-lcd');
+          if(l && pachiOn()) buildLcd(cardRef, symRef, thRef, sttRef, realHolds);
+        }catch(e){} },220);
+      })(card, sym, th, stt, [c0, decay[c0]||'white','white','white']);
+    }else if(!sigOn){
+      _preread[sym]=false;                               // シグナル消灯でリセット（次回また先読み）
+    }
+    buildLcd(card, sym, th, stt, holds);
 
     const changed=_pachiPrev[sym]!==stt.s;
     if(stt.s==='reach'){
-      if(changed){ const ci=document.createElement('div'); ci.className='pachi-cutin';
-        ci.textContent=(stt.side==='買い'?'▲ ':'▼ ')+'リーチ！'; card.appendChild(ci);
-        setTimeout(()=>ci.remove(),1500); PachiSound.sfx('reach',sym); }
-    }else if(stt.s==='kakuhen'){
+      const rs=reachStage(conf);
+      const cu=chanceUps(pair, conf);
+      const cc=cuColor(conf);
+      // 発展段階クラスを液晶に付与（背景がバトル調に変化）
+      const lcdEl=card.querySelector('.pachi-lcd');
+      if(lcdEl){ lcdEl.className='pachi-lcd pachi-dev-'+rs.stage; }
+      if(changed){
+        // カットイン（発展段階のラベル。色でチャンスアップを示す）
+        const ci=document.createElement('div'); ci.className='pachi-cutin';
+        ci.style.color=cc;
+        ci.textContent=(stt.side==='買い'?'▲ ':'▼ ')+rs.label;
+        card.appendChild(ci); setTimeout(()=>ci.remove(),1600);
+        // 疑似連の表示（2連/3連）
+        if(rs.pseudo>=2){
+          const pl=document.createElement('div'); pl.className='pachi-pseudo';
+          pl.textContent='疑似'+rs.pseudo+'連'; card.appendChild(pl);
+          setTimeout(()=>pl.remove(),1600);
+          PachiSound.sfx('pseudo',sym);
+        }
+        // 効果音（段階が上がるほどアツい音）
+        PachiSound.sfx(rs.stage==='normal'?'reach':'reachDev',sym);
+        if(rs.stage==='zenkaiten') PachiSound.sfx('zenkaiten',sym);
+      }
+      // チャンスアップ複合バッジ（毎フレーム最新を表示。複合数で枠の光を強く）
+      let cub=card.querySelector('.pachi-cu');
+      if(cu.length){
+        if(!cub){ cub=document.createElement('div'); cub.className='pachi-cu'; card.appendChild(cub); }
+        cub.style.borderColor=cc; cub.style.color=cc;
+        cub.textContent='CU '+cu.length+'個: '+cu.join('・');
+        card.style.setProperty('--cu-glow', cc);
+        card.classList.toggle('pachi-cu-strong', cu.length>=3);
+      }else if(cub){ cub.remove(); }
+      // ボタン演出: エントリー可（signal かつ conf ok/hold）のとき「PUSH!」表示（装飾のみ）
+      const canEntry=(pair.signal && conf && (conf.cls==='ok'||conf.cls==='hold'));
+      let btn=card.querySelector('.pachi-push');
+      if(canEntry){
+        if(!btn){
+          btn=document.createElement('button'); btn.className='pachi-push'; btn.type='button';
+          btn.textContent='PUSH!';
+          btn.onclick=function(ev){
+            ev.stopPropagation();
+            PachiSound.unlock(); PachiSound.sfx('button',sym);
+            // 装飾のみ: 図柄が揃う/ハズレの演出テキストを出すだけ。発注・登録・判定は一切しない。
+            const res=document.createElement('div'); res.className='pachi-push-res';
+            const win=conf && conf.pct>=60;
+            res.textContent=win?'✦ 図柄テンパイ！ ✦':'…次回に期待';
+            res.style.color=win?'#ffd24a':'#9fb0d0';
+            card.appendChild(res); setTimeout(()=>res.remove(),1400);
+            if(win) PachiSound.sfx('reachDev',sym);
+          };
+          card.appendChild(btn);
+        }
+      }else if(btn){ btn.remove(); }
+    }else{
+      // リーチ以外では発展クラス・CU・PUSHを掃除
+      const lcdEl=card.querySelector('.pachi-lcd'); if(lcdEl){ lcdEl.className='pachi-lcd'; }
+      const cub=card.querySelector('.pachi-cu'); if(cub) cub.remove();
+      const btn=card.querySelector('.pachi-push'); if(btn) btn.remove();
+      card.classList.remove('pachi-cu-strong');
+    }
+    if(stt.s==='kakuhen'){
       const pp=document.createElement('div'); pp.className='pachi-pips';
       pp.textContent='確変 '+(openPos&&openPos.pips!=null?('+'+openPos.pips.toFixed(1)+'p'):''); card.appendChild(pp);
       if(changed) PachiSound.sfx('kakuhen',sym);
     }else if(stt.s==='oatari'){
       if(changed){ const lab=document.createElement('div'); lab.className='pachi-oatari-lab';
         lab.textContent='大当たり！ '+oatariRank(recentClosed?recentClosed.close_pips:0); card.appendChild(lab);
-        for(let k=0;k<14;k++){ const cf=document.createElement('div'); cf.className='pachi-confetti';
+        const cfN=pachiLevel()==='low'?7:(pachiLevel()==='high'?26:14);
+        for(let k=0;k<cfN;k++){ const cf=document.createElement('div'); cf.className='pachi-confetti';
           cf.style.left=(6+Math.random()*88)+'%'; cf.style.background=[th.c1,th.accent,'#ffd24a','#fff'][k%4];
           cf.style.animationDuration=(1.2+Math.random()*0.9)+'s'; cf.style.animationDelay=(Math.random()*0.3)+'s';
           card.appendChild(cf); setTimeout(()=>cf.remove(),2400); }
@@ -1080,11 +1402,42 @@ function initPachiUI(){
   muteBtn.innerHTML=pachiMuted()?'🔇':'🔊';
   muteBtn.onclick=function(){
     const nowMuted=!PachiSound.muted();
-    PachiSound.setMute(nowMuted);
-    muteBtn.innerHTML=nowMuted?'🔇':'🔊';
-    if(!nowMuted){ PachiSound.unlock(); applyPachi(); }   // 解除時のタップで解錠
+    if(!nowMuted){
+      // 解除は「先に解錠 → ミュート解除 → 確認音」の順（同期経路を保つ）
+      PachiSound.unlock();
+      PachiSound.setMute(false);
+      muteBtn.innerHTML='🔊';
+      PachiSound.sfx('horyu');    // 解除できたことが分かる短い確認音
+      applyPachi();
+    }else{
+      PachiSound.setMute(true);
+      muteBtn.innerHTML='🔇';
+    }
   };
-  wrap.appendChild(tog); wrap.appendChild(muteBtn); brand.parentNode.insertBefore(wrap,brand.nextSibling);
+  wrap.appendChild(tog); wrap.appendChild(muteBtn);
+  // 派手さ3段階（控えめ/標準/ド派手）
+  const lvl=document.createElement('select'); lvl.id='pachiLvl'; lvl.className='pachi-toggle';
+  lvl.style.display=pachiOn()?'inline-flex':'none';
+  [['low','控えめ'],['normal','標準'],['high','ド派手']].forEach(([v,t])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=t;
+    if(pachiLevel()===v) o.selected=true; lvl.appendChild(o);
+  });
+  lvl.onchange=function(){ try{localStorage.setItem(PACHI_LEVEL_KEY,lvl.value);}catch(e){}
+    // 液晶を作り直して新しい派手さを反映
+    document.querySelectorAll('.pachi-lcd').forEach(n=>n.remove()); applyPachi(); };
+  wrap.appendChild(lvl);
+  // デモ用: 全保留を虹にする確認ボタン（開発/確認用）
+  const demo=document.createElement('span'); demo.id='pachiDemo'; demo.className='pachi-toggle';
+  demo.style.display=pachiOn()?'inline-flex':'none'; demo.textContent='🌈試';
+  demo.title='確認用: 全保留を虹表示';
+  demo.onclick=function(){ PACHI_DEMO_RAINBOW=!PACHI_DEMO_RAINBOW;
+    demo.classList.toggle('on',PACHI_DEMO_RAINBOW); try{render();}catch(e){applyPachi();} };
+  wrap.appendChild(demo);
+  // トグルON/OFFで派手さ・デモボタンの表示も切り替える
+  const _origTog=tog.onclick;
+  tog.onclick=function(){ _origTog(); const on=pachiOn();
+    lvl.style.display=on?'inline-flex':'none'; demo.style.display=on?'inline-flex':'none'; };
+  brand.parentNode.insertBefore(wrap,brand.nextSibling);
 }
 initPachiUI();
 function renderExtras(){
