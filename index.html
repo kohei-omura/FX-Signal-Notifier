@@ -248,6 +248,41 @@
 .pachi-push-res{position:absolute;left:0;right:0;top:52%;text-align:center;z-index:7;pointer-events:none;
   font-weight:900;font-size:18px;text-shadow:0 0 10px currentColor,0 2px 4px #000;
   transform:translateY(-50%) scale(0);animation:pcPop .5s ease-out forwards}
+
+/* ══ 保有ポジションのパチンコ演出（プラス/ゼロ/マイナスで描き分け） ══ */
+.pachi .pcard-lcd{position:relative;margin:8px 0;border-radius:10px;overflow:hidden;
+  padding:8px 10px;border:1.5px solid rgba(255,255,255,.08);transition:box-shadow .4s,background .4s}
+/* プラス方向: 暖色に光る（利確が近いほどアツい） */
+.pachi .pcard-plus{background:linear-gradient(180deg,rgba(60,30,10,.35),rgba(40,20,8,.2));
+  box-shadow:inset 0 0 22px rgba(255,160,60,.25)}
+.pachi .pcard-hot{box-shadow:inset 0 0 30px rgba(255,120,40,.45),0 0 10px rgba(255,140,50,.3)}
+/* ゼロ付近: 中立（静かな待機） */
+.pachi .pcard-zero{background:rgba(30,40,55,.25);box-shadow:inset 0 0 18px rgba(120,150,190,.15)}
+/* マイナス方向: 寒色で沈静（煽らない） */
+.pachi .pcard-minus{background:linear-gradient(180deg,rgba(20,30,60,.3),rgba(15,20,45,.2));
+  box-shadow:inset 0 0 20px rgba(90,110,200,.2)}
+/* 保留玉の行 */
+.pcard-holds{display:flex;gap:7px;align-items:center;margin-bottom:6px}
+.pcard-hold{width:13px;height:13px;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 35% 30%,#fff,var(--h,#9fb4d0) 70%);
+  box-shadow:0 0 5px var(--h,#9fb4d0),inset 0 -2px 3px rgba(0,0,0,.4);transition:background .5s,box-shadow .5s}
+.pcard-lbl{font-size:10px;letter-spacing:.04em;opacity:.85;margin-left:2px}
+/* 利確検討ランプ（チャンス目） */
+.pcard-lamp{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;
+  background:radial-gradient(circle at 35% 30%,#fff,#ffcf3a 70%);box-shadow:0 0 8px #ffcf3a}
+.pachi .pcard-lamp.flash{animation:pcLampFlash .6s ease-in-out infinite}
+@keyframes pcLampFlash{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
+/* TP/SLメーター上を進む玉 */
+.pcard-meter{position:relative;height:6px;border-radius:3px;margin:4px 0 2px;overflow:visible;
+  background:linear-gradient(90deg,#4a6a9a,#3a8a5a)}
+.pcard-ball{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 35% 30%,#fff,#ffd24a 70%);box-shadow:0 0 8px #ffd24a;transition:left .6s ease}
+.pcard-meter-lbl{display:flex;justify-content:space-between;font-size:9px;opacity:.6;margin-top:1px}
+/* 決済フラッシュ（利確成立の瞬間） */
+.pcard-winflash{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;border-radius:10px;
+  background:radial-gradient(circle at 50% 50%,rgba(255,220,120,.6),transparent 60%)}
+.pcard-winflash.go{animation:pcWinFlash 1.2s ease-out 1}
+@keyframes pcWinFlash{0%{opacity:0;transform:scale(.8)}20%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1.3)}}
 </style>
 </head>
 <body>
@@ -632,7 +667,13 @@ async function doClose(id){const c=needCfg();if(!c)return;const price=parseFloat
   try{toast('保存中…');const{data,sha}=await ghGet(c);const p=(data.positions||[]).find(x=>x.id===id&&(x.status||'open')==='open');
     if(!p){toast('対象が見つかりません');return;}const r=computeClose(p,price);
     Object.assign(p,{status:'closed',close_price:price,close_pips:r.pips,close_yen:r.yen,close_reason:r.reason,closed_at:nowJST()});
-    await ghPut(c,data,sha,'close '+p.symbol);POS=data;render();toast(`決済しました：${r.reason} ${r.yen>=0?'+':''}${r.yen}円`);}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
+    // 利確成立（プラス決済）かつ演出ONなら、決済カードを一瞬フラッシュ（お祝い）
+    if(pachiOn() && r.yen>=0){ const wf=document.getElementById('pwf_'+id);
+      if(wf){ wf.classList.add('go'); try{PachiSound.sfx('oatari',p.symbol);}catch(e){} } }
+    await ghPut(c,data,sha,'close '+p.symbol);POS=data;
+    // フラッシュを見せてから再描画（プラス決済時のみ少し待つ）
+    if(pachiOn() && r.yen>=0){ await new Promise(rs=>setTimeout(rs,900)); }
+    render();toast(`決済しました：${r.reason} ${r.yen>=0?'+':''}${r.yen}円`);}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 async function delPos(id){const c=needCfg();if(!c)return;if(!confirm('このポジション/履歴を削除しますか？'))return;
   POS_BUSY=true;
   try{const{data,sha}=await ghGet(c);data.positions=(data.positions||[]).filter(x=>x.id!==id);
@@ -1046,7 +1087,62 @@ function exportForwardCSV(){var f=loadFwd();var rows=[['日時','ペア','方向
   f.forEach(function(e){rows.push([new Date(e.ts).toLocaleString('ja-JP'),e.sym,e.side==='long'?'買い':'売り',e.entry,e.tp,e.sl,(e.R!=null?e.R:''),(e.result||''),e.mode||'',e.open?'追跡中':'確定']);});
   _csvDist(new Blob([_csvBody(rows)],{type:'text/csv;charset=utf-8'}),'fxnavi-forward.csv');}
 function onVerdictTap(e){try{var el=document.getElementById('pairs');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_e){}}
+// 保有ポジションのパチンコ演出を生成（プラス/ゼロ/マイナスで描き分け・煽り過ぎない）
+// 状態は既存の pips / TP・SL / current から導出。判定ロジックは一切変更しない。
+function posPachi(p){
+  if(!pachiOn()) return {cls:'',html:''};
+  const pips = (p.pips==null)?0:p.pips;
+  // ゼロ付近の閾値（±0.3pips以内は中立扱い）
+  const ZERO=0.3;
+  let dir = pips>ZERO?'plus':(pips<-ZERO?'minus':'zero');
+  // TP/SLメーター上の到達率（TPに近いほど1へ。プラス方向の“アツさ”に使う）
+  let reach=0.5;
+  if(p.tp_price!=null && p.sl_price!=null && p.current!=null){
+    const lo=Math.min(p.tp_price,p.sl_price), hi=Math.max(p.tp_price,p.sl_price);
+    let r=(p.current-lo)/((hi-lo)||1); r=Math.max(0,Math.min(1,r));
+    // buy はTPが上/ sell はTPが下。到達率=TP側への近さに正規化
+    reach = (p.side==='long')? r : (1-r);
+  }
+  // 保留色: プラスかつTP接近ほど育つ。マイナス/ゼロは白で沈静。
+  const HOLD=['white','blue','green','red','gold','rainbow'];
+  const HC={white:'#d8e0ec',blue:'#4aa0ff',green:'#3ad06a',red:'#ff4a4a',gold:'#ffd24a',rainbow:'#fff'};
+  let lv=0;
+  if(dir==='plus'){
+    if(reach>=0.95) lv=5; else if(reach>=0.8) lv=4; else if(reach>=0.62) lv=3;
+    else if(reach>=0.45) lv=2; else lv=1;
+  } // zero/minus は lv=0（白）
+  const holdColor=HOLD[lv];
+  // カードのトーン
+  const cls = dir==='plus' ? ('pcard-plus'+(lv>=4?' pcard-hot':'')) : (dir==='minus'?'pcard-minus':'pcard-zero');
+  // 保留玉4つ（先頭が当該。プラスは育った色→減衰、zero/minusは白）
+  const decay={rainbow:'gold',gold:'red',red:'green',green:'blue',blue:'white',white:'white'};
+  let c0=holdColor, c1=decay[c0]||'white';
+  const holds=[c0, dir==='plus'?c1:'white','white','white'];
+  const holdDots=holds.map(c=>`<span class="pcard-hold" style="--h:${HC[c]}"></span>`).join('');
+  // 状態ラベル
+  let lbl,lampFlash='';
+  if(dir==='plus'){
+    lbl = reach>=0.8?'🔥 利確目前！':'保留育成中';
+    if(lv>=3) lampFlash=' flash';
+  } else if(dir==='minus'){
+    lbl = '❄ 様子見（含み損）';
+  } else {
+    lbl = '⚪ 待機中（±0付近）';
+  }
+  // メーター上の玉位置（プラス方向のreachをそのまま％に。マイナスは低め）
+  const ballPct = Math.round(reach*100);
+  const meter = (p.tp_price!=null&&p.sl_price!=null&&p.current!=null)
+    ? `<div class="pcard-meter"><div class="pcard-ball" style="left:${ballPct}%"></div></div>
+       <div class="pcard-meter-lbl"><span>SL</span><span>${dir==='plus'?'TP接近 '+ballPct+'%':(dir==='minus'?'SL方向':'中央')}</span><span>TP</span></div>`
+    : '';
+  const html = `<div class="pcard-lcd ${cls}">
+     <div class="pcard-holds"><span class="pcard-lamp${lampFlash}"></span>${holdDots}<span class="pcard-lbl">${lbl}</span></div>
+     ${meter}
+   </div>`;
+  return {cls, html};
+}
 function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=p.side==='long'?'買い':'売り';let bar='';
+  const pp=posPachi(p);
   if(p.tp_price!=null&&p.sl_price!=null&&p.current!=null){const lo=Math.min(p.tp_price,p.sl_price),hi=Math.max(p.tp_price,p.sl_price);
     let pos=(p.current-lo)/((hi-lo)||1);pos=Math.max(0,Math.min(1,pos))*100;
     const L=p.side==='long'?'SL '+p.sl_price:'TP '+p.tp_price,R=p.side==='long'?'TP '+p.tp_price:'SL '+p.sl_price;
@@ -1060,9 +1156,9 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
   if(_st7&&_st7.tpMin){var _om=parseInt(String(p.id).replace(/^p/,''),10);
     if(_om&&isFinite(_om)){var _el=(Date.now()-_om)/60000;
       if(_el>2*_st7.tpMin)_tsBox=`<div class="entry down"><div class="er">⏱ 想定の2倍膠着中（想定${holdTxt(_st7.tpMin)}／経過${holdTxt(Math.round(_el))}）。統計の前提から外れています＝手仕舞いサインに特に注意</div></div>`;}}
-  return`<div class="card" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span><span class="tag">建値 ${p.entry}</span></div>
+  return`<div class="card" data-posid="${p.id}" style="animation-delay:${i*60}ms"><div class="pcard-winflash" id="pwf_${p.id}"></div><div class="row"><span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span><span class="tag">建値 ${p.entry}</span></div>
     <div class="row" style="margin-top:10px"><span class="pnl ${cls}">${yen(p.yen)}</span><span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span></div>
-    ${bar}${advBox}${_tsBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
+    ${pp.html}${bar}${advBox}${_tsBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
     <div class="pact"><button class="btn sm" onclick="toggleClose('${p.id}')">決済</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
 function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
