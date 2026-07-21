@@ -378,425 +378,9 @@
 .pachi-chara-wrap svg{width:auto;height:150px;margin-bottom:-8px;opacity:.96}
 
 
-/* ══ パチンコ台モーダル（アプリに干渉しない独立オーバーレイ） ══ */
-.pachi-open-btn{width:100%;margin:6px 0;padding:9px;border-radius:8px;border:1px solid #c8a020;
-  background:linear-gradient(180deg,#3a2e08,#2a2004);color:#ffd24a;font-weight:800;font-size:13px;cursor:pointer}
-.pachi-modal{position:fixed;inset:0;z-index:9999;display:none;background:rgba(0,0,0,.85);
-  overflow-y:auto;-webkit-overflow-scrolling:touch}
-.pachi-modal.open{display:block}
-.pachi-modal-inner{min-height:100%;display:flex;flex-direction:column;align-items:center;padding:16px}
-.pachi-modal-close{position:sticky;top:0;align-self:flex-end;z-index:2;margin-bottom:8px;
-  width:44px;height:44px;border-radius:50%;border:1px solid #555;background:#1a1a22;color:#fff;
-  font-size:20px;cursor:pointer;flex-shrink:0}
-
-/* ══ パチンコ台CSS（#pachiModalBody配下にスコープ・アプリ非干渉） ══ */
-#pachiModalBody *{margin:0;padding:0;box-sizing:border-box}#pachiModalBody{background:#0a0a12;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:16px;font-family:system-ui,sans-serif}#pachiModalBody .machine{width:100%;max-width:420px;position:relative}#pachiModalBody /* 台の外枠(筐体) */
-  .m-frame{position:relative;width:100%;aspect-ratio:3/4.4;border-radius:20px;overflow:hidden;
-    background:linear-gradient(160deg,#e8e8ee,#c0c0c8 40%,#9a9aa4);
-    box-shadow:0 12px 40px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,255,255,.5);
-    border:3px solid #6a6a74;padding:12px}#pachiModalBody /* 遊技盤(丸みのある盤面) */
-  .m-board{position:relative;width:100%;aspect-ratio:1/1.15;border-radius:14px;overflow:hidden;
-    background:radial-gradient(circle at 50% 42%,#eaf2ff 0%,#cfe0f5 40%,#a8c4e4 75%,#8aa8cc 100%);
-    box-shadow:inset 0 0 30px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.3);border:2px solid #7a90b0}#pachiModalBody /* 盤面の外周円(セル盤のガラス縁) */
-  .m-rim{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:97%;height:84%;
-    border-radius:50%;border:3px solid rgba(110,140,180,.4);pointer-events:none;
-    box-shadow:inset 0 0 20px rgba(120,150,190,.25)}#pachiModalBody /* 中央の大きな液晶画面(主役) */
-  .m-nails{position:absolute;inset:0;z-index:1;pointer-events:none}#pachiModalBody .m-balls{position:absolute;inset:0;z-index:4;pointer-events:none}#pachiModalBody .m-rail{position:absolute;top:10%;bottom:6%;width:2.5%;z-index:2;border-radius:4px;
-    background:linear-gradient(90deg,rgba(180,200,220,.5),rgba(120,140,170,.3));box-shadow:inset 0 0 4px rgba(0,0,0,.3)}#pachiModalBody .m-rail.l{left:2%}#pachiModalBody .m-rail.r{right:2%;display:none}#pachiModalBody .m-shoot{position:absolute;bottom:2%;z-index:5;font-size:9px;font-weight:700;color:#4aa0d0;text-shadow:0 0 5px #4aa0d0;transition:left .4s,right .4s}#pachiModalBody .m-shoot.left{left:6%}#pachiModalBody .m-shoot.right{right:6%}#pachiModalBody .m-lcd{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:62%;height:40%;
-    border-radius:12px;overflow:hidden;z-index:3;
-    background:radial-gradient(circle at 50% 40%,#12384a,#0a1a28 70%,#050e18);
-    border:3px solid #1a1a22;box-shadow:0 0 16px rgba(0,180,200,.35),inset 0 0 22px rgba(0,0,0,.7)}#pachiModalBody /* 大当り: 誰が見ても分かる派手な演出 */
-  .m-lcd.char-win .m-chara-inner{animation:mBigSwim 0.7s ease-in-out infinite}
-  @keyframes mBigSwim{0%{transform:translateX(-50%) translateY(0) rotate(-6deg)}
-    50%{transform:translateX(-40%) translateY(-10%) rotate(6deg)}
-    100%{transform:translateX(-50%) translateY(0) rotate(-6deg)}}
-  .m-win-flash{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;
-    background:radial-gradient(circle at 50% 45%,rgba(255,255,200,.7),transparent 60%)}#pachiModalBody .m-lcd.char-win .m-win-flash{animation:mWinFlash .5s steps(2) infinite}
-  @keyframes mWinFlash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
-  .m-win-rays{position:absolute;left:50%;top:45%;width:200%;height:200%;transform:translate(-50%,-50%);z-index:4;
-    pointer-events:none;opacity:0;background:repeating-conic-gradient(from 0deg,rgba(255,230,120,.5) 0deg 6deg,transparent 6deg 14deg)}#pachiModalBody .m-lcd.char-win .m-win-rays{opacity:.6;animation:mRaySpin 2s linear infinite}
-  @keyframes mRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-  .m-win-text{position:absolute;left:50%;top:32%;transform:translate(-50%,-50%) scale(0);z-index:6;
-    pointer-events:none;font-weight:900;font-size:30px;letter-spacing:.05em;color:#fff2a0;
-    text-shadow:0 0 14px #ff8a2a,0 0 28px #ff3a0a,0 3px 5px #000;-webkit-text-stroke:1.5px #a03000}#pachiModalBody .m-lcd.char-win .m-win-text{animation:mWinText .5s cubic-bezier(.2,1.6,.4,1) forwards,mWinShake .3s ease-in-out .5s infinite}
-  @keyframes mWinText{0%{transform:translate(-50%,-50%) scale(0) rotate(-12deg)}70%{transform:translate(-50%,-50%) scale(1.25) rotate(5deg)}100%{transform:translate(-50%,-50%) scale(1.1) rotate(0)}}
-  @keyframes mWinShake{0%,100%{transform:translate(-50%,-50%) scale(1.1) rotate(-3deg)}50%{transform:translate(-50%,-50%) scale(1.15) rotate(3deg)}}
-  /* 大当り時: キャラを前面に出して勝利モーションを見せる */
-  .m-lcd.char-win .m-chara-wrap{z-index:5}#pachiModalBody .m-lcd.char-win .m-chara-inner{height:96%;transition:height .4s}#pachiModalBody .m-lcd.char-win .m-reels{opacity:.15;transition:opacity .4s}#pachiModalBody .m-chara-wrap{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;
-    display:flex;align-items:flex-end;justify-content:center}#pachiModalBody .m-chara-inner{position:absolute;left:50%;bottom:-2%;transform:translateX(-50%);height:80%;aspect-ratio:240/220}#pachiModalBody .m-lcd .mchara{width:100%!important;height:100%!important;position:static!important;left:auto!important;bottom:auto!important;transform:none!important;display:block}#pachiModalBody .m-reels{position:absolute;inset:8% 6%;z-index:2;display:flex;gap:5%;justify-content:center;pointer-events:none}#pachiModalBody .m-col{position:relative;flex:1;border-radius:6px;overflow:hidden;
-    background:linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,.2));
-    border:1px solid rgba(120,220,220,.25);box-shadow:inset 0 6px 10px rgba(0,0,0,.6),inset 0 -6px 10px rgba(0,0,0,.6)}#pachiModalBody .m-strip{position:absolute;left:0;right:0;top:0;display:flex;flex-direction:column;will-change:transform}#pachiModalBody .m-sym{display:flex;align-items:center;justify-content:center;font-family:Georgia,serif;font-weight:900;
-    line-height:1;color:#7fe0ea;text-shadow:0 0 10px #3ad0c8,0 2px 3px #000}#pachiModalBody .m-col.spin .m-strip{animation:mSpin var(--spd,.5s) linear infinite}
-  @keyframes mSpin{from{transform:translateY(0)}to{transform:translateY(-360px)}}
-  .m-draw-lab{position:absolute;left:50%;top:20%;transform:translate(-50%,-50%) scale(0);z-index:5;
-    pointer-events:none;font-weight:900;font-size:15px;letter-spacing:.06em;color:#fff;
-    text-shadow:0 0 10px #7fe0ea,0 2px 4px #000;opacity:0;white-space:nowrap}#pachiModalBody .m-draw-lab.show{animation:mDrawLab 1.4s ease-out}
-  @keyframes mDrawLab{0%{transform:translate(-50%,-50%) scale(0);opacity:0}20%{transform:translate(-50%,-50%) scale(1.15);opacity:1}80%{opacity:1}100%{opacity:0}}
-  .m-col.stop .m-sym.hit{color:#fff;text-shadow:0 0 14px #7fe0ea,0 0 5px #fff,0 2px 3px #000}#pachiModalBody .m-lcd-inner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    color:#7fe0ea;font-size:13px;letter-spacing:.1em;opacity:.6}#pachiModalBody /* ブッコミ(盤面上部中央の玉入口) */
-  .m-bukkomi{position:absolute;left:50%;top:8%;transform:translateX(-50%);width:16%;height:5%;z-index:2;
-    background:linear-gradient(180deg,#f0c040,#c89020);border-radius:4px 4px 0 0;
-    box-shadow:0 0 8px rgba(240,192,64,.5);border:1px solid #a87818}#pachiModalBody /* スタートチャッカー(液晶下の抽選起点) */
-  .m-chucker{position:absolute;left:50%;top:64%;transform:translateX(-50%);width:14%;height:5%;z-index:2;
-    background:linear-gradient(180deg,#ff5a5a,#c02020);border-radius:0 0 8px 8px;
-    box-shadow:0 0 10px rgba(255,90,90,.5);border:1px solid #901818}#pachiModalBody .m-chucker-lbl{position:absolute;left:50%;top:70%;transform:translateX(-50%);z-index:2;
-    font-size:8px;font-weight:700;color:#ff8080;text-shadow:0 0 5px #ff5a5a;white-space:nowrap;pointer-events:none}#pachiModalBody /* 風車(左右の回転体) */
-  .m-windmill{position:absolute;width:7%;aspect-ratio:1;z-index:2;border-radius:50%;
-    background:radial-gradient(circle at 40% 35%,#fff,#a0b0c0 70%);border:1px solid #7a8a9a;
-    box-shadow:0 0 4px rgba(0,0,0,.3)}#pachiModalBody .m-windmill::before{content:"";position:absolute;inset:18%;
-    background:conic-gradient(#6a8ab0 0 25%,#c0d0e0 0 50%,#6a8ab0 0 75%,#c0d0e0 0);border-radius:50%}#pachiModalBody .m-windmill.l{left:16%;top:52%}#pachiModalBody .m-windmill.r{right:16%;top:52%}#pachiModalBody /* アウト口(最下部) */
-  .m-out{position:absolute;left:50%;bottom:1%;transform:translateX(-50%);width:24%;height:3%;z-index:2;
-    background:linear-gradient(180deg,#3a4a5a,#1a2a3a);border-radius:6px 6px 0 0}#pachiModalBody /* 下部の受け皿・ハンドル部 */
-  .m-lower{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px}#pachiModalBody .m-trays{flex:1}#pachiModalBody .m-tray-up{height:22px;border-radius:8px;background:linear-gradient(180deg,#d03030,#901818);
-    box-shadow:inset 0 2px 4px rgba(255,255,255,.2),0 2px 4px rgba(0,0,0,.4);margin-bottom:6px}#pachiModalBody .m-tray-dn{height:16px;border-radius:8px;background:linear-gradient(180deg,#2a2a34,#12121a);
-    box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}#pachiModalBody .m-handle{width:56px;height:56px;border-radius:50%;flex-shrink:0;
-    background:radial-gradient(circle at 40% 35%,#ff6a6a,#c02020 70%,#801010);
-    box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.3);
-    border:2px solid #601010}#pachiModalBody /* ══ 4体キャラCSS（液晶内スコープ・名前空間化済み） ══ */
-
-/* --- USD_JPY --- */
-.m-lcd .grid{position:absolute;inset:0;opacity:.22;
-    background-image:linear-gradient(rgba(127,224,255,.4) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(127,224,255,.4) 1px,transparent 1px);
-    background-size:30px 30px;animation:usd_gridflow 7s linear infinite;transform:perspective(300px) rotateX(30deg);transform-origin:50% 100%}
-  @keyframes usd_gridflow{to{background-position:0 30px}}
-  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;
-    font-size:10px;color:rgba(127,224,255,.45);white-space:nowrap;letter-spacing:2px;animation:usd_tick 9s linear infinite}
-  @keyframes usd_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
-  .rings{position:absolute;left:50%;top:48%;width:220px;height:220px;transform:translate(-50%,-50%);
-    border-radius:50%;border:1px solid rgba(127,224,255,.15);opacity:.5}#pachiModalBody .m-lcd .rings::before{content:"";position:absolute;inset:22px;border-radius:50%;border:1px dashed rgba(240,192,82,.2)}#pachiModalBody .m-lcd .idle-screen .rings{animation:usd_spin 24s linear infinite}#pachiModalBody .m-lcd .reach-screen .rings{animation:usd_spin 8s linear infinite}#pachiModalBody .m-lcd .win-screen .rings{animation:usd_spin 3s linear infinite}
-  @keyframes usd_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-
-  .mchara.usd{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}#pachiModalBody .m-lcd .mchara.usd.idle{animation:usd_breathe 3.6s ease-in-out infinite}
-  @keyframes usd_breathe{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-5px)}}
-  /* リーチ: ぐっと前に迫り出す＋小刻みに震える（戦闘態勢が一目でわかる） */
-  .mchara.usd.reach{animation:usd_brace .18s ease-in-out infinite}
-  @keyframes usd_brace{0%,100%{transform:translateX(-50%) scale(1.14) translateY(-14px) rotate(-1deg)}
-    50%{transform:translateX(-50%) scale(1.14) translateY(-17px) rotate(1deg)}}
-  /* 大当たり: 大きく飛び出して咆哮ポーズ */
-  .mchara.usd.win{animation:usd_winpose .5s ease-in-out infinite}#pachiModalBody .m-lcd /* 大当たり: フォルムチェンジ（装甲展開・発光）→ビーム発射 */
-  .win .sh-l{animation:usd_formL .5s ease-out forwards}#pachiModalBody .m-lcd .win .sh-r{animation:usd_formR .5s ease-out forwards}
-  @keyframes usd_formL{0%{transform:rotate(-13deg) translate(-5px,-4px)}100%{transform:rotate(-40deg) translate(-22px,-16px) scale(1.15)}}
-  @keyframes usd_formR{0%{transform:rotate(13deg) translate(5px,-4px)}100%{transform:rotate(40deg) translate(22px,-16px) scale(1.15)}}
-  /* ビーム（胸コアから前方へ） */
-  .beam{opacity:0;transform-origin:120px 168px}#pachiModalBody .m-lcd .win .beam{animation:usd_beamfire .7s ease-out infinite}
-  @keyframes usd_beamfire{0%{opacity:0;transform:scaleX(0)}15%{opacity:1;transform:scaleX(.3)}45%{opacity:1;transform:scaleX(1.15)}100%{opacity:0;transform:scaleX(1.3)}}
-  /* チャージ光 */
-  .charge{opacity:0;transform-origin:120px 168px}#pachiModalBody .m-lcd .win .charge{animation:usd_chargeup .7s ease-in-out infinite}
-  @keyframes usd_chargeup{0%{opacity:0;transform:scale(.3)}30%{opacity:1;transform:scale(1.2)}50%{opacity:.6;transform:scale(.8)}100%{opacity:0;transform:scale(.5)}}
-  /* フォルムチェンジ時の全身フラッシュ */
-  .formflash{opacity:0}#pachiModalBody .m-lcd .win .formflash{animation:usd_ff .5s steps(1) 1}
-  @keyframes usd_ff{0%{opacity:.9}30%{opacity:.5}100%{opacity:0}}
-  @keyframes usd_winpose{0%,100%{transform:translateX(-50%) scale(1.28) translateY(-20px) rotate(-2deg)}
-    50%{transform:translateX(-50%) scale(1.34) translateY(-26px) rotate(2deg)}}
-
-  /* 頭部の微傾（スキャン） */
-  .head{transform-origin:120px 96px}#pachiModalBody .m-lcd .idle .head{animation:usd_scan 5s ease-in-out infinite}
-  @keyframes usd_scan{0%,100%{transform:rotate(0)}30%{transform:rotate(-3deg)}70%{transform:rotate(3deg)}}
-  /* リーチ: 頭を突き出すように前傾 */
-  .reach .head{animation:usd_headthrust .18s ease-in-out infinite}
-  @keyframes usd_headthrust{0%,100%{transform:translateY(2px) rotate(-2deg)}50%{transform:translateY(4px) rotate(2deg)}}
-  .win .head{animation:usd_scan 1s ease-in-out infinite}#pachiModalBody .m-lcd /* 眼光: 待機は青くゆっくり、リーチは赤く高速点滅 */
-  .eye{animation:usd_eyeglow 2.4s ease-in-out infinite}
-  @keyframes usd_eyeglow{0%,100%{opacity:.75}50%{opacity:1}}
-  .reach .eye{fill:#ff5a4a !important;animation:usd_eyeRed .16s steps(2) infinite}
-  @keyframes usd_eyeRed{0%{opacity:1}50%{opacity:.3}}
-  .win .eye{fill:#ffe89a !important;animation:usd_eyeGold .2s ease-in-out infinite}
-  @keyframes usd_eyeGold{0%,100%{opacity:1}50%{opacity:.5}}
-  /* 胸コア */
-  .core{animation:usd_corepulse 2.2s ease-in-out infinite;transform-origin:120px 168px}
-  @keyframes usd_corepulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}
-  /* リーチ: コアが赤熱してチャージ */
-  .reach .core{animation:usd_coreCharge .3s ease-in-out infinite}
-  @keyframes usd_coreCharge{0%,100%{opacity:.9;transform:scale(1.15)}50%{opacity:1;transform:scale(1.35)}}
-  .win .core{animation:usd_coreblast .25s ease-in-out infinite}
-  @keyframes usd_coreblast{0%,100%{opacity:1;transform:scale(1.3)}50%{opacity:1;transform:scale(1.8)}}
-  /* 肩アーマー展開（リーチで大きく開く） */
-  .sh-l{transform-origin:70px 150px;transition:transform .25s cubic-bezier(.3,1.6,.5,1)}#pachiModalBody .m-lcd .sh-r{transform-origin:170px 150px;transition:transform .25s cubic-bezier(.3,1.6,.5,1)}#pachiModalBody .m-lcd .reach .sh-l,
-#pachiModalBody .m-lcd .win .sh-l{transform:rotate(-26deg) translate(-12px,-8px)}#pachiModalBody .m-lcd .reach .sh-r,
-#pachiModalBody .m-lcd .win .sh-r{transform:rotate(26deg) translate(12px,-8px)}#pachiModalBody .m-lcd /* 額クレストの発光 */
-  .crest{animation:usd_crestglow 3s ease-in-out infinite}
-  @keyframes usd_crestglow{0%,100%{opacity:.8}50%{opacity:1}}
-  .win .crest{animation:usd_crestglow .3s ease-in-out infinite}#pachiModalBody .m-lcd /* オーラ（大当たり）: 巨大化して脈動 */
-  .usd_aura{opacity:0;transform-origin:120px 150px}#pachiModalBody .m-lcd .reach .aura{opacity:.5;animation:usd_auraR .3s ease-in-out infinite}
-  @keyframes usd_auraR{0%,100%{opacity:.35;transform:scale(.9)}50%{opacity:.55;transform:scale(1.05)}}
-  .win .aura{opacity:1;animation:usd_aura .35s ease-in-out infinite}
-  @keyframes usd_aura{0%,100%{opacity:.6;transform:scale(1.1)}50%{opacity:.95;transform:scale(1.45)}}
-
-  .burst{position:absolute;inset:0;opacity:0;pointer-events:none;
-    background:radial-gradient(circle at 50% 48%,rgba(240,192,82,.45),transparent 52%)}#pachiModalBody .m-lcd .win-screen .burst{opacity:1;animation:usd_bp .3s ease-in-out infinite}
-  @keyframes usd_bp{0%,100%{opacity:.4}50%{opacity:.85}}
-  /* リーチ: 画面を赤めに寄せて緊迫感 */
-  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;
-    background:radial-gradient(circle at 50% 45%,rgba(255,90,74,.22),transparent 60%)}#pachiModalBody .m-lcd .reach-screen .reachtint{opacity:1;animation:usd_rt .3s ease-in-out infinite}
-  @keyframes usd_rt{0%,100%{opacity:.5}50%{opacity:.9}}
-  /* 大当たり: 全画面フラッシュ */
-  .usd_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}#pachiModalBody .m-lcd .win-screen .flash{animation:usd_flash .28s steps(2) infinite}
-  @keyframes usd_flash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
-  /* 大当たり: 放射状の集中線 */
-  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;
-    background:repeating-conic-gradient(from 0deg,rgba(255,232,154,.5) 0deg 5deg,transparent 5deg 12deg)}#pachiModalBody .m-lcd .win-screen .rays{opacity:.55;animation:usd_rayspin 2s linear infinite}
-  @keyframes usd_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-  /* 大当たり: 「大当り」テキスト */
-  .bigwin{position:absolute;left:50%;top:20px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;
-    font-weight:900;font-size:38px;letter-spacing:.06em;color:#fff2c8;
-    text-shadow:0 0 12px #f0c052,0 0 24px #ff8a2a,0 3px 6px #000;-webkit-text-stroke:2px #b8801a}#pachiModalBody .m-lcd .win-screen .bigwin{animation:usd_bigwinpop .5s cubic-bezier(.2,1.6,.4,1) forwards,usd_bigwinshake .3s ease-in-out .5s infinite}
-  @keyframes usd_bigwinpop{0%{transform:translateX(-50%) scale(0) rotate(-12deg)}70%{transform:translateX(-50%) scale(1.25) rotate(4deg)}100%{transform:translateX(-50%) scale(1.1) rotate(0)}}
-  @keyframes usd_bigwinshake{0%,100%{transform:translateX(-50%) scale(1.1) rotate(-2deg)}50%{transform:translateX(-50%) scale(1.15) rotate(2deg)}}
-  /* 紙吹雪 */
-  .confetti{position:absolute;top:-12px;width:9px;height:14px;border-radius:2px;z-index:8;pointer-events:none;opacity:0}#pachiModalBody .m-lcd .win-screen .confetti{animation:usd_confall linear infinite}
-  @keyframes usd_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(720deg);opacity:0}}
-  .vignette{position:absolute;inset:0;pointer-events:none;
-    box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.7),inset 0 -20px 30px -10px rgba(0,0,0,.7)}#pachiModalBody /* --- EUR_JPY --- */
-.m-lcd /* きらめく星の背景 */
-  .stars{position:absolute;inset:0;opacity:.8;
-    background-image:
-      radial-gradient(1.5px 1.5px at 20% 30%,#fff,transparent),
-      radial-gradient(1.5px 1.5px at 70% 20%,#ffe0f8,transparent),
-      radial-gradient(1px 1px at 40% 60%,#fff,transparent),
-      radial-gradient(2px 2px at 85% 50%,#ffd0f0,transparent),
-      radial-gradient(1px 1px at 15% 75%,#fff,transparent),
-      radial-gradient(1.5px 1.5px at 60% 80%,#ffe0f8,transparent),
-      radial-gradient(1px 1px at 90% 85%,#fff,transparent),
-      radial-gradient(1.5px 1.5px at 30% 15%,#fff,transparent);
-    animation:eur_twinkle 3s ease-in-out infinite}
-  @keyframes eur_twinkle{0%,100%{opacity:.5}50%{opacity:.95}}
-  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;
-    font-size:10px;color:rgba(255,179,236,.5);white-space:nowrap;letter-spacing:2px;animation:eur_tick 9s linear infinite}
-  @keyframes eur_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
-  /* 浮遊するリボン輪 */
-  .halo{position:absolute;left:50%;top:46%;width:210px;height:210px;transform:translate(-50%,-50%);
-    border-radius:50%;border:1.5px solid rgba(255,179,236,.25);opacity:.6}#pachiModalBody .m-lcd .halo::before{content:"";position:absolute;inset:26px;border-radius:50%;border:1px dashed rgba(255,255,255,.25)}#pachiModalBody .m-lcd .idle-screen .halo{animation:eur_spin 22s linear infinite}#pachiModalBody .m-lcd .reach-screen .halo{animation:eur_spin 7s linear infinite}#pachiModalBody .m-lcd .win-screen .halo{animation:eur_spin 2.5s linear infinite}
-  @keyframes eur_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-
-  .mchara.eur{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}#pachiModalBody .m-lcd .mchara.eur.idle{animation:eur_breathe 3.4s ease-in-out infinite}
-  @keyframes eur_breathe{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-6px)}}
-  /* リーチ: 手前に迫り出してステッキを構える */
-  .mchara.eur.reach{animation:eur_braceE .2s ease-in-out infinite}
-  @keyframes eur_braceE{0%,100%{transform:translateX(-50%) scale(1.14) translateY(-14px) rotate(-1.2deg)}
-    50%{transform:translateX(-50%) scale(1.14) translateY(-17px) rotate(1.2deg)}}
-  /* 大当たり: 大きく飛び出して魔法発動ポーズ */
-  .mchara.eur.win{animation:eur_winE .5s ease-in-out infinite}#pachiModalBody .m-lcd /* ── 変身: 制服(黒髪ストレート) → 魔法少女(紫ツインテール) ── */
-  /* 制服パーツ: 通常は表示、大当たりで消える */
-  .uniform{opacity:1;transition:opacity .3s}#pachiModalBody .m-lcd .win .uniform{animation:eur_fadeout .5s ease-out forwards}
-  @keyframes eur_fadeout{0%{opacity:1}40%{opacity:0}100%{opacity:0}}
-  /* 黒髪ストレート: 通常表示、大当たりで消える */
-  .hair-black{opacity:1}#pachiModalBody .m-lcd .win .hair-black{animation:eur_fadeout .4s ease-out forwards !important}#pachiModalBody .m-lcd /* 魔法少女衣装: 通常は非表示、大当たりで出現 */
-  .magic{opacity:0}#pachiModalBody .m-lcd .win .magic{animation:eur_fadein .6s ease-out .25s forwards}
-  @keyframes eur_fadein{0%{opacity:0}100%{opacity:1}}
-  /* 紫ツインテール: 通常非表示、大当たりで出現しつつ揺れる */
-  .twin-l{opacity:0;transform-origin:88px 84px}#pachiModalBody .m-lcd .twin-r{opacity:0;transform-origin:152px 84px}#pachiModalBody .m-lcd .win .twin-l{animation:eur_twinAppL .6s ease-out .25s forwards,eur_twinSwayL 1s ease-in-out .85s infinite}#pachiModalBody .m-lcd .win .twin-r{animation:eur_twinAppR .6s ease-out .25s forwards,eur_twinSwayR 1s ease-in-out .85s infinite}
-  @keyframes eur_twinAppL{0%{opacity:0}100%{opacity:1}}
-  @keyframes eur_twinAppR{0%{opacity:0}100%{opacity:1}}
-  @keyframes eur_twinSwayL{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(4deg)}}
-  @keyframes eur_twinSwayR{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-4deg)}}
-  /* 変身フラッシュ（全身が光に包まれる） */
-  .eur_transflash{opacity:0;transform-origin:120px 130px}#pachiModalBody .m-lcd .win .transflash{animation:eur_transflash .6s ease-out 1}
-  @keyframes eur_transflash{0%{opacity:0;transform:scale(.3)}25%{opacity:1;transform:scale(1.3)}60%{opacity:.7;transform:scale(1.1)}100%{opacity:0;transform:scale(1.4)}}
-  /* 雷（ステッキから落ちる） */
-  .bolt{opacity:0}#pachiModalBody .m-lcd .win .bolt{animation:eur_boltflash .5s steps(1) .6s infinite}
-  @keyframes eur_boltflash{0%{opacity:0}10%{opacity:1}20%{opacity:.3}30%{opacity:1}45%{opacity:0}100%{opacity:0}}
-  @keyframes eur_winE{0%,100%{transform:translateX(-50%) scale(1.3) translateY(-22px) rotate(-2deg)}
-    50%{transform:translateX(-50%) scale(1.36) translateY(-28px) rotate(2deg)}}
-
-  /* 髪の揺れ */
-  .hair-l{transform-origin:96px 78px}#pachiModalBody .m-lcd .hair-r{transform-origin:144px 78px}#pachiModalBody .m-lcd .idle .hair-l{animation:eur_sway 3.5s ease-in-out infinite}#pachiModalBody .m-lcd .idle .hair-r{animation:eur_sway 3.5s ease-in-out infinite reverse}
-  @keyframes eur_sway{0%,100%{transform:rotate(0)}50%{transform:rotate(3deg)}}
-  .reach .hair-l,.win .hair-l{animation:eur_swayfast .3s ease-in-out infinite}#pachiModalBody .m-lcd .reach .hair-r,
-#pachiModalBody .m-lcd .win .hair-r{animation:eur_swayfast .3s ease-in-out infinite reverse}#pachiModalBody .m-lcd /* 後ろの黒髪: idle/reachで揺れ、winでは確実にfadeout（swayfastで上書きされない） */
-  .backhair:nth-of-type(odd){transform-origin:94px 80px}#pachiModalBody .m-lcd .idle .backhair{animation:eur_sway 3.6s ease-in-out infinite}#pachiModalBody .m-lcd .reach .backhair{animation:eur_swayfast .3s ease-in-out infinite}#pachiModalBody .m-lcd .win .backhair{animation:eur_fadeout .4s ease-out forwards !important}
-  @keyframes eur_swayfast{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
-  /* 瞳のきらめき */
-  .eyes{animation:eur_blink 4s ease-in-out infinite}
-  @keyframes eur_blink{0%,94%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
-  .sparkle-eye{animation:eur_eyeSpark 2.5s ease-in-out infinite}
-  @keyframes eur_eyeSpark{0%,100%{opacity:.7}50%{opacity:1}}
-  .win .sparkle-eye{fill:#fff5c0 !important}#pachiModalBody .m-lcd /* 頭のリボン */
-  .ribbon{transform-origin:120px 60px}#pachiModalBody .m-lcd .idle .ribbon{animation:eur_ribbonwobble 3s ease-in-out infinite}
-  @keyframes eur_ribbonwobble{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
-  .win .ribbon{animation:eur_ribbonwobble .4s ease-in-out infinite}#pachiModalBody .m-lcd /* ステッキ: 待機は下、リーチ/大当たりで掲げる */
-  .wand{transform-origin:170px 150px;transition:transform .3s cubic-bezier(.3,1.5,.5,1)}#pachiModalBody .m-lcd .reach .wand,
-#pachiModalBody .m-lcd .win .wand{transform:rotate(-42deg) translate(6px,-18px)}#pachiModalBody .m-lcd /* ステッキ先の星 */
-  .wandstar{animation:eur_starpulse 2s ease-in-out infinite;transform-origin:176px 92px}
-  @keyframes eur_starpulse{0%,100%{opacity:.8;transform:scale(1)}50%{opacity:1;transform:scale(1.15)}}
-  .reach .wandstar{animation:eur_starpulse .4s ease-in-out infinite}#pachiModalBody .m-lcd .win .wandstar{animation:eur_starblast .25s ease-in-out infinite}
-  @keyframes eur_starblast{0%,100%{opacity:1;transform:scale(1.2)}50%{opacity:1;transform:scale(1.7)}}
-  /* 胸のブローチ */
-  .brooch{animation:eur_broochglow 2.4s ease-in-out infinite;transform-origin:120px 172px}
-  @keyframes eur_broochglow{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}
-  .reach .brooch{animation:eur_broochglow .5s ease-in-out infinite}#pachiModalBody .m-lcd .win .brooch{animation:eur_broochblast .3s ease-in-out infinite}
-  @keyframes eur_broochblast{0%,100%{opacity:1;transform:scale(1.15)}50%{opacity:1;transform:scale(1.4)}}
-  /* オーラ */
-  .aura{opacity:0;transform-origin:120px 150px}#pachiModalBody .m-lcd .reach .aura{opacity:.45;animation:eur_auraR .3s ease-in-out infinite}
-  @keyframes eur_auraR{0%,100%{opacity:.3;transform:scale(.9)}50%{opacity:.5;transform:scale(1.05)}}
-  .win .aura{opacity:1;animation:eur_auraW .35s ease-in-out infinite}
-  @keyframes eur_auraW{0%,100%{opacity:.6;transform:scale(1.1)}50%{opacity:.95;transform:scale(1.45)}}
-
-  /* 画面演出 */
-  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;
-    background:radial-gradient(circle at 50% 45%,rgba(255,120,220,.25),transparent 60%)}#pachiModalBody .m-lcd .reach-screen .reachtint{opacity:1;animation:eur_rt .3s ease-in-out infinite}
-  @keyframes eur_rt{0%,100%{opacity:.5}50%{opacity:.9}}
-  .eur_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}#pachiModalBody .m-lcd .win-screen .flash{animation:eur_flash .28s steps(2) infinite}
-  @keyframes eur_flash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
-  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;
-    background:repeating-conic-gradient(from 0deg,rgba(255,200,240,.5) 0deg 5deg,transparent 5deg 12deg)}#pachiModalBody .m-lcd .win-screen .rays{opacity:.55;animation:eur_rayspin 2s linear infinite}
-  @keyframes eur_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-  .bigwin{position:absolute;left:50%;top:20px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;
-    font-weight:900;font-size:38px;letter-spacing:.06em;color:#fff2fb;
-    text-shadow:0 0 12px #ffb3ec,0 0 24px #c078ff,0 3px 6px #000;-webkit-text-stroke:2px #a050c0}#pachiModalBody .m-lcd .win-screen .bigwin{animation:eur_bigwinpop .5s cubic-bezier(.2,1.6,.4,1) forwards,eur_bigwinshake .3s ease-in-out .5s infinite}
-  @keyframes eur_bigwinpop{0%{transform:translateX(-50%) scale(0) rotate(-12deg)}70%{transform:translateX(-50%) scale(1.25) rotate(4deg)}100%{transform:translateX(-50%) scale(1.1) rotate(0)}}
-  @keyframes eur_bigwinshake{0%,100%{transform:translateX(-50%) scale(1.1) rotate(-2deg)}50%{transform:translateX(-50%) scale(1.15) rotate(2deg)}}
-  .confetti{position:absolute;top:-12px;z-index:8;pointer-events:none;opacity:0;font-size:14px}#pachiModalBody .m-lcd .win-screen .confetti{animation:eur_confall linear infinite}
-  @keyframes eur_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(720deg);opacity:0}}
-  .vignette{position:absolute;inset:0;pointer-events:none;
-    box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.6),inset 0 -20px 30px -10px rgba(0,0,0,.6)}#pachiModalBody /* --- GBP_JPY --- */
-.m-lcd /* 立ち上る炎の背景 */
-  .flames{position:absolute;inset:0;opacity:.5;
-    background:
-      radial-gradient(ellipse 40px 80px at 20% 110%,rgba(255,140,40,.5),transparent),
-      radial-gradient(ellipse 50px 90px at 50% 115%,rgba(255,80,20,.5),transparent),
-      radial-gradient(ellipse 40px 80px at 80% 110%,rgba(255,140,40,.5),transparent);
-    animation:gbp_flamerise 1.4s ease-in-out infinite}
-  @keyframes gbp_flamerise{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-6px) scaleY(1.1)}}
-  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;
-    font-size:10px;color:rgba(255,140,100,.5);white-space:nowrap;letter-spacing:2px;animation:gbp_tick 9s linear infinite}
-  @keyframes gbp_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
-  /* 稲妻リング */
-  .bolt{position:absolute;left:50%;top:46%;width:210px;height:210px;transform:translate(-50%,-50%);
-    border-radius:50%;border:2px solid rgba(255,106,74,.2);opacity:.6}#pachiModalBody .m-lcd .bolt::before{content:"";position:absolute;inset:24px;border-radius:50%;border:1px dashed rgba(255,180,60,.25)}#pachiModalBody .m-lcd .idle-screen .bolt{animation:gbp_spin 20s linear infinite}#pachiModalBody .m-lcd .reach-screen .bolt{animation:gbp_spin 6s linear infinite}#pachiModalBody .m-lcd .win-screen .bolt{animation:gbp_spin 2.2s linear infinite}
-  @keyframes gbp_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-
-  .mchara.gbp{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}#pachiModalBody .m-lcd .mchara.gbp.idle{animation:gbp_breathe 3s ease-in-out infinite}
-  @keyframes gbp_breathe{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-4px)}}
-  /* リーチ: ぐっと前に出て拳を構える */
-  .mchara.gbp.reach{animation:gbp_braceG .16s ease-in-out infinite}
-  @keyframes gbp_braceG{0%,100%{transform:translateX(-50%) scale(1.15) translateY(-12px) rotate(-1deg)}
-    50%{transform:translateX(-50%) scale(1.15) translateY(-15px) rotate(1deg)}}
-  /* 大当たり: 咆哮しながら拳を突き上げ */
-  .mchara.gbp.win{animation:gbp_winG .4s ease-in-out infinite}
-  @keyframes gbp_winG{0%,100%{transform:translateX(-50%) scale(1.3) translateY(-20px) rotate(-2deg)}
-    50%{transform:translateX(-50%) scale(1.36) translateY(-26px) rotate(2deg)}}
-
-  /* 帽子（学生帽/キャップ）微動 */
-  .cap{transform-origin:120px 74px}#pachiModalBody .m-lcd .idle .cap{animation:gbp_capnod 4s ease-in-out infinite}
-  @keyframes gbp_capnod{0%,100%{transform:rotate(0)}50%{transform:rotate(-2deg)}}
-  .win .cap{animation:gbp_capnod .5s ease-in-out infinite}#pachiModalBody .m-lcd /* 眼光 */
-  .eyes{animation:gbp_eyeglow 3s ease-in-out infinite}
-  @keyframes gbp_eyeglow{0%,100%{opacity:.9}50%{opacity:1}}
-  .reach .eyes{animation:gbp_eyefire .18s steps(2) infinite}
-  @keyframes gbp_eyefire{0%{opacity:1}50%{opacity:.6}}
-  /* 右腕（拳・メリケンサック）: 待機は下、リーチで振り上げ、大当たりで大きくパンチ連打 */
-  .fist-arm{transform-origin:158px 150px;transition:transform .28s cubic-bezier(.3,1.6,.5,1)}#pachiModalBody .m-lcd .reach .fist-arm{transform:rotate(-30deg) translate(0,-14px)}#pachiModalBody .m-lcd .win .fist-arm{animation:gbp_punch .3s ease-in-out infinite}
-  @keyframes gbp_punch{
-    0%{transform:rotate(-40deg) translate(14px,-24px) scale(.9)}
-    45%{transform:rotate(6deg) translate(-30px,10px) scale(1.25)}
-    60%{transform:rotate(6deg) translate(-30px,10px) scale(1.25)}
-    100%{transform:rotate(-40deg) translate(14px,-24px) scale(.9)}}
-  /* 左腕（拳銃）: 大当たりで発砲の反動 */
-  .gun-arm{transform-origin:60px 168px;transition:transform .28s}#pachiModalBody .m-lcd .reach .gun-arm{transform:translate(0,-6px) rotate(-4deg)}#pachiModalBody .m-lcd .win .gun-arm{animation:gbp_shoot .35s ease-in-out infinite}
-  @keyframes gbp_shoot{0%,100%{transform:translate(0,-8px) rotate(-6deg)}
-    20%{transform:translate(6px,-10px) rotate(-12deg)}}
-  /* マズルフラッシュ: 通常は消灯、大当たり発砲の瞬間だけ光る */
-  .muzzle{opacity:0;transform-origin:30px 194px}#pachiModalBody .m-lcd .win .muzzle{animation:gbp_muzzleflash .35s steps(1) infinite}
-  @keyframes gbp_muzzleflash{0%{opacity:1;transform:scale(1.2)}18%{opacity:1;transform:scale(1.4)}22%{opacity:0}100%{opacity:0}}
-  .pistol{transform-origin:56px 196px}#pachiModalBody .m-lcd /* パンチの衝撃マーク: パンチが伸びきる瞬間だけ光る */
-  .punch-hit{opacity:0;transform-origin:152px 178px}#pachiModalBody .m-lcd .win .punch-hit{animation:gbp_punchhit .3s steps(1) infinite}
-  @keyframes gbp_punchhit{0%{opacity:0;transform:scale(.5)}
-    45%{opacity:1;transform:scale(1.2)}55%{opacity:.9;transform:scale(1)}60%{opacity:0}100%{opacity:0}}
-  /* 銃弾: 大当たり時だけ銃口から左へ連射（SVG内・銃と一緒に動く） */
-  .sb{opacity:0}#pachiModalBody .m-lcd .win .sb{animation:gbp_sbfly .45s linear infinite}
-  @keyframes gbp_sbfly{0%{opacity:0;transform:translateX(0)}
-    8%{opacity:1}100%{opacity:0;transform:translateX(-70px)}}
-  .win .sb1{animation-delay:0s}#pachiModalBody .m-lcd .win .sb2{animation-delay:.09s}#pachiModalBody .m-lcd .win .sb3{animation-delay:.18s}#pachiModalBody .m-lcd .win .sb4{animation-delay:.27s}#pachiModalBody .m-lcd .win .sb5{animation-delay:.36s}#pachiModalBody .m-lcd /* メリケンサックの光 */
-  .knuckle{animation:gbp_knuckleglow 2.5s ease-in-out infinite}
-  @keyframes gbp_knuckleglow{0%,100%{opacity:.85}50%{opacity:1}}
-  .reach .knuckle,.win .knuckle{animation:gbp_knuckleflash .2s ease-in-out infinite}
-  @keyframes gbp_knuckleflash{0%,100%{opacity:.8}50%{opacity:1}}
-  /* 胸筋の炎エンブレム */
-  .emblem{animation:gbp_emblempulse 2.4s ease-in-out infinite;transform-origin:120px 176px}
-  @keyframes gbp_emblempulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
-  .win .emblem{animation:gbp_emblemblast .3s ease-in-out infinite}
-  @keyframes gbp_emblemblast{0%,100%{opacity:1;transform:scale(1.15)}50%{opacity:1;transform:scale(1.4)}}
-  /* 肩・僧帽筋の力み */
-  .traps{transform-origin:120px 150px;transition:transform .28s}#pachiModalBody .m-lcd .reach .traps,
-#pachiModalBody .m-lcd .win .traps{transform:scale(1.06)}#pachiModalBody .m-lcd /* オーラ（炎） */
-  .aura{opacity:0;transform-origin:120px 150px}#pachiModalBody .m-lcd .reach .aura{opacity:.5;animation:gbp_auraR .25s ease-in-out infinite}
-  @keyframes gbp_auraR{0%,100%{opacity:.35;transform:scale(.92)}50%{opacity:.55;transform:scale(1.06)}}
-  .win .aura{opacity:1;animation:gbp_auraW .3s ease-in-out infinite}
-  @keyframes gbp_auraW{0%,100%{opacity:.6;transform:scale(1.1)}50%{opacity:.95;transform:scale(1.5)}}
-
-  /* 画面演出 */
-  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;
-    background:radial-gradient(circle at 50% 45%,rgba(255,80,40,.28),transparent 60%)}#pachiModalBody .m-lcd .reach-screen .reachtint{opacity:1;animation:gbp_rt .25s ease-in-out infinite}
-  @keyframes gbp_rt{0%,100%{opacity:.5}50%{opacity:.9}}
-  .gbp_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}#pachiModalBody .m-lcd .win-screen .flash{animation:gbp_flash .26s steps(2) infinite}
-  @keyframes gbp_flash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
-  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;
-    background:repeating-conic-gradient(from 0deg,rgba(255,180,80,.55) 0deg 5deg,transparent 5deg 12deg)}#pachiModalBody .m-lcd .win-screen .rays{opacity:.6;animation:gbp_rayspin 1.8s linear infinite}
-  @keyframes gbp_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-  .bigwin{position:absolute;left:50%;top:18px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;
-    font-weight:900;font-size:40px;letter-spacing:.04em;color:#fff0d0;
-    text-shadow:0 0 12px #ff6a2a,0 0 26px #ff2a0a,0 3px 6px #000;-webkit-text-stroke:2px #a02000}#pachiModalBody .m-lcd .win-screen .bigwin{animation:gbp_bigwinpop .5s cubic-bezier(.2,1.6,.4,1) forwards,gbp_bigwinshake .26s ease-in-out .5s infinite}
-  @keyframes gbp_bigwinpop{0%{transform:translateX(-50%) scale(0) rotate(-14deg)}70%{transform:translateX(-50%) scale(1.3) rotate(5deg)}100%{transform:translateX(-50%) scale(1.12) rotate(0)}}
-  @keyframes gbp_bigwinshake{0%,100%{transform:translateX(-50%) scale(1.12) rotate(-3deg)}50%{transform:translateX(-50%) scale(1.18) rotate(3deg)}}
-  .confetti{position:absolute;top:-12px;width:9px;height:14px;border-radius:2px;z-index:8;pointer-events:none;opacity:0}#pachiModalBody .m-lcd .win-screen .confetti{animation:gbp_confall linear infinite}
-  @keyframes gbp_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(720deg);opacity:0}}
-  /* 発砲の銃弾（左の銃口から左へ飛ぶ） */
-  .bullets{position:absolute;inset:0;pointer-events:none;z-index:8;opacity:0}#pachiModalBody .m-lcd .win-screen .bullets{opacity:1}#pachiModalBody .m-lcd .bullet{position:absolute;width:14px;height:4px;border-radius:2px;
-    background:linear-gradient(90deg,#fff8d0,#ff8a2a);box-shadow:0 0 6px #ffb050;opacity:0}#pachiModalBody .m-lcd .win-screen .bullet{animation:gbp_bulletfly .5s linear infinite}
-  @keyframes gbp_bulletfly{0%{opacity:0;transform:translateX(0) scaleX(.4)}
-    10%{opacity:1;transform:translateX(-10px) scaleX(1)}
-    100%{opacity:0;transform:translateX(-120px) scaleX(1.4)}}
-  .vignette{position:absolute;inset:0;pointer-events:none;
-    box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.7),inset 0 -20px 30px -10px rgba(0,0,0,.7)}#pachiModalBody /* --- AUD_JPY --- */
-.m-lcd .raysbg{position:absolute;inset:0;opacity:.5;background:linear-gradient(105deg,transparent 30%,rgba(220,245,255,.35) 42%,transparent 48%,transparent 60%,rgba(200,240,255,.3) 70%,transparent 78%);animation:aud_raysway 6s ease-in-out infinite}
-  @keyframes aud_raysway{0%,100%{transform:translateX(-10px)}50%{transform:translateX(10px)}}
-  .bubbles{position:absolute;inset:0;overflow:hidden;pointer-events:none}#pachiModalBody .m-lcd .bubble{position:absolute;bottom:-10px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.9),rgba(200,240,255,.25) 70%);animation:aud_bubup linear infinite}
-  @keyframes aud_bubup{0%{transform:translateY(0);opacity:0}12%{opacity:.8}100%{transform:translateY(-240px) translateX(12px);opacity:0}}
-  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;font-size:10px;color:rgba(200,240,255,.55);white-space:nowrap;letter-spacing:2px;animation:aud_tick 9s linear infinite}
-  @keyframes aud_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
-  .halo{position:absolute;left:50%;top:46%;width:210px;height:210px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(150,220,255,.22);opacity:.6}#pachiModalBody .m-lcd .halo::before{content:"";position:absolute;inset:26px;border-radius:50%;border:1px dashed rgba(255,255,255,.22)}#pachiModalBody .m-lcd .idle-screen .halo{animation:aud_spin 22s linear infinite}#pachiModalBody .m-lcd .reach-screen .halo{animation:aud_spin 7s linear infinite}#pachiModalBody .m-lcd .win-screen .halo{animation:aud_spin 2.6s linear infinite}
-  @keyframes aud_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-  .mchara.aud{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}#pachiModalBody .m-lcd .mchara.aud.idle{animation:aud_floatm 4s ease-in-out infinite}
-  @keyframes aud_floatm{0%,100%{transform:translateX(-50%) translateY(0) rotate(0)}50%{transform:translateX(-50%) translateY(-7px) rotate(.8deg)}}
-  .mchara.aud.reach{animation:aud_braceM .5s ease-in-out infinite}
-  @keyframes aud_braceM{0%,100%{transform:translateX(-50%) scale(1.12) translateY(-12px) rotate(-1.5deg)}50%{transform:translateX(-50%) scale(1.12) translateY(-16px) rotate(1.5deg)}}
-  .mchara.aud.win{animation:aud_swim 1.1s ease-in-out infinite}
-  @keyframes aud_swim{0%{transform:translateX(-50%) scale(1.2) translateY(-16px) rotate(-4deg)}50%{transform:translateX(-56%) scale(1.24) translateY(-26px) rotate(4deg)}100%{transform:translateX(-50%) scale(1.2) translateY(-16px) rotate(-4deg)}}
-  .hair-l{transform-origin:92px 76px}#pachiModalBody .m-lcd .hair-r{transform-origin:148px 76px}#pachiModalBody .m-lcd .idle .hair-l{animation:aud_swayh 4s ease-in-out infinite}#pachiModalBody .m-lcd .idle .hair-r{animation:aud_swayh 4s ease-in-out infinite reverse}
-  @keyframes aud_swayh{0%,100%{transform:rotate(0)}50%{transform:rotate(4deg)}}
-  .win .hair-l{animation:aud_swayh 1.1s ease-in-out infinite}#pachiModalBody .m-lcd .win .hair-r{animation:aud_swayh 1.1s ease-in-out infinite reverse}#pachiModalBody .m-lcd .eyes{animation:aud_blink 4.5s ease-in-out infinite}
-  @keyframes aud_blink{0%,95%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
-  .eyeshine{animation:aud_eshine 3s ease-in-out infinite}
-  @keyframes aud_eshine{0%,100%{opacity:.7}50%{opacity:1}}
-  .tail{transform-origin:150px 172px}#pachiModalBody .m-lcd .idle .tail{animation:aud_tailidle 3.4s ease-in-out infinite}
-  @keyframes aud_tailidle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
-  .reach .tail{animation:aud_tailidle 1.2s ease-in-out infinite}#pachiModalBody .m-lcd .win .tail{animation:aud_tailswish .5s ease-in-out infinite}
-  @keyframes aud_tailswish{0%{transform:rotate(-18deg) scale(1)}50%{transform:rotate(20deg) scale(1.08)}100%{transform:rotate(-18deg) scale(1)}}
-  .tailfin{animation:aud_tailglow 3s ease-in-out infinite}
-  @keyframes aud_tailglow{0%,100%{opacity:.85}50%{opacity:1}}
-  .flower{transform-origin:96px 70px;animation:aud_flglow 3s ease-in-out infinite}
-  @keyframes aud_flglow{0%,100%{opacity:.9}50%{opacity:1}}
-  .shell{animation:aud_shellglow 2.6s ease-in-out infinite;transform-origin:120px 176px}
-  @keyframes aud_shellglow{0%,100%{opacity:.9;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}
-  .win .shell{animation:aud_shellglow .4s ease-in-out infinite}#pachiModalBody .m-lcd .aura{opacity:0;transform-origin:120px 150px}#pachiModalBody .m-lcd .reach .aura{opacity:.45;animation:aud_auraR .35s ease-in-out infinite}
-  @keyframes aud_auraR{0%,100%{opacity:.3;transform:scale(.9)}50%{opacity:.5;transform:scale(1.05)}}
-  .win .aura{opacity:1;animation:aud_auraW .4s ease-in-out infinite}
-  @keyframes aud_auraW{0%,100%{opacity:.55;transform:scale(1.1)}50%{opacity:.9;transform:scale(1.45)}}
-  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;background:radial-gradient(circle at 50% 45%,rgba(120,220,255,.28),transparent 60%)}#pachiModalBody .m-lcd .reach-screen .reachtint{opacity:1;animation:aud_rt .35s ease-in-out infinite}
-  @keyframes aud_rt{0%,100%{opacity:.5}50%{opacity:.9}}
-  .aud_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}#pachiModalBody .m-lcd .win-screen .flash{animation:aud_flash .3s steps(2) infinite}
-  @keyframes aud_flash{0%{opacity:.4}50%{opacity:0}100%{opacity:.25}}
-  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;background:repeating-conic-gradient(from 0deg,rgba(200,245,255,.5) 0deg 5deg,transparent 5deg 12deg)}#pachiModalBody .m-lcd .win-screen .rays{opacity:.5;animation:aud_rayspin 2.2s linear infinite}
-  @keyframes aud_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-  .bigwin{position:absolute;left:50%;top:20px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;font-weight:900;font-size:38px;letter-spacing:.06em;color:#eafaff;text-shadow:0 0 12px #7fe0ea,0 0 24px #40a0e0,0 3px 6px #000;-webkit-text-stroke:2px #3080b0}#pachiModalBody .m-lcd .win-screen .bigwin{animation:aud_bwp .5s cubic-bezier(.2,1.6,.4,1) forwards,aud_bws .35s ease-in-out .5s infinite}
-  @keyframes aud_bwp{0%{transform:translateX(-50%) scale(0) rotate(-12deg)}70%{transform:translateX(-50%) scale(1.25) rotate(4deg)}100%{transform:translateX(-50%) scale(1.1) rotate(0)}}
-  @keyframes aud_bws{0%,100%{transform:translateX(-50%) scale(1.1) rotate(-2deg)}50%{transform:translateX(-50%) scale(1.15) rotate(2deg)}}
-  .confetti{position:absolute;top:-12px;z-index:8;pointer-events:none;opacity:0;font-size:13px}#pachiModalBody .m-lcd .win-screen .confetti{animation:aud_confall linear infinite}
-  @keyframes aud_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(540deg);opacity:0}}
-  .vignette{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.5),inset 0 -20px 30px -10px rgba(0,0,0,.5)}#pachiModalBody /* EUR: 変身フラッシュは通常時非表示（ピンクのモヤ対策） */
-.m-lcd .mchara.eur .transflash{opacity:0 !important}#pachiModalBody .m-lcd .mchara.eur.win .transflash{animation:eur_transflash .6s ease-out 1}
-
+/* パチンコ台iframe（カード内・完全分離） */
+.pachi-embed{width:100%;border:none;border-radius:12px;display:block;background:#0a0a12;margin:8px 0}
+.pachi-embed-wrap{position:relative;width:100%}
 </style>
 </head>
 <body>
@@ -1547,7 +1131,6 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
     <div class="chips"><span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>
     ${lotBox}
-    <button class="pachi-open-btn" onclick="openPachiModal('${p.symbol}')">🎰 パチンコで見る</button>
     <button class="dettog" onclick="toggleDetail('${p.symbol}',this)">${_open?'▲ 詳細を閉じる':'▼ 詳細'}</button>
     <div class="pdetail">
     <div class="row" style="margin-top:8px"><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
@@ -1959,6 +1542,7 @@ function applyPachi(){
     document.querySelectorAll('.card').forEach(c=>{c.className=c.className.replace(/pachi-st-\w+/g,'').trim();});
     PachiSound.stopBGM();
     if(typeof stopAllBalls==='function') stopAllBalls();
+    document.querySelectorAll('.card[data-sym]').forEach(c=>{ if(window.removePachiEmbed) window.removePachiEmbed(c); });
     return;
   }
   root.classList.add('pachi');
@@ -1972,6 +1556,8 @@ function applyPachi(){
   document.querySelectorAll('.card[data-sym]').forEach(card=>{
     const sym=card.getAttribute('data-sym');
     const pair=(S.pairs||[]).find(x=>x.symbol===sym)||{symbol:sym};
+    // 【テスト】GBPのみ、演出ON時にパチンコ台iframeを埋め込む（他通貨は従来通り）
+    if(sym==='GBP_JPY'){ if(window.buildPachiEmbed) window.buildPachiEmbed(card, sym); }
     // 決済演出は「最近閉じたポジション」に限る（履歴全体で毎回鳴らさない）
     const recentClosed=closedBySym[sym];
     const openPos=openBySym[sym];
@@ -2605,24 +2191,514 @@ if('serviceWorker'in navigator){
 }
 </script>
 <a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
-<div class="pachi-modal" id="pachiModal">
-  <div class="pachi-modal-inner">
-    <button class="pachi-modal-close" onclick="closePachiModal()">✕</button>
-    <div id="pachiModalBody"><div class="machine">
+<script>
+window.__MACHINE_HTML=`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>パチンコ台（骨格）</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:transparent;display:flex;justify-content:center;align-items:flex-start;padding:0;margin:0;font-family:system-ui,sans-serif}
+  .machine{width:100%;max-width:420px;position:relative}
+  /* 台の外枠(筐体) */
+  .m-frame{position:relative;width:100%;aspect-ratio:3/4.4;border-radius:20px;overflow:hidden;
+    background:linear-gradient(160deg,#e8e8ee,#c0c0c8 40%,#9a9aa4);
+    box-shadow:0 12px 40px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,255,255,.5);
+    border:3px solid #6a6a74;padding:12px}
+  /* 遊技盤(丸みのある盤面) */
+  .m-board{position:relative;width:100%;aspect-ratio:1/1.15;border-radius:14px;overflow:hidden;
+    background:radial-gradient(circle at 50% 42%,#eaf2ff 0%,#cfe0f5 40%,#a8c4e4 75%,#8aa8cc 100%);
+    box-shadow:inset 0 0 30px rgba(0,0,0,.25),0 2px 8px rgba(0,0,0,.3);border:2px solid #7a90b0}
+  /* 盤面の外周円(セル盤のガラス縁) */
+  .m-rim{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:97%;height:84%;
+    border-radius:50%;border:3px solid rgba(110,140,180,.4);pointer-events:none;
+    box-shadow:inset 0 0 20px rgba(120,150,190,.25)}
+  /* 中央の大きな液晶画面(主役) */
+  .m-nails{position:absolute;inset:0;z-index:1;pointer-events:none}
+  .m-balls{position:absolute;inset:0;z-index:4;pointer-events:none}
+  .m-rail{position:absolute;top:10%;bottom:6%;width:2.5%;z-index:2;border-radius:4px;
+    background:linear-gradient(90deg,rgba(180,200,220,.5),rgba(120,140,170,.3));box-shadow:inset 0 0 4px rgba(0,0,0,.3)}
+  .m-rail.l{left:2%}.m-rail.r{right:2%;display:none}
+
+  .m-shoot{position:absolute;bottom:2%;z-index:5;font-size:9px;font-weight:700;color:#4aa0d0;text-shadow:0 0 5px #4aa0d0;transition:left .4s,right .4s}
+  .m-shoot.left{left:6%}.m-shoot.right{right:6%}
+  .m-lcd{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:62%;height:40%;
+    border-radius:12px;overflow:hidden;z-index:3;
+    background:radial-gradient(circle at 50% 40%,#12384a,#0a1a28 70%,#050e18);
+    border:3px solid #1a1a22;box-shadow:0 0 16px rgba(0,180,200,.35),inset 0 0 22px rgba(0,0,0,.7)}
+  /* 大当り: 誰が見ても分かる派手な演出 */
+  .m-lcd.char-win .m-chara-inner{animation:mBigSwim 0.7s ease-in-out infinite}
+  @keyframes mBigSwim{0%{transform:translateX(-50%) translateY(0) rotate(-6deg)}
+    50%{transform:translateX(-40%) translateY(-10%) rotate(6deg)}
+    100%{transform:translateX(-50%) translateY(0) rotate(-6deg)}}
+  .m-win-flash{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;
+    background:radial-gradient(circle at 50% 45%,rgba(255,255,200,.7),transparent 60%)}
+  .m-lcd.char-win .m-win-flash{animation:mWinFlash .5s steps(2) infinite}
+  @keyframes mWinFlash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
+  .m-win-rays{position:absolute;left:50%;top:45%;width:200%;height:200%;transform:translate(-50%,-50%);z-index:4;
+    pointer-events:none;opacity:0;background:repeating-conic-gradient(from 0deg,rgba(255,230,120,.5) 0deg 6deg,transparent 6deg 14deg)}
+  .m-lcd.char-win .m-win-rays{opacity:.6;animation:mRaySpin 2s linear infinite}
+  @keyframes mRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .m-win-text{position:absolute;left:50%;top:32%;transform:translate(-50%,-50%) scale(0);z-index:6;
+    pointer-events:none;font-weight:900;font-size:30px;letter-spacing:.05em;color:#fff2a0;
+    text-shadow:0 0 14px #ff8a2a,0 0 28px #ff3a0a,0 3px 5px #000;-webkit-text-stroke:1.5px #a03000}
+  .m-lcd.char-win .m-win-text{animation:mWinText .5s cubic-bezier(.2,1.6,.4,1) forwards,mWinShake .3s ease-in-out .5s infinite}
+  @keyframes mWinText{0%{transform:translate(-50%,-50%) scale(0) rotate(-12deg)}70%{transform:translate(-50%,-50%) scale(1.25) rotate(5deg)}100%{transform:translate(-50%,-50%) scale(1.1) rotate(0)}}
+  @keyframes mWinShake{0%,100%{transform:translate(-50%,-50%) scale(1.1) rotate(-3deg)}50%{transform:translate(-50%,-50%) scale(1.15) rotate(3deg)}}
+  /* 大当り時: キャラを前面に出して勝利モーションを見せる */
+  .m-lcd.char-win .m-chara-wrap{z-index:5}
+  .m-lcd.char-win .m-chara-inner{height:96%;transition:height .4s}
+  .m-lcd.char-win .m-reels{opacity:.15;transition:opacity .4s}
+  .m-chara-wrap{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;
+    display:flex;align-items:flex-end;justify-content:center}
+  .m-chara-inner{position:absolute;left:50%;bottom:-2%;transform:translateX(-50%);height:80%;aspect-ratio:240/220}
+  .m-lcd .mchara{width:100%!important;height:100%!important;position:static!important;left:auto!important;bottom:auto!important;transform:none!important;display:block}
+  .m-reels{position:absolute;inset:8% 6%;z-index:2;display:flex;gap:5%;justify-content:center;pointer-events:none}
+  .m-col{position:relative;flex:1;border-radius:6px;overflow:hidden;
+    background:linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,.2));
+    border:1px solid rgba(120,220,220,.25);box-shadow:inset 0 6px 10px rgba(0,0,0,.6),inset 0 -6px 10px rgba(0,0,0,.6)}
+  .m-strip{position:absolute;left:0;right:0;top:0;display:flex;flex-direction:column;will-change:transform}
+  .m-sym{display:flex;align-items:center;justify-content:center;font-family:Georgia,serif;font-weight:900;
+    line-height:1;color:#7fe0ea;text-shadow:0 0 10px #3ad0c8,0 2px 3px #000}
+  .m-col.spin .m-strip{animation:mSpin var(--spd,.5s) linear infinite}
+  @keyframes mSpin{from{transform:translateY(0)}to{transform:translateY(-360px)}}
+  .m-draw-lab{position:absolute;left:50%;top:20%;transform:translate(-50%,-50%) scale(0);z-index:5;
+    pointer-events:none;font-weight:900;font-size:15px;letter-spacing:.06em;color:#fff;
+    text-shadow:0 0 10px #7fe0ea,0 2px 4px #000;opacity:0;white-space:nowrap}
+  .m-draw-lab.show{animation:mDrawLab 1.4s ease-out}
+  @keyframes mDrawLab{0%{transform:translate(-50%,-50%) scale(0);opacity:0}20%{transform:translate(-50%,-50%) scale(1.15);opacity:1}80%{opacity:1}100%{opacity:0}}
+  .m-col.stop .m-sym.hit{color:#fff;text-shadow:0 0 14px #7fe0ea,0 0 5px #fff,0 2px 3px #000}
+  .m-lcd-inner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:#7fe0ea;font-size:13px;letter-spacing:.1em;opacity:.6}
+  /* ブッコミ(盤面上部中央の玉入口) */
+  .m-bukkomi{position:absolute;left:50%;top:8%;transform:translateX(-50%);width:16%;height:5%;z-index:2;
+    background:linear-gradient(180deg,#f0c040,#c89020);border-radius:4px 4px 0 0;
+    box-shadow:0 0 8px rgba(240,192,64,.5);border:1px solid #a87818}
+  /* スタートチャッカー(液晶下の抽選起点) */
+  .m-chucker{position:absolute;left:50%;top:64%;transform:translateX(-50%);width:14%;height:5%;z-index:2;
+    background:linear-gradient(180deg,#ff5a5a,#c02020);border-radius:0 0 8px 8px;
+    box-shadow:0 0 10px rgba(255,90,90,.5);border:1px solid #901818}
+  .m-chucker-lbl{position:absolute;left:50%;top:70%;transform:translateX(-50%);z-index:2;
+    font-size:8px;font-weight:700;color:#ff8080;text-shadow:0 0 5px #ff5a5a;white-space:nowrap;pointer-events:none}
+  /* 風車(左右の回転体) */
+  .m-windmill{position:absolute;width:7%;aspect-ratio:1;z-index:2;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%,#fff,#a0b0c0 70%);border:1px solid #7a8a9a;
+    box-shadow:0 0 4px rgba(0,0,0,.3)}
+  .m-windmill::before{content:"";position:absolute;inset:18%;
+    background:conic-gradient(#6a8ab0 0 25%,#c0d0e0 0 50%,#6a8ab0 0 75%,#c0d0e0 0);border-radius:50%}
+  .m-windmill.l{left:16%;top:52%}.m-windmill.r{right:16%;top:52%}
+  /* アウト口(最下部) */
+  .m-out{position:absolute;left:50%;bottom:1%;transform:translateX(-50%);width:24%;height:3%;z-index:2;
+    background:linear-gradient(180deg,#3a4a5a,#1a2a3a);border-radius:6px 6px 0 0}
+  /* 下部の受け皿・ハンドル部 */
+  .m-lower{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .m-trays{flex:1}
+  .m-tray-up{height:22px;border-radius:8px;background:linear-gradient(180deg,#d03030,#901818);
+    box-shadow:inset 0 2px 4px rgba(255,255,255,.2),0 2px 4px rgba(0,0,0,.4);margin-bottom:6px}
+  .m-tray-dn{height:16px;border-radius:8px;background:linear-gradient(180deg,#2a2a34,#12121a);
+    box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}
+  .m-handle{width:56px;height:56px;border-radius:50%;flex-shrink:0;
+    background:radial-gradient(circle at 40% 35%,#ff6a6a,#c02020 70%,#801010);
+    box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.3);
+    border:2px solid #601010}
+
+
+/* ══ 4体キャラCSS（液晶内スコープ・名前空間化済み） ══ */
+
+/* --- USD_JPY --- */
+.m-lcd .grid{position:absolute;inset:0;opacity:.22;
+    background-image:linear-gradient(rgba(127,224,255,.4) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(127,224,255,.4) 1px,transparent 1px);
+    background-size:30px 30px;animation:usd_gridflow 7s linear infinite;transform:perspective(300px) rotateX(30deg);transform-origin:50% 100%}
+  @keyframes usd_gridflow{to{background-position:0 30px}}
+  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;
+    font-size:10px;color:rgba(127,224,255,.45);white-space:nowrap;letter-spacing:2px;animation:usd_tick 9s linear infinite}
+  @keyframes usd_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
+  .rings{position:absolute;left:50%;top:48%;width:220px;height:220px;transform:translate(-50%,-50%);
+    border-radius:50%;border:1px solid rgba(127,224,255,.15);opacity:.5}.m-lcd .rings::before{content:"";position:absolute;inset:22px;border-radius:50%;border:1px dashed rgba(240,192,82,.2)}.m-lcd .idle-screen .rings{animation:usd_spin 24s linear infinite}.m-lcd .reach-screen .rings{animation:usd_spin 8s linear infinite}.m-lcd .win-screen .rings{animation:usd_spin 3s linear infinite}
+  @keyframes usd_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+
+  .mchara.usd{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}.m-lcd .mchara.usd.idle{animation:usd_breathe 3.6s ease-in-out infinite}
+  @keyframes usd_breathe{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-5px)}}
+  /* リーチ: ぐっと前に迫り出す＋小刻みに震える（戦闘態勢が一目でわかる） */
+  .mchara.usd.reach{animation:usd_brace .18s ease-in-out infinite}
+  @keyframes usd_brace{0%,100%{transform:translateX(-50%) scale(1.14) translateY(-14px) rotate(-1deg)}
+    50%{transform:translateX(-50%) scale(1.14) translateY(-17px) rotate(1deg)}}
+  /* 大当たり: 大きく飛び出して咆哮ポーズ */
+  .mchara.usd.win{animation:usd_winpose .5s ease-in-out infinite}.m-lcd /* 大当たり: フォルムチェンジ（装甲展開・発光）→ビーム発射 */
+  .win .sh-l{animation:usd_formL .5s ease-out forwards}.m-lcd .win .sh-r{animation:usd_formR .5s ease-out forwards}
+  @keyframes usd_formL{0%{transform:rotate(-13deg) translate(-5px,-4px)}100%{transform:rotate(-40deg) translate(-22px,-16px) scale(1.15)}}
+  @keyframes usd_formR{0%{transform:rotate(13deg) translate(5px,-4px)}100%{transform:rotate(40deg) translate(22px,-16px) scale(1.15)}}
+  /* ビーム（胸コアから前方へ） */
+  .beam{opacity:0;transform-origin:120px 168px}.m-lcd .win .beam{animation:usd_beamfire .7s ease-out infinite}
+  @keyframes usd_beamfire{0%{opacity:0;transform:scaleX(0)}15%{opacity:1;transform:scaleX(.3)}45%{opacity:1;transform:scaleX(1.15)}100%{opacity:0;transform:scaleX(1.3)}}
+  /* チャージ光 */
+  .charge{opacity:0;transform-origin:120px 168px}.m-lcd .win .charge{animation:usd_chargeup .7s ease-in-out infinite}
+  @keyframes usd_chargeup{0%{opacity:0;transform:scale(.3)}30%{opacity:1;transform:scale(1.2)}50%{opacity:.6;transform:scale(.8)}100%{opacity:0;transform:scale(.5)}}
+  /* フォルムチェンジ時の全身フラッシュ */
+  .formflash{opacity:0}.m-lcd .win .formflash{animation:usd_ff .5s steps(1) 1}
+  @keyframes usd_ff{0%{opacity:.9}30%{opacity:.5}100%{opacity:0}}
+  @keyframes usd_winpose{0%,100%{transform:translateX(-50%) scale(1.28) translateY(-20px) rotate(-2deg)}
+    50%{transform:translateX(-50%) scale(1.34) translateY(-26px) rotate(2deg)}}
+
+  /* 頭部の微傾（スキャン） */
+  .head{transform-origin:120px 96px}.m-lcd .idle .head{animation:usd_scan 5s ease-in-out infinite}
+  @keyframes usd_scan{0%,100%{transform:rotate(0)}30%{transform:rotate(-3deg)}70%{transform:rotate(3deg)}}
+  /* リーチ: 頭を突き出すように前傾 */
+  .reach .head{animation:usd_headthrust .18s ease-in-out infinite}
+  @keyframes usd_headthrust{0%,100%{transform:translateY(2px) rotate(-2deg)}50%{transform:translateY(4px) rotate(2deg)}}
+  .win .head{animation:usd_scan 1s ease-in-out infinite}.m-lcd /* 眼光: 待機は青くゆっくり、リーチは赤く高速点滅 */
+  .eye{animation:usd_eyeglow 2.4s ease-in-out infinite}
+  @keyframes usd_eyeglow{0%,100%{opacity:.75}50%{opacity:1}}
+  .reach .eye{fill:#ff5a4a !important;animation:usd_eyeRed .16s steps(2) infinite}
+  @keyframes usd_eyeRed{0%{opacity:1}50%{opacity:.3}}
+  .win .eye{fill:#ffe89a !important;animation:usd_eyeGold .2s ease-in-out infinite}
+  @keyframes usd_eyeGold{0%,100%{opacity:1}50%{opacity:.5}}
+  /* 胸コア */
+  .core{animation:usd_corepulse 2.2s ease-in-out infinite;transform-origin:120px 168px}
+  @keyframes usd_corepulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}
+  /* リーチ: コアが赤熱してチャージ */
+  .reach .core{animation:usd_coreCharge .3s ease-in-out infinite}
+  @keyframes usd_coreCharge{0%,100%{opacity:.9;transform:scale(1.15)}50%{opacity:1;transform:scale(1.35)}}
+  .win .core{animation:usd_coreblast .25s ease-in-out infinite}
+  @keyframes usd_coreblast{0%,100%{opacity:1;transform:scale(1.3)}50%{opacity:1;transform:scale(1.8)}}
+  /* 肩アーマー展開（リーチで大きく開く） */
+  .sh-l{transform-origin:70px 150px;transition:transform .25s cubic-bezier(.3,1.6,.5,1)}.m-lcd .sh-r{transform-origin:170px 150px;transition:transform .25s cubic-bezier(.3,1.6,.5,1)}.m-lcd .reach .sh-l,
+.m-lcd .win .sh-l{transform:rotate(-26deg) translate(-12px,-8px)}.m-lcd .reach .sh-r,
+.m-lcd .win .sh-r{transform:rotate(26deg) translate(12px,-8px)}.m-lcd /* 額クレストの発光 */
+  .crest{animation:usd_crestglow 3s ease-in-out infinite}
+  @keyframes usd_crestglow{0%,100%{opacity:.8}50%{opacity:1}}
+  .win .crest{animation:usd_crestglow .3s ease-in-out infinite}.m-lcd /* オーラ（大当たり）: 巨大化して脈動 */
+  .usd_aura{opacity:0;transform-origin:120px 150px}.m-lcd .reach .aura{opacity:.5;animation:usd_auraR .3s ease-in-out infinite}
+  @keyframes usd_auraR{0%,100%{opacity:.35;transform:scale(.9)}50%{opacity:.55;transform:scale(1.05)}}
+  .win .aura{opacity:1;animation:usd_aura .35s ease-in-out infinite}
+  @keyframes usd_aura{0%,100%{opacity:.6;transform:scale(1.1)}50%{opacity:.95;transform:scale(1.45)}}
+
+  .burst{position:absolute;inset:0;opacity:0;pointer-events:none;
+    background:radial-gradient(circle at 50% 48%,rgba(240,192,82,.45),transparent 52%)}.m-lcd .win-screen .burst{opacity:1;animation:usd_bp .3s ease-in-out infinite}
+  @keyframes usd_bp{0%,100%{opacity:.4}50%{opacity:.85}}
+  /* リーチ: 画面を赤めに寄せて緊迫感 */
+  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;
+    background:radial-gradient(circle at 50% 45%,rgba(255,90,74,.22),transparent 60%)}.m-lcd .reach-screen .reachtint{opacity:1;animation:usd_rt .3s ease-in-out infinite}
+  @keyframes usd_rt{0%,100%{opacity:.5}50%{opacity:.9}}
+  /* 大当たり: 全画面フラッシュ */
+  .usd_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}.m-lcd .win-screen .flash{animation:usd_flash .28s steps(2) infinite}
+  @keyframes usd_flash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
+  /* 大当たり: 放射状の集中線 */
+  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;
+    background:repeating-conic-gradient(from 0deg,rgba(255,232,154,.5) 0deg 5deg,transparent 5deg 12deg)}.m-lcd .win-screen .rays{opacity:.55;animation:usd_rayspin 2s linear infinite}
+  @keyframes usd_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  /* 大当たり: 「大当り」テキスト */
+  .bigwin{position:absolute;left:50%;top:20px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;
+    font-weight:900;font-size:38px;letter-spacing:.06em;color:#fff2c8;
+    text-shadow:0 0 12px #f0c052,0 0 24px #ff8a2a,0 3px 6px #000;-webkit-text-stroke:2px #b8801a}.m-lcd .win-screen .bigwin{animation:usd_bigwinpop .5s cubic-bezier(.2,1.6,.4,1) forwards,usd_bigwinshake .3s ease-in-out .5s infinite}
+  @keyframes usd_bigwinpop{0%{transform:translateX(-50%) scale(0) rotate(-12deg)}70%{transform:translateX(-50%) scale(1.25) rotate(4deg)}100%{transform:translateX(-50%) scale(1.1) rotate(0)}}
+  @keyframes usd_bigwinshake{0%,100%{transform:translateX(-50%) scale(1.1) rotate(-2deg)}50%{transform:translateX(-50%) scale(1.15) rotate(2deg)}}
+  /* 紙吹雪 */
+  .confetti{position:absolute;top:-12px;width:9px;height:14px;border-radius:2px;z-index:8;pointer-events:none;opacity:0}.m-lcd .win-screen .confetti{animation:usd_confall linear infinite}
+  @keyframes usd_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(720deg);opacity:0}}
+  .vignette{position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.7),inset 0 -20px 30px -10px rgba(0,0,0,.7)}
+
+  
+  
+  
+  
+
+
+/* --- EUR_JPY --- */
+.m-lcd /* きらめく星の背景 */
+  .stars{position:absolute;inset:0;opacity:.8;
+    background-image:
+      radial-gradient(1.5px 1.5px at 20% 30%,#fff,transparent),
+      radial-gradient(1.5px 1.5px at 70% 20%,#ffe0f8,transparent),
+      radial-gradient(1px 1px at 40% 60%,#fff,transparent),
+      radial-gradient(2px 2px at 85% 50%,#ffd0f0,transparent),
+      radial-gradient(1px 1px at 15% 75%,#fff,transparent),
+      radial-gradient(1.5px 1.5px at 60% 80%,#ffe0f8,transparent),
+      radial-gradient(1px 1px at 90% 85%,#fff,transparent),
+      radial-gradient(1.5px 1.5px at 30% 15%,#fff,transparent);
+    animation:eur_twinkle 3s ease-in-out infinite}
+  @keyframes eur_twinkle{0%,100%{opacity:.5}50%{opacity:.95}}
+  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;
+    font-size:10px;color:rgba(255,179,236,.5);white-space:nowrap;letter-spacing:2px;animation:eur_tick 9s linear infinite}
+  @keyframes eur_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
+  /* 浮遊するリボン輪 */
+  .halo{position:absolute;left:50%;top:46%;width:210px;height:210px;transform:translate(-50%,-50%);
+    border-radius:50%;border:1.5px solid rgba(255,179,236,.25);opacity:.6}.m-lcd .halo::before{content:"";position:absolute;inset:26px;border-radius:50%;border:1px dashed rgba(255,255,255,.25)}.m-lcd .idle-screen .halo{animation:eur_spin 22s linear infinite}.m-lcd .reach-screen .halo{animation:eur_spin 7s linear infinite}.m-lcd .win-screen .halo{animation:eur_spin 2.5s linear infinite}
+  @keyframes eur_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+
+  .mchara.eur{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}.m-lcd .mchara.eur.idle{animation:eur_breathe 3.4s ease-in-out infinite}
+  @keyframes eur_breathe{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-6px)}}
+  /* リーチ: 手前に迫り出してステッキを構える */
+  .mchara.eur.reach{animation:eur_braceE .2s ease-in-out infinite}
+  @keyframes eur_braceE{0%,100%{transform:translateX(-50%) scale(1.14) translateY(-14px) rotate(-1.2deg)}
+    50%{transform:translateX(-50%) scale(1.14) translateY(-17px) rotate(1.2deg)}}
+  /* 大当たり: 大きく飛び出して魔法発動ポーズ */
+  .mchara.eur.win{animation:eur_winE .5s ease-in-out infinite}.m-lcd /* ── 変身: 制服(黒髪ストレート) → 魔法少女(紫ツインテール) ── */
+  /* 制服パーツ: 通常は表示、大当たりで消える */
+  .uniform{opacity:1;transition:opacity .3s}.m-lcd .win .uniform{animation:eur_fadeout .5s ease-out forwards}
+  @keyframes eur_fadeout{0%{opacity:1}40%{opacity:0}100%{opacity:0}}
+  /* 黒髪ストレート: 通常表示、大当たりで消える */
+  .hair-black{opacity:1}.m-lcd .win .hair-black{animation:eur_fadeout .4s ease-out forwards !important}.m-lcd /* 魔法少女衣装: 通常は非表示、大当たりで出現 */
+  .magic{opacity:0}.m-lcd .win .magic{animation:eur_fadein .6s ease-out .25s forwards}
+  @keyframes eur_fadein{0%{opacity:0}100%{opacity:1}}
+  /* 紫ツインテール: 通常非表示、大当たりで出現しつつ揺れる */
+  .twin-l{opacity:0;transform-origin:88px 84px}.m-lcd .twin-r{opacity:0;transform-origin:152px 84px}.m-lcd .win .twin-l{animation:eur_twinAppL .6s ease-out .25s forwards,eur_twinSwayL 1s ease-in-out .85s infinite}.m-lcd .win .twin-r{animation:eur_twinAppR .6s ease-out .25s forwards,eur_twinSwayR 1s ease-in-out .85s infinite}
+  @keyframes eur_twinAppL{0%{opacity:0}100%{opacity:1}}
+  @keyframes eur_twinAppR{0%{opacity:0}100%{opacity:1}}
+  @keyframes eur_twinSwayL{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(4deg)}}
+  @keyframes eur_twinSwayR{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-4deg)}}
+  /* 変身フラッシュ（全身が光に包まれる） */
+  .eur_transflash{opacity:0;transform-origin:120px 130px}.m-lcd .win .transflash{animation:eur_transflash .6s ease-out 1}
+  @keyframes eur_transflash{0%{opacity:0;transform:scale(.3)}25%{opacity:1;transform:scale(1.3)}60%{opacity:.7;transform:scale(1.1)}100%{opacity:0;transform:scale(1.4)}}
+  /* 雷（ステッキから落ちる） */
+  .bolt{opacity:0}.m-lcd .win .bolt{animation:eur_boltflash .5s steps(1) .6s infinite}
+  @keyframes eur_boltflash{0%{opacity:0}10%{opacity:1}20%{opacity:.3}30%{opacity:1}45%{opacity:0}100%{opacity:0}}
+  @keyframes eur_winE{0%,100%{transform:translateX(-50%) scale(1.3) translateY(-22px) rotate(-2deg)}
+    50%{transform:translateX(-50%) scale(1.36) translateY(-28px) rotate(2deg)}}
+
+  /* 髪の揺れ */
+  .hair-l{transform-origin:96px 78px}.m-lcd .hair-r{transform-origin:144px 78px}.m-lcd .idle .hair-l{animation:eur_sway 3.5s ease-in-out infinite}.m-lcd .idle .hair-r{animation:eur_sway 3.5s ease-in-out infinite reverse}
+  @keyframes eur_sway{0%,100%{transform:rotate(0)}50%{transform:rotate(3deg)}}
+  .reach .hair-l,.win .hair-l{animation:eur_swayfast .3s ease-in-out infinite}.m-lcd .reach .hair-r,
+.m-lcd .win .hair-r{animation:eur_swayfast .3s ease-in-out infinite reverse}.m-lcd /* 後ろの黒髪: idle/reachで揺れ、winでは確実にfadeout（swayfastで上書きされない） */
+  .backhair:nth-of-type(odd){transform-origin:94px 80px}.m-lcd .idle .backhair{animation:eur_sway 3.6s ease-in-out infinite}.m-lcd .reach .backhair{animation:eur_swayfast .3s ease-in-out infinite}.m-lcd .win .backhair{animation:eur_fadeout .4s ease-out forwards !important}
+  @keyframes eur_swayfast{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+  /* 瞳のきらめき */
+  .eyes{animation:eur_blink 4s ease-in-out infinite}
+  @keyframes eur_blink{0%,94%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
+  .sparkle-eye{animation:eur_eyeSpark 2.5s ease-in-out infinite}
+  @keyframes eur_eyeSpark{0%,100%{opacity:.7}50%{opacity:1}}
+  .win .sparkle-eye{fill:#fff5c0 !important}.m-lcd /* 頭のリボン */
+  .ribbon{transform-origin:120px 60px}.m-lcd .idle .ribbon{animation:eur_ribbonwobble 3s ease-in-out infinite}
+  @keyframes eur_ribbonwobble{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+  .win .ribbon{animation:eur_ribbonwobble .4s ease-in-out infinite}.m-lcd /* ステッキ: 待機は下、リーチ/大当たりで掲げる */
+  .wand{transform-origin:170px 150px;transition:transform .3s cubic-bezier(.3,1.5,.5,1)}.m-lcd .reach .wand,
+.m-lcd .win .wand{transform:rotate(-42deg) translate(6px,-18px)}.m-lcd /* ステッキ先の星 */
+  .wandstar{animation:eur_starpulse 2s ease-in-out infinite;transform-origin:176px 92px}
+  @keyframes eur_starpulse{0%,100%{opacity:.8;transform:scale(1)}50%{opacity:1;transform:scale(1.15)}}
+  .reach .wandstar{animation:eur_starpulse .4s ease-in-out infinite}.m-lcd .win .wandstar{animation:eur_starblast .25s ease-in-out infinite}
+  @keyframes eur_starblast{0%,100%{opacity:1;transform:scale(1.2)}50%{opacity:1;transform:scale(1.7)}}
+  /* 胸のブローチ */
+  .brooch{animation:eur_broochglow 2.4s ease-in-out infinite;transform-origin:120px 172px}
+  @keyframes eur_broochglow{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}
+  .reach .brooch{animation:eur_broochglow .5s ease-in-out infinite}.m-lcd .win .brooch{animation:eur_broochblast .3s ease-in-out infinite}
+  @keyframes eur_broochblast{0%,100%{opacity:1;transform:scale(1.15)}50%{opacity:1;transform:scale(1.4)}}
+  /* オーラ */
+  .aura{opacity:0;transform-origin:120px 150px}.m-lcd .reach .aura{opacity:.45;animation:eur_auraR .3s ease-in-out infinite}
+  @keyframes eur_auraR{0%,100%{opacity:.3;transform:scale(.9)}50%{opacity:.5;transform:scale(1.05)}}
+  .win .aura{opacity:1;animation:eur_auraW .35s ease-in-out infinite}
+  @keyframes eur_auraW{0%,100%{opacity:.6;transform:scale(1.1)}50%{opacity:.95;transform:scale(1.45)}}
+
+  /* 画面演出 */
+  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;
+    background:radial-gradient(circle at 50% 45%,rgba(255,120,220,.25),transparent 60%)}.m-lcd .reach-screen .reachtint{opacity:1;animation:eur_rt .3s ease-in-out infinite}
+  @keyframes eur_rt{0%,100%{opacity:.5}50%{opacity:.9}}
+  .eur_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}.m-lcd .win-screen .flash{animation:eur_flash .28s steps(2) infinite}
+  @keyframes eur_flash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
+  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;
+    background:repeating-conic-gradient(from 0deg,rgba(255,200,240,.5) 0deg 5deg,transparent 5deg 12deg)}.m-lcd .win-screen .rays{opacity:.55;animation:eur_rayspin 2s linear infinite}
+  @keyframes eur_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .bigwin{position:absolute;left:50%;top:20px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;
+    font-weight:900;font-size:38px;letter-spacing:.06em;color:#fff2fb;
+    text-shadow:0 0 12px #ffb3ec,0 0 24px #c078ff,0 3px 6px #000;-webkit-text-stroke:2px #a050c0}.m-lcd .win-screen .bigwin{animation:eur_bigwinpop .5s cubic-bezier(.2,1.6,.4,1) forwards,eur_bigwinshake .3s ease-in-out .5s infinite}
+  @keyframes eur_bigwinpop{0%{transform:translateX(-50%) scale(0) rotate(-12deg)}70%{transform:translateX(-50%) scale(1.25) rotate(4deg)}100%{transform:translateX(-50%) scale(1.1) rotate(0)}}
+  @keyframes eur_bigwinshake{0%,100%{transform:translateX(-50%) scale(1.1) rotate(-2deg)}50%{transform:translateX(-50%) scale(1.15) rotate(2deg)}}
+  .confetti{position:absolute;top:-12px;z-index:8;pointer-events:none;opacity:0;font-size:14px}.m-lcd .win-screen .confetti{animation:eur_confall linear infinite}
+  @keyframes eur_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(720deg);opacity:0}}
+  .vignette{position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.6),inset 0 -20px 30px -10px rgba(0,0,0,.6)}
+
+  
+  
+  
+  
+
+
+/* --- GBP_JPY --- */
+.m-lcd /* 立ち上る炎の背景 */
+  .flames{position:absolute;inset:0;opacity:.5;
+    background:
+      radial-gradient(ellipse 40px 80px at 20% 110%,rgba(255,140,40,.5),transparent),
+      radial-gradient(ellipse 50px 90px at 50% 115%,rgba(255,80,20,.5),transparent),
+      radial-gradient(ellipse 40px 80px at 80% 110%,rgba(255,140,40,.5),transparent);
+    animation:gbp_flamerise 1.4s ease-in-out infinite}
+  @keyframes gbp_flamerise{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-6px) scaleY(1.1)}}
+  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;
+    font-size:10px;color:rgba(255,140,100,.5);white-space:nowrap;letter-spacing:2px;animation:gbp_tick 9s linear infinite}
+  @keyframes gbp_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
+  /* 稲妻リング */
+  .bolt{position:absolute;left:50%;top:46%;width:210px;height:210px;transform:translate(-50%,-50%);
+    border-radius:50%;border:2px solid rgba(255,106,74,.2);opacity:.6}.m-lcd .bolt::before{content:"";position:absolute;inset:24px;border-radius:50%;border:1px dashed rgba(255,180,60,.25)}.m-lcd .idle-screen .bolt{animation:gbp_spin 20s linear infinite}.m-lcd .reach-screen .bolt{animation:gbp_spin 6s linear infinite}.m-lcd .win-screen .bolt{animation:gbp_spin 2.2s linear infinite}
+  @keyframes gbp_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+
+  .mchara.gbp{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}.m-lcd .mchara.gbp.idle{animation:gbp_breathe 3s ease-in-out infinite}
+  @keyframes gbp_breathe{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-4px)}}
+  /* リーチ: ぐっと前に出て拳を構える */
+  .mchara.gbp.reach{animation:gbp_braceG .16s ease-in-out infinite}
+  @keyframes gbp_braceG{0%,100%{transform:translateX(-50%) scale(1.15) translateY(-12px) rotate(-1deg)}
+    50%{transform:translateX(-50%) scale(1.15) translateY(-15px) rotate(1deg)}}
+  /* 大当たり: 咆哮しながら拳を突き上げ */
+  .mchara.gbp.win{animation:gbp_winG .4s ease-in-out infinite}
+  @keyframes gbp_winG{0%,100%{transform:translateX(-50%) scale(1.3) translateY(-20px) rotate(-2deg)}
+    50%{transform:translateX(-50%) scale(1.36) translateY(-26px) rotate(2deg)}}
+
+  /* 帽子（学生帽/キャップ）微動 */
+  .cap{transform-origin:120px 74px}.m-lcd .idle .cap{animation:gbp_capnod 4s ease-in-out infinite}
+  @keyframes gbp_capnod{0%,100%{transform:rotate(0)}50%{transform:rotate(-2deg)}}
+  .win .cap{animation:gbp_capnod .5s ease-in-out infinite}.m-lcd /* 眼光 */
+  .eyes{animation:gbp_eyeglow 3s ease-in-out infinite}
+  @keyframes gbp_eyeglow{0%,100%{opacity:.9}50%{opacity:1}}
+  .reach .eyes{animation:gbp_eyefire .18s steps(2) infinite}
+  @keyframes gbp_eyefire{0%{opacity:1}50%{opacity:.6}}
+  /* 右腕（拳・メリケンサック）: 待機は下、リーチで振り上げ、大当たりで大きくパンチ連打 */
+  .fist-arm{transform-origin:158px 150px;transition:transform .28s cubic-bezier(.3,1.6,.5,1)}.m-lcd .reach .fist-arm{transform:rotate(-30deg) translate(0,-14px)}.m-lcd .win .fist-arm{animation:gbp_punch .3s ease-in-out infinite}
+  @keyframes gbp_punch{
+    0%{transform:rotate(-40deg) translate(14px,-24px) scale(.9)}
+    45%{transform:rotate(6deg) translate(-30px,10px) scale(1.25)}
+    60%{transform:rotate(6deg) translate(-30px,10px) scale(1.25)}
+    100%{transform:rotate(-40deg) translate(14px,-24px) scale(.9)}}
+  /* 左腕（拳銃）: 大当たりで発砲の反動 */
+  .gun-arm{transform-origin:60px 168px;transition:transform .28s}.m-lcd .reach .gun-arm{transform:translate(0,-6px) rotate(-4deg)}.m-lcd .win .gun-arm{animation:gbp_shoot .35s ease-in-out infinite}
+  @keyframes gbp_shoot{0%,100%{transform:translate(0,-8px) rotate(-6deg)}
+    20%{transform:translate(6px,-10px) rotate(-12deg)}}
+  /* マズルフラッシュ: 通常は消灯、大当たり発砲の瞬間だけ光る */
+  .muzzle{opacity:0;transform-origin:30px 194px}.m-lcd .win .muzzle{animation:gbp_muzzleflash .35s steps(1) infinite}
+  @keyframes gbp_muzzleflash{0%{opacity:1;transform:scale(1.2)}18%{opacity:1;transform:scale(1.4)}22%{opacity:0}100%{opacity:0}}
+  .pistol{transform-origin:56px 196px}.m-lcd /* パンチの衝撃マーク: パンチが伸びきる瞬間だけ光る */
+  .punch-hit{opacity:0;transform-origin:152px 178px}.m-lcd .win .punch-hit{animation:gbp_punchhit .3s steps(1) infinite}
+  @keyframes gbp_punchhit{0%{opacity:0;transform:scale(.5)}
+    45%{opacity:1;transform:scale(1.2)}55%{opacity:.9;transform:scale(1)}60%{opacity:0}100%{opacity:0}}
+  /* 銃弾: 大当たり時だけ銃口から左へ連射（SVG内・銃と一緒に動く） */
+  .sb{opacity:0}.m-lcd .win .sb{animation:gbp_sbfly .45s linear infinite}
+  @keyframes gbp_sbfly{0%{opacity:0;transform:translateX(0)}
+    8%{opacity:1}100%{opacity:0;transform:translateX(-70px)}}
+  .win .sb1{animation-delay:0s}.m-lcd .win .sb2{animation-delay:.09s}.m-lcd .win .sb3{animation-delay:.18s}.m-lcd .win .sb4{animation-delay:.27s}.m-lcd .win .sb5{animation-delay:.36s}.m-lcd /* メリケンサックの光 */
+  .knuckle{animation:gbp_knuckleglow 2.5s ease-in-out infinite}
+  @keyframes gbp_knuckleglow{0%,100%{opacity:.85}50%{opacity:1}}
+  .reach .knuckle,.win .knuckle{animation:gbp_knuckleflash .2s ease-in-out infinite}
+  @keyframes gbp_knuckleflash{0%,100%{opacity:.8}50%{opacity:1}}
+  /* 胸筋の炎エンブレム */
+  .emblem{animation:gbp_emblempulse 2.4s ease-in-out infinite;transform-origin:120px 176px}
+  @keyframes gbp_emblempulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
+  .win .emblem{animation:gbp_emblemblast .3s ease-in-out infinite}
+  @keyframes gbp_emblemblast{0%,100%{opacity:1;transform:scale(1.15)}50%{opacity:1;transform:scale(1.4)}}
+  /* 肩・僧帽筋の力み */
+  .traps{transform-origin:120px 150px;transition:transform .28s}.m-lcd .reach .traps,
+.m-lcd .win .traps{transform:scale(1.06)}.m-lcd /* オーラ（炎） */
+  .aura{opacity:0;transform-origin:120px 150px}.m-lcd .reach .aura{opacity:.5;animation:gbp_auraR .25s ease-in-out infinite}
+  @keyframes gbp_auraR{0%,100%{opacity:.35;transform:scale(.92)}50%{opacity:.55;transform:scale(1.06)}}
+  .win .aura{opacity:1;animation:gbp_auraW .3s ease-in-out infinite}
+  @keyframes gbp_auraW{0%,100%{opacity:.6;transform:scale(1.1)}50%{opacity:.95;transform:scale(1.5)}}
+
+  /* 画面演出 */
+  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;
+    background:radial-gradient(circle at 50% 45%,rgba(255,80,40,.28),transparent 60%)}.m-lcd .reach-screen .reachtint{opacity:1;animation:gbp_rt .25s ease-in-out infinite}
+  @keyframes gbp_rt{0%,100%{opacity:.5}50%{opacity:.9}}
+  .gbp_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}.m-lcd .win-screen .flash{animation:gbp_flash .26s steps(2) infinite}
+  @keyframes gbp_flash{0%{opacity:.5}50%{opacity:0}100%{opacity:.3}}
+  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;
+    background:repeating-conic-gradient(from 0deg,rgba(255,180,80,.55) 0deg 5deg,transparent 5deg 12deg)}.m-lcd .win-screen .rays{opacity:.6;animation:gbp_rayspin 1.8s linear infinite}
+  @keyframes gbp_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .bigwin{position:absolute;left:50%;top:18px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;
+    font-weight:900;font-size:40px;letter-spacing:.04em;color:#fff0d0;
+    text-shadow:0 0 12px #ff6a2a,0 0 26px #ff2a0a,0 3px 6px #000;-webkit-text-stroke:2px #a02000}.m-lcd .win-screen .bigwin{animation:gbp_bigwinpop .5s cubic-bezier(.2,1.6,.4,1) forwards,gbp_bigwinshake .26s ease-in-out .5s infinite}
+  @keyframes gbp_bigwinpop{0%{transform:translateX(-50%) scale(0) rotate(-14deg)}70%{transform:translateX(-50%) scale(1.3) rotate(5deg)}100%{transform:translateX(-50%) scale(1.12) rotate(0)}}
+  @keyframes gbp_bigwinshake{0%,100%{transform:translateX(-50%) scale(1.12) rotate(-3deg)}50%{transform:translateX(-50%) scale(1.18) rotate(3deg)}}
+  .confetti{position:absolute;top:-12px;width:9px;height:14px;border-radius:2px;z-index:8;pointer-events:none;opacity:0}.m-lcd .win-screen .confetti{animation:gbp_confall linear infinite}
+  @keyframes gbp_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(720deg);opacity:0}}
+  /* 発砲の銃弾（左の銃口から左へ飛ぶ） */
+  .bullets{position:absolute;inset:0;pointer-events:none;z-index:8;opacity:0}.m-lcd .win-screen .bullets{opacity:1}.m-lcd .bullet{position:absolute;width:14px;height:4px;border-radius:2px;
+    background:linear-gradient(90deg,#fff8d0,#ff8a2a);box-shadow:0 0 6px #ffb050;opacity:0}.m-lcd .win-screen .bullet{animation:gbp_bulletfly .5s linear infinite}
+  @keyframes gbp_bulletfly{0%{opacity:0;transform:translateX(0) scaleX(.4)}
+    10%{opacity:1;transform:translateX(-10px) scaleX(1)}
+    100%{opacity:0;transform:translateX(-120px) scaleX(1.4)}}
+  .vignette{position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.7),inset 0 -20px 30px -10px rgba(0,0,0,.7)}
+
+  
+  
+  
+  
+
+
+/* --- AUD_JPY --- */
+.m-lcd .raysbg{position:absolute;inset:0;opacity:.5;background:linear-gradient(105deg,transparent 30%,rgba(220,245,255,.35) 42%,transparent 48%,transparent 60%,rgba(200,240,255,.3) 70%,transparent 78%);animation:aud_raysway 6s ease-in-out infinite}
+  @keyframes aud_raysway{0%,100%{transform:translateX(-10px)}50%{transform:translateX(10px)}}
+  .bubbles{position:absolute;inset:0;overflow:hidden;pointer-events:none}.m-lcd .bubble{position:absolute;bottom:-10px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.9),rgba(200,240,255,.25) 70%);animation:aud_bubup linear infinite}
+  @keyframes aud_bubup{0%{transform:translateY(0);opacity:0}12%{opacity:.8}100%{transform:translateY(-240px) translateX(12px);opacity:0}}
+  .ticker{position:absolute;left:0;right:0;top:7px;font-family:'Courier New',monospace;font-size:10px;color:rgba(200,240,255,.55);white-space:nowrap;letter-spacing:2px;animation:aud_tick 9s linear infinite}
+  @keyframes aud_tick{from{transform:translateX(30px)}to{transform:translateX(-280px)}}
+  .halo{position:absolute;left:50%;top:46%;width:210px;height:210px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(150,220,255,.22);opacity:.6}.m-lcd .halo::before{content:"";position:absolute;inset:26px;border-radius:50%;border:1px dashed rgba(255,255,255,.22)}.m-lcd .idle-screen .halo{animation:aud_spin 22s linear infinite}.m-lcd .reach-screen .halo{animation:aud_spin 7s linear infinite}.m-lcd .win-screen .halo{animation:aud_spin 2.6s linear infinite}
+  @keyframes aud_spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .mchara.aud{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:240px;height:220px;transform-origin:50% 100%}.m-lcd .mchara.aud.idle{animation:aud_floatm 4s ease-in-out infinite}
+  @keyframes aud_floatm{0%,100%{transform:translateX(-50%) translateY(0) rotate(0)}50%{transform:translateX(-50%) translateY(-7px) rotate(.8deg)}}
+  .mchara.aud.reach{animation:aud_braceM .5s ease-in-out infinite}
+  @keyframes aud_braceM{0%,100%{transform:translateX(-50%) scale(1.12) translateY(-12px) rotate(-1.5deg)}50%{transform:translateX(-50%) scale(1.12) translateY(-16px) rotate(1.5deg)}}
+  .mchara.aud.win{animation:aud_swim 1.1s ease-in-out infinite}
+  @keyframes aud_swim{0%{transform:translateX(-50%) scale(1.2) translateY(-16px) rotate(-4deg)}50%{transform:translateX(-56%) scale(1.24) translateY(-26px) rotate(4deg)}100%{transform:translateX(-50%) scale(1.2) translateY(-16px) rotate(-4deg)}}
+  .hair-l{transform-origin:92px 76px}.m-lcd .hair-r{transform-origin:148px 76px}.m-lcd .idle .hair-l{animation:aud_swayh 4s ease-in-out infinite}.m-lcd .idle .hair-r{animation:aud_swayh 4s ease-in-out infinite reverse}
+  @keyframes aud_swayh{0%,100%{transform:rotate(0)}50%{transform:rotate(4deg)}}
+  .win .hair-l{animation:aud_swayh 1.1s ease-in-out infinite}.m-lcd .win .hair-r{animation:aud_swayh 1.1s ease-in-out infinite reverse}.m-lcd .eyes{animation:aud_blink 4.5s ease-in-out infinite}
+  @keyframes aud_blink{0%,95%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
+  .eyeshine{animation:aud_eshine 3s ease-in-out infinite}
+  @keyframes aud_eshine{0%,100%{opacity:.7}50%{opacity:1}}
+  .tail{transform-origin:150px 172px}.m-lcd .idle .tail{animation:aud_tailidle 3.4s ease-in-out infinite}
+  @keyframes aud_tailidle{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+  .reach .tail{animation:aud_tailidle 1.2s ease-in-out infinite}.m-lcd .win .tail{animation:aud_tailswish .5s ease-in-out infinite}
+  @keyframes aud_tailswish{0%{transform:rotate(-18deg) scale(1)}50%{transform:rotate(20deg) scale(1.08)}100%{transform:rotate(-18deg) scale(1)}}
+  .tailfin{animation:aud_tailglow 3s ease-in-out infinite}
+  @keyframes aud_tailglow{0%,100%{opacity:.85}50%{opacity:1}}
+  .flower{transform-origin:96px 70px;animation:aud_flglow 3s ease-in-out infinite}
+  @keyframes aud_flglow{0%,100%{opacity:.9}50%{opacity:1}}
+  .shell{animation:aud_shellglow 2.6s ease-in-out infinite;transform-origin:120px 176px}
+  @keyframes aud_shellglow{0%,100%{opacity:.9;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}
+  .win .shell{animation:aud_shellglow .4s ease-in-out infinite}.m-lcd .aura{opacity:0;transform-origin:120px 150px}.m-lcd .reach .aura{opacity:.45;animation:aud_auraR .35s ease-in-out infinite}
+  @keyframes aud_auraR{0%,100%{opacity:.3;transform:scale(.9)}50%{opacity:.5;transform:scale(1.05)}}
+  .win .aura{opacity:1;animation:aud_auraW .4s ease-in-out infinite}
+  @keyframes aud_auraW{0%,100%{opacity:.55;transform:scale(1.1)}50%{opacity:.9;transform:scale(1.45)}}
+  .reachtint{position:absolute;inset:0;opacity:0;pointer-events:none;background:radial-gradient(circle at 50% 45%,rgba(120,220,255,.28),transparent 60%)}.m-lcd .reach-screen .reachtint{opacity:1;animation:aud_rt .35s ease-in-out infinite}
+  @keyframes aud_rt{0%,100%{opacity:.5}50%{opacity:.9}}
+  .aud_flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;mix-blend-mode:screen}.m-lcd .win-screen .flash{animation:aud_flash .3s steps(2) infinite}
+  @keyframes aud_flash{0%{opacity:.4}50%{opacity:0}100%{opacity:.25}}
+  .rays{position:absolute;left:50%;top:48%;width:500px;height:500px;transform:translate(-50%,-50%);opacity:0;pointer-events:none;background:repeating-conic-gradient(from 0deg,rgba(200,245,255,.5) 0deg 5deg,transparent 5deg 12deg)}.m-lcd .win-screen .rays{opacity:.5;animation:aud_rayspin 2.2s linear infinite}
+  @keyframes aud_rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .bigwin{position:absolute;left:50%;top:20px;transform:translateX(-50%) scale(0);z-index:9;pointer-events:none;font-weight:900;font-size:38px;letter-spacing:.06em;color:#eafaff;text-shadow:0 0 12px #7fe0ea,0 0 24px #40a0e0,0 3px 6px #000;-webkit-text-stroke:2px #3080b0}.m-lcd .win-screen .bigwin{animation:aud_bwp .5s cubic-bezier(.2,1.6,.4,1) forwards,aud_bws .35s ease-in-out .5s infinite}
+  @keyframes aud_bwp{0%{transform:translateX(-50%) scale(0) rotate(-12deg)}70%{transform:translateX(-50%) scale(1.25) rotate(4deg)}100%{transform:translateX(-50%) scale(1.1) rotate(0)}}
+  @keyframes aud_bws{0%,100%{transform:translateX(-50%) scale(1.1) rotate(-2deg)}50%{transform:translateX(-50%) scale(1.15) rotate(2deg)}}
+  .confetti{position:absolute;top:-12px;z-index:8;pointer-events:none;opacity:0;font-size:13px}.m-lcd .win-screen .confetti{animation:aud_confall linear infinite}
+  @keyframes aud_confall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(260px) rotate(540deg);opacity:0}}
+  .vignette{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 20px 30px -10px rgba(0,0,0,.5),inset 0 -20px 30px -10px rgba(0,0,0,.5)}
+  
+  
+  
+  
+
+
+/* EUR: 変身フラッシュは通常時非表示（ピンクのモヤ対策） */
+.m-lcd .mchara.eur .transflash{opacity:0 !important}
+.m-lcd .mchara.eur.win .transflash{animation:eur_transflash .6s ease-out 1}
+</style>
+</head>
+<body>
+  <div class="machine">
     <div class="m-frame">
       <div class="m-board">
         <div class="m-rim"></div>
-        <canvas class="m-nails" id="pm_nails"></canvas>
-        <div class="m-rail l"></div><div class="m-rail r" id="pm_railR"></div>
-        <canvas class="m-balls" id="pm_mballs"></canvas>
+        <canvas class="m-nails" id="nails"></canvas>
+        <div class="m-rail l"></div><div class="m-rail r" id="railR"></div>
+        <canvas class="m-balls" id="mballs"></canvas>
         <div class="m-bukkomi"></div>
-        <div class="m-lcd"><div class="m-chara-wrap"><div class="m-chara-inner" id="pm_mCharaInner"></div></div><div class="m-reels" id="pm_mreels"></div></div>
+        <div class="m-lcd"><div class="m-chara-wrap"><div class="m-chara-inner" id="mCharaInner"></div></div><div class="m-reels" id="mreels"></div></div>
         <div class="m-windmill l"></div>
         <div class="m-windmill r"></div>
         <div class="m-chucker"></div>
         <div class="m-chucker-lbl">スタートチャッカー</div>
         <div class="m-out"></div>
-        <div class="m-shoot left" id="pm_mshoot">◀ 左打ち</div>
+        <div class="m-shoot left" id="mshoot">◀ 左打ち</div>
       </div>
       <div class="m-lower">
         <div class="m-trays">
@@ -2633,35 +2709,10 @@ if('serviceWorker'in navigator){
       </div>
     </div>
   </div>
-
-
-
-
-</div>
-  </div>
-</div>
 <script>
-function openPachiModal(sym){
-  var m=document.getElementById('pachiModal'); if(!m) return;
-  m.classList.add('open'); document.body.style.overflow='hidden';
-  window.__pachiSym=sym;
-  try{ initPachiMachine(); }catch(e){}
-  try{ if(window.pachiSetSymbol) window.pachiSetSymbol(sym); }catch(e){}
-}
-function closePachiModal(){
-  var m=document.getElementById('pachiModal'); if(!m) return;
-  m.classList.remove('open'); document.body.style.overflow='';
-}
-</script>
-<script>
-window.__pachiInited=false;
-function initPachiMachine(){
- if(window.__pachiInited) return; window.__pachiInited=true;
-try{
-
 (function(){
   const board=document.querySelector('.m-board');
-  const cv=document.getElementById('pm_nails'), ctx=cv.getContext('2d');
+  const cv=document.getElementById('nails'), ctx=cv.getContext('2d');
   function layout(){
     const w=board.clientWidth, h=board.clientHeight;
     cv.width=w; cv.height=h;
@@ -2717,14 +2768,12 @@ try{
   layout();
   window.addEventListener('resize',layout);
 })();
-
-}catch(e){console.warn("pachi init",e);}
-try{
-
+<\/script>
+<script>
 (function(){
   const board=document.querySelector('.m-board');
-  const cv=document.getElementById('pm_mballs'), ctx=cv.getContext('2d');
-  const shoot=document.getElementById('pm_mshoot');
+  const cv=document.getElementById('mballs'), ctx=cv.getContext('2d');
+  const shoot=document.getElementById('mshoot');
   let W=0,H=0, balls=[], rightMode=false, chanceCount=0;
   function fit(){ W=cv.width=board.clientWidth; H=cv.height=board.clientHeight; }
   fit(); window.addEventListener('resize',fit);
@@ -2810,18 +2859,16 @@ try{
     if(demoPct>=80) setRight(true);
   }
   window.setRightMode=function(on){ setRight(on); };
-  function setRight(on){ rightMode=on; shoot.textContent=on?'右打ち ▶':'◀ 左打ち'; shoot.className='m-shoot '+(on?'right':'left'); const rl=document.querySelector('.m-rail.l'), rr=document.getElementById('pm_railR'); if(rl&&rr){ rl.style.display=on?'none':'block'; rr.style.display=on?'block':'none'; } }
+  function setRight(on){ rightMode=on; shoot.textContent=on?'右打ち ▶':'◀ 左打ち'; shoot.className='m-shoot '+(on?'right':'left'); const rl=document.querySelector('.m-rail.l'), rr=document.getElementById('railR'); if(rl&&rr){ rl.style.display=on?'none':'block'; rr.style.display=on?'block':'none'; } }
   setInterval(shootBall, 850);
   for(let i=0;i<3;i++) setTimeout(shootBall,i*300);
   step();
 })();
-
-}catch(e){console.warn("pachi init",e);}
-try{
-
+<\/script>
+<script>
 (function(){
   const CHARA={
-  "USD_JPY": `<svg class="mchara usd idle" preserveAspectRatio="xMidYMax meet" id="usd_robo" viewBox="0 0 240 220">
+  "USD_JPY": \`<svg class="mchara usd idle" preserveAspectRatio="xMidYMax meet" id="usd_robo" viewBox="0 0 240 220">
       <defs>
         <linearGradient id="usd_hull" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="#4a7cb0"/><stop offset=".5" stop-color="#1e4470"/><stop offset="1" stop-color="#0a1a30"/>
@@ -2913,8 +2960,8 @@ try{
         <path d="M108 168 L132 168 L150 220 L90 220 Z" fill="url(#usd_core)" opacity=".85"/>
         <path d="M114 168 L126 168 L134 220 L106 220 Z" fill="#e8fbff"/>
       </g>
-    </svg>`,
-  "EUR_JPY": `<svg class="mchara eur idle" preserveAspectRatio="xMidYMax meet" id="eur_chara" viewBox="0 0 240 220">
+    </svg>\`,
+  "EUR_JPY": \`<svg class="mchara eur idle" preserveAspectRatio="xMidYMax meet" id="eur_chara" viewBox="0 0 240 220">
       <defs>
         <linearGradient id="eur_hairg" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="#4a4458"/><stop offset=".4" stop-color="#2a2438"/><stop offset="1" stop-color="#15121f"/>
@@ -3062,8 +3109,8 @@ try{
       </g>
       <!-- 変身フラッシュ -->
       <circle class="transflash" cx="120" cy="130" r="90" fill="url(#eur_transg)"/>
-    </svg>`,
-  "GBP_JPY": `<svg class="mchara gbp idle" preserveAspectRatio="xMidYMax meet" id="gbp_chara" viewBox="0 0 240 220">
+    </svg>\`,
+  "GBP_JPY": \`<svg class="mchara gbp idle" preserveAspectRatio="xMidYMax meet" id="gbp_chara" viewBox="0 0 240 220">
       <defs>
         <linearGradient id="gbp_skin" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="#ffe0c0"/><stop offset="1" stop-color="#e8b088"/>
@@ -3233,8 +3280,8 @@ try{
         <!-- ⑦ クラウン頭頂のハイライト -->
         <path d="M100 52 Q120 48 140 52" fill="none" stroke="#4a3838" stroke-width="2" opacity=".5" stroke-linecap="round"/>
       </g>
-    </svg>`,
-  "AUD_JPY": `<svg class="mchara aud idle" preserveAspectRatio="xMidYMax meet" id="aud_chara" viewBox="0 0 240 220">
+    </svg>\`,
+  "AUD_JPY": \`<svg class="mchara aud idle" preserveAspectRatio="xMidYMax meet" id="aud_chara" viewBox="0 0 240 220">
       <defs>
         <linearGradient id="aud_hairg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2d0"/><stop offset=".5" stop-color="#f0dca0"/><stop offset="1" stop-color="#d8b870"/></linearGradient>
         <linearGradient id="aud_hairsh" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff8e0" stop-opacity="0"/><stop offset=".5" stop-color="#fffef0" stop-opacity=".8"/><stop offset="1" stop-color="#fff8e0" stop-opacity="0"/></linearGradient>
@@ -3295,7 +3342,7 @@ try{
       <g class="flower">
         <circle cx="92" cy="68" r="4" fill="url(#aud_pearl)"/><circle cx="86" cy="66" r="3.5" fill="url(#aud_pearl)"/><circle cx="96" cy="64" r="3.5" fill="url(#aud_pearl)"/><circle cx="88" cy="72" r="3.5" fill="url(#aud_pearl)"/><circle cx="91" cy="68" r="2" fill="#ffe0a0"/>
       </g>
-    </svg>`,
+    </svg>\`,
   };
   const THEME={
     USD_JPY:{name:'蒼穹のドルエース', c1:'#3aa0ff', c2:'#0b3a6b'},
@@ -3305,7 +3352,7 @@ try{
   };
   const PREFIX={USD_JPY:'usd',EUR_JPY:'eur',GBP_JPY:'gbp',AUD_JPY:'aud'};
   window.pachiSetSymbol=function(sym){
-    const inner=document.getElementById('pm_mCharaInner'); if(!inner) return;
+    const inner=document.getElementById('mCharaInner'); if(!inner) return;
     inner.innerHTML=CHARA[sym]||'';
     window.__curPrefix=PREFIX[sym]||'aud';
     // テーマ色とマーキー
@@ -3318,10 +3365,8 @@ try{
   // 初期はAUD
   window.pachiSetSymbol('AUD_JPY');
 })();
-
-}catch(e){console.warn("pachi init",e);}
-try{
-
+<\/script>
+<script>
 (function(){
   window.pachiCharaWin=function(){
     const ch=document.querySelector('.m-lcd .mchara');
@@ -3339,14 +3384,12 @@ try{
     setTimeout(()=>{ ch.setAttribute('class','mchara '+pf+' idle'); lcd.classList.remove('char-win'); }, 3000);
   };
 })();
-
-}catch(e){console.warn("pachi init",e);}
-try{
-
+<\/script>
+<script>
 (function(){
   const SYMS=['7','3','7','8','7','5'];
   const lcd=document.querySelector('.m-lcd');
-  const reels=document.getElementById('pm_mreels');
+  const reels=document.getElementById('mreels');
   if(!reels) return;
   function build(){
     reels.innerHTML='';
@@ -3420,16 +3463,46 @@ try{
     }, win?2600:1400);
   }
 })();
-
-}catch(e){console.warn("pachi init",e);}
-try{
-
-document.getElementById('pm_toggleMode') && document.getElementById('pm_toggleMode').addEventListener('click',function(){
+<\/script>
+<script>
+document.getElementById('toggleMode') && document.getElementById('toggleMode').addEventListener('click',function(){
   window.__rm = !window.__rm; if(window.setRightMode) window.setRightMode(window.__rm);
 });
-
-}catch(e){console.warn("pachi init",e);}
-}
+<\/script>
+<script>
+(function(){
+  try{
+    var q=new URLSearchParams(location.search);
+    var sym=q.get('sym')||'AUD_JPY';
+    // pachiSetSymbolが定義され次第呼ぶ
+    var tries=0;
+    (function apply(){
+      if(window.pachiSetSymbol){ window.pachiSetSymbol(sym); }
+      else if(tries++<50){ setTimeout(apply,50); }
+    })();
+  }catch(e){}
+})();
+<\/script>
+</body>
+</html>
+`;
+window.buildPachiEmbed=function(card, sym){
+  if(!card) return;
+  if(card.querySelector('.pachi-embed')) return;
+  var wrap=document.createElement('div'); wrap.className='pachi-embed-wrap';
+  var f=document.createElement('iframe'); f.className='pachi-embed';
+  var w=card.clientWidth||320; f.style.height=Math.round(w*1.35)+'px';
+  f.setAttribute('scrolling','no');
+  f.srcdoc=window.__MACHINE_HTML;
+  f.addEventListener('load',function(){
+    try{ f.contentWindow.pachiSetSymbol && f.contentWindow.pachiSetSymbol(sym); }catch(e){}
+  });
+  wrap.appendChild(f);
+  card.appendChild(wrap);
+};
+window.removePachiEmbed=function(card){
+  if(!card) return; var e=card.querySelector('.pachi-embed-wrap'); if(e) e.remove();
+};
 </script>
 </body>
 </html>
