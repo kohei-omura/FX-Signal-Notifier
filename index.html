@@ -381,6 +381,10 @@
 /* パチンコ台iframe（カード内・完全分離） */
 .pachi-embed{width:100%;border:none;border-radius:12px;display:block;background:#0a0a12;margin:8px 0}
 .pachi-embed-wrap{position:relative;width:100%}
+
+/* パチンコ台iframe表示中のカードは、元のカード内リール演出を隠す（二重リール解消） */
+.card:has(.pachi-embed) .pachi-lcd{display:none}
+.card:has(.pachi-embed) .pachi-reel{display:none}
 </style>
 </head>
 <body>
@@ -3499,9 +3503,15 @@ window.buildPachiEmbed=function(card, sym){
   });
   wrap.appendChild(f);
   card.appendChild(wrap);
+  card.classList.add('has-pachi-embed');
+  var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='none';
+  var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display='none';
 };
 window.removePachiEmbed=function(card){
   if(!card) return; var e=card.querySelector('.pachi-embed-wrap'); if(e) e.remove();
+  card.classList.remove('has-pachi-embed');
+  var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='';
+  var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display='';
 };
 </script>
 </body>
