@@ -377,6 +377,17 @@
   display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
 .pachi-chara-wrap svg{width:auto;height:150px;margin-bottom:-8px;opacity:.96}
 
+
+/* ══ パチンコ台モーダル（アプリに干渉しない独立オーバーレイ） ══ */
+.pachi-open-btn{width:100%;margin:6px 0;padding:9px;border-radius:8px;border:1px solid #c8a020;
+  background:linear-gradient(180deg,#3a2e08,#2a2004);color:#ffd24a;font-weight:800;font-size:13px;cursor:pointer}
+.pachi-modal{position:fixed;inset:0;z-index:9999;display:none;background:rgba(0,0,0,.85);
+  overflow-y:auto;-webkit-overflow-scrolling:touch}
+.pachi-modal.open{display:block}
+.pachi-modal-inner{min-height:100%;display:flex;flex-direction:column;align-items:center;padding:16px}
+.pachi-modal-close{position:sticky;top:0;align-self:flex-end;z-index:2;margin-bottom:8px;
+  width:44px;height:44px;border-radius:50%;border:1px solid #555;background:#1a1a22;color:#fff;
+  font-size:20px;cursor:pointer;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -1127,6 +1138,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
     <div class="chips"><span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span></div>
     ${lotBox}
+    <button class="pachi-open-btn" onclick="openPachiModal('${p.symbol}')">🎰 パチンコで見る</button>
     <button class="dettog" onclick="toggleDetail('${p.symbol}',this)">${_open?'▲ 詳細を閉じる':'▼ 詳細'}</button>
     <div class="pdetail">
     <div class="row" style="margin-top:8px"><span class="pnl ${scC}" style="font-size:19px">${scT}</span></div>
@@ -2184,5 +2196,22 @@ if('serviceWorker'in navigator){
 }
 </script>
 <a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
+<div class="pachi-modal" id="pachiModal">
+  <div class="pachi-modal-inner">
+    <button class="pachi-modal-close" onclick="closePachiModal()">✕</button>
+    <div id="pachiModalBody"><!-- パチンコ台はここに入る --></div>
+  </div>
+</div>
+<script>
+function openPachiModal(sym){
+  var m=document.getElementById('pachiModal'); if(!m) return;
+  m.classList.add('open'); document.body.style.overflow='hidden';
+  window.__pachiSym=sym;
+}
+function closePachiModal(){
+  var m=document.getElementById('pachiModal'); if(!m) return;
+  m.classList.remove('open'); document.body.style.overflow='';
+}
+</script>
 </body>
 </html>
