@@ -1548,7 +1548,7 @@ function buildLcd(card, sym, th, stt, holds){
   return lcd;
 }
 
-function _isEmbedCard(sym){ return sym==='GBP_JPY'; }
+function _isEmbedCard(sym){ return sym==='USD_JPY'||sym==='EUR_JPY'||sym==='GBP_JPY'||sym==='AUD_JPY'; }
 function applyPachi(){
   const root=document.body;
   if(!pachiOn()){
@@ -1572,7 +1572,7 @@ function applyPachi(){
     const sym=card.getAttribute('data-sym');
     const pair=(S.pairs||[]).find(x=>x.symbol===sym)||{symbol:sym};
     // 【テスト】GBPのみ、演出ON時にパチンコ台iframeを埋め込む（他通貨は従来通り）
-    if(sym==='GBP_JPY'){ if(window.buildPachiEmbed) window.buildPachiEmbed(card, sym); }
+    if(_isEmbedCard(sym)){ if(window.buildPachiEmbed) window.buildPachiEmbed(card, sym); }
     // 決済演出は「最近閉じたポジション」に限る（履歴全体で毎回鳴らさない）
     const recentClosed=closedBySym[sym];
     const openPos=openBySym[sym];
@@ -1601,7 +1601,7 @@ function applyPachi(){
     const mq=card.querySelector('.pachi-marquee');
     if(mq){ mq.textContent=(th.name||sym.replace('_','/')); }
     card.style.setProperty('--pc-c1',th.c1); card.style.setProperty('--pc-c2',th.c2);
-    if(_isEmbedCard(sym)){ try{ const _st=STATS?STATS[((S.mode||'swing')+sym)]:null; const _cf=(typeof confluence==='function')?confluence(pair,_st):null; window.pachiFeedIframe({pct:_cf?_cf.pct:0, price:(pair.bid!=null?pair.bid:pair.ask), side:pair.signal}); }catch(e){} }
+    if(_isEmbedCard(sym)){ try{ const _st=STATS?STATS[((S.mode||'swing')+sym)]:null; const _cf=(typeof confluence==='function')?confluence(pair,_st):null; window.pachiFeedIframe({pct:_cf?_cf.pct:0, price:(pair.bid!=null?pair.bid:pair.ask), side:pair.signal}, sym); }catch(e){} }
 
     // 液晶パネル（3列図柄＋保留4玉）。保留色は confluence の判定から決める。
     const st4=STATS?STATS[((S.mode||'swing')+sym)]:null;
@@ -2796,6 +2796,10 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
   .m-hold.c-rainbow{background:conic-gradient(#ff4a4a,#ffd24a,#3ad06a,#4aa0ff,#c078ff,#ff4a4a);
     box-shadow:0 0 14px #fff,0 0 22px #c078ff;animation:mHoldRb 1.2s linear infinite}
   @keyframes mHoldRb{to{filter:hue-rotate(360deg)}}
+
+  /* 不要な名称ラベルと旧レール（透明な棒）を非表示 */
+  .m-chucker-lbl,.m-attacker-lbl,.m-shoot{display:none !important}
+  .m-rail{display:none !important}
 </style>
 <script>
 window.__fx={pct:0, price:null, moved:0, side:null};
@@ -3700,47 +3704,48 @@ document.getElementById('toggleMode') && document.getElementById('toggleMode').a
 `;
 // オーバーレイ方式: iframeは永続ホルダー内に1度だけ生成し、カードのスロットに重ねる。
 // render()が#pairsを作り直してもホルダーは触られないので、iframeはリロードされない（チカチカしない）。
-window.__pachiHolder=null; window.__pachiSymActive=null;
-function ensurePachiHolder(){
-  if(window.__pachiHolder) return window.__pachiHolder;
-  var h=document.createElement('div'); h.id='pachiHolder';
+window.__pachiHolders={};
+function ensurePachiHolder(sym){
+  if(window.__pachiHolders[sym]) return window.__pachiHolders[sym];
+  var h=document.createElement('div'); h.className='pachiHolder'; h.setAttribute('data-sym',sym);
   h.style.cssText='position:absolute;z-index:5;display:none;pointer-events:auto';
-  var f=document.createElement('iframe'); f.className='pachi-embed'; f.id='pachiHolderFrame';
-  f.setAttribute('scrolling','no'); f.style.cssText='width:100%;height:100%;border:none;border-radius:12px;display:block;background:#0a0a12';
+  var f=document.createElement('iframe'); f.className='pachi-embed';
+  f.setAttribute('scrolling','no');
+  f.style.cssText='width:100%;height:100%;border:none;border-radius:12px;display:block;background:#0a0a12';
   f.srcdoc=window.__MACHINE_HTML;
+  f.addEventListener('load',function(){ f.__loaded=true;
+    try{ f.contentWindow.pachiSetSymbol && f.contentWindow.pachiSetSymbol(sym); }catch(e){}
+  });
   h.appendChild(f); document.body.appendChild(h);
-  window.__pachiHolder=h;
-  window.addEventListener('scroll', window.syncPachiHolder, {passive:true});
-  window.addEventListener('resize', window.syncPachiHolder, {passive:true});
-  return h;
+  window.__pachiHolders[sym]={holder:h, frame:f};
+  return window.__pachiHolders[sym];
 }
 window.syncPachiHolder=function(){
-  var h=window.__pachiHolder; if(!h||h.style.display==='none') return;
-  var slot=document.querySelector('.pachi-embed-slot[data-sym="'+window.__pachiSymActive+'"]');
-  if(!slot){ h.style.display='none'; return; }
-  var r=slot.getBoundingClientRect();
-  h.style.left=(r.left+window.scrollX)+'px';
-  h.style.top=(r.top+window.scrollY)+'px';
-  h.style.width=r.width+'px';
-  h.style.height=r.height+'px';
-}
+  Object.keys(window.__pachiHolders).forEach(function(sym){
+    var o=window.__pachiHolders[sym]; if(!o) return;
+    var slot=document.querySelector('.pachi-embed-slot[data-sym="'+sym+'"]');
+    if(!slot){ o.holder.style.display='none'; return; }
+    var r=slot.getBoundingClientRect();
+    if(r.width<2){ o.holder.style.display='none'; return; }
+    o.holder.style.display='block';
+    o.holder.style.left=(r.left+window.scrollX)+'px';
+    o.holder.style.top=(r.top+window.scrollY)+'px';
+    o.holder.style.width=r.width+'px';
+    o.holder.style.height=r.height+'px';
+  });
+};
+window.addEventListener('scroll', function(){ if(window.syncPachiHolder) window.syncPachiHolder(); }, {passive:true});
+window.addEventListener('resize', function(){ if(window.syncPachiHolder) window.syncPachiHolder(); }, {passive:true});
 window.buildPachiEmbed=function(card, sym){
   if(!card) return;
-  ensurePachiHolder();
-  // カードに高さ確保のスロットを用意（無ければ作る）
+  var o=ensurePachiHolder(sym);
   var slot=card.querySelector('.pachi-embed-slot');
   if(!slot){
     slot=document.createElement('div'); slot.className='pachi-embed-slot'; slot.setAttribute('data-sym',sym);
     var w=card.clientWidth||320; slot.style.height=Math.round(w*1.35)+'px'; slot.style.margin='8px 0';
     card.appendChild(slot);
   }
-  window.__pachiSymActive=sym;
-  var f=document.getElementById('pachiHolderFrame');
-  // 通貨切替（iframeロード済みならpachiSetSymbol）
-  var setSym=function(){ try{ f.contentWindow.pachiSetSymbol && f.contentWindow.pachiSetSymbol(sym); }catch(e){} };
-  if(f.__loaded) setSym(); else f.addEventListener('load',function(){ f.__loaded=true; setSym(); });
-  window.__pachiHolder.style.display='block';
-  // 元のカード内リールを隠す
+  if(o.frame.__loaded){ try{ o.frame.contentWindow.pachiSetSymbol && o.frame.contentWindow.pachiSetSymbol(sym); }catch(e){} }
   card.classList.add('has-pachi-embed');
   var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='none';
   var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display='none';
@@ -3751,8 +3756,9 @@ window.buildPachiEmbed=function(card, sym){
   requestAnimationFrame(window.syncPachiHolder);
 };
 window.removePachiEmbed=function(card){
-  if(window.__pachiHolder) window.__pachiHolder.style.display='none';
-  window.__pachiSymActive=null;
+  Object.keys(window.__pachiHolders||{}).forEach(function(k){
+    var o=window.__pachiHolders[k]; if(o) o.holder.style.display='none';
+  });
   if(card){ card.classList.remove('has-pachi-embed');
     var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='';
     var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display=''; }
