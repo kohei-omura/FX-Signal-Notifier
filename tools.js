@@ -319,7 +319,8 @@ function mergeTradeSources(tol){
   tol=(tol==null?12*3600e3:tol);
   var t=loadTrades();
   var idx=t.map(function(x,i){return i;});
-  var isCsv=function(x){ return _hasPx(x); };
+  var isApp=function(x){ return !!x.srcId; };   // アプリ決済はsrcIdを持つ
+  var isCsv=function(x){ return !isApp(x); };
   var used=new Array(t.length).fill(false);
   var merged=0, dropped=0;
   var csvIdx=idx.filter(function(i){return isCsv(t[i]);});
@@ -349,12 +350,12 @@ function mergeTradeSources(tol){
   idx.forEach(function(i){
     if(used[i]) return;
     var x=t[i];
-    if(isCsv(x)){
-      var k=[x.pair,x.yen,x.closed_at||x.ts,x.entry,x.exit,x.lot].join('|');
-      if(seenCsv[k]){used[i]=true;dropped++;} else seenCsv[k]=1;
-    }else if(x.srcId){
+    if(x.srcId){
       var k2='S'+x.srcId;
       if(seenApp[k2]){used[i]=true;dropped++;} else seenApp[k2]=1;
+    }else{
+      var k=[x.pair,x.yen,x.closed_at||x.ts,x.entry,x.exit,x.lot].join('|');
+      if(seenCsv[k]){used[i]=true;dropped++;} else seenCsv[k]=1;
     }
   });
   var out=idx.filter(function(i){return !used[i];}).map(function(i){return t[i];});
