@@ -380,11 +380,20 @@
 
 /* パチンコ台iframe（カード内・完全分離） */
 .pachi-embed{width:100%;border:none;border-radius:12px;display:block;background:#0a0a12;margin:8px 0}
+.pachi-embed-slot{width:100%;border-radius:12px;background:#0a0a12}
 .pachi-embed-wrap{position:relative;width:100%}
 
 /* パチンコ台iframe表示中のカードは、元のカード内リール演出を隠す（二重リール解消） */
 .card:has(.pachi-embed) .pachi-lcd{display:none}
 .card:has(.pachi-embed) .pachi-reel{display:none}
+
+/* 台iframe表示中は旧カード筐体の残骸を隠す（「いらない」箇所） */
+.card.has-pachi-embed .pachi-cabinet,
+.card.has-pachi-embed .pachi-marquee,
+.card.has-pachi-embed .pachi-tray,
+.card.has-pachi-embed .pachi-bolt,
+.card.has-pachi-embed .pachi-pillar,
+.card.has-pachi-embed .pachi-holds{display:none !important}
 </style>
 </head>
 <body>
@@ -1332,6 +1341,7 @@ function render(){
     :'<div class="empty">決済履歴なし</div>';
   renderExtras();
   applyPachi();   // パチンコ演出の適用（OFFなら何もしない）
+  if(window.syncPachiHolder) requestAnimationFrame(window.syncPachiHolder);
 }
 
 /* パチンコ演出をカードに適用（DOM構築後・transform/opacityのみ）。
@@ -2685,22 +2695,81 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
 /* EUR: 変身フラッシュは通常時非表示（ピンクのモヤ対策） */
 .m-lcd .mchara.eur .transflash{opacity:0 !important}
 .m-lcd .mchara.eur.win .transflash{animation:eur_transflash .6s ease-out 1}
+
+  /* ── タイトル帯（台の最上部） ── */
+  .m-title{position:relative;height:34px;margin-bottom:8px;border-radius:10px 10px 6px 6px;z-index:6;
+    background:linear-gradient(180deg,var(--c1,#3ad0c8),var(--c2,#0b5a5a));
+    box-shadow:0 3px 10px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.45);
+    display:flex;align-items:center;justify-content:center;border:2px solid rgba(0,0,0,.35);
+    font-weight:900;font-size:15px;letter-spacing:.12em;color:#fff;
+    text-shadow:0 0 8px rgba(255,255,255,.5),0 2px 3px rgba(0,0,0,.7)}
+  .m-title::before,.m-title::after{content:"";position:absolute;top:50%;width:8px;height:8px;border-radius:50%;
+    transform:translateY(-50%);background:radial-gradient(circle at 35% 30%,#fff,#ffd24a);box-shadow:0 0 6px #ffd24a}
+  .m-title::before{left:10px}.m-title::after{right:10px}
+  .m-title.hot{animation:mTitleHot .4s ease-in-out infinite}
+  @keyframes mTitleHot{0%,100%{filter:brightness(1)}50%{filter:brightness(1.7)}}
+
+  /* ── ギミック(役物)：盤面上部の立体オブジェ ── */
+  .m-gimmick{position:absolute;left:50%;top:4.5%;transform:translateX(-50%);z-index:3;
+    width:30%;height:9%;pointer-events:none;display:flex;align-items:center;justify-content:center}
+  .m-gimmick-core{position:relative;width:100%;height:100%;border-radius:50%/60%;
+    background:radial-gradient(circle at 38% 30%,#fff8d0,var(--c1,#3ad0c8) 45%,var(--c2,#0b5a5a) 100%);
+    box-shadow:0 0 12px var(--c1,#3ad0c8),inset 0 -3px 8px rgba(0,0,0,.45),inset 0 3px 6px rgba(255,255,255,.6);
+    border:2px solid rgba(255,255,255,.7)}
+  .m-gimmick-core::after{content:"";position:absolute;left:18%;top:16%;width:26%;height:30%;border-radius:50%;
+    background:rgba(255,255,255,.85);filter:blur(1px)}
+  .m-gimmick-wing{position:absolute;top:12%;width:26%;height:70%;border-radius:60% 20% 60% 20%;
+    background:linear-gradient(180deg,rgba(255,255,255,.9),var(--c1,#3ad0c8));
+    box-shadow:0 2px 5px rgba(0,0,0,.35);transition:transform .35s}
+  .m-gimmick-wing.l{left:-19%;transform:rotate(-18deg)}
+  .m-gimmick-wing.r{right:-19%;transform:rotate(18deg) scaleX(-1)}
+  .m-gimmick.act .m-gimmick-wing.l{transform:rotate(-52deg) translate(-14%,-18%)}
+  .m-gimmick.act .m-gimmick-wing.r{transform:rotate(52deg) translate(14%,-18%) scaleX(-1)}
+  .m-gimmick.act .m-gimmick-core{animation:mGimPulse .35s ease-in-out infinite}
+  @keyframes mGimPulse{0%,100%{transform:scale(1);box-shadow:0 0 12px var(--c1)}50%{transform:scale(1.18);box-shadow:0 0 26px #fff,0 0 40px var(--c1)}}
+
+  /* ── 保留ランプ（液晶下に4つ） ── */
+  .m-holds{position:absolute;left:50%;top:60.3%;transform:translateX(-50%);z-index:3;
+    display:flex;gap:8px;pointer-events:none}
+  .m-hold{width:11px;height:11px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#f2f6fb,#8fa3ba 70%);
+    box-shadow:inset 0 -2px 3px rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.3);
+    border:1px solid rgba(255,255,255,.7);transition:background .3s,box-shadow .3s}
+  .m-hold.on{background:radial-gradient(circle at 35% 30%,#fff,var(--c1,#3ad0c8) 70%);
+    box-shadow:0 0 9px var(--c1,#3ad0c8),inset 0 -2px 3px rgba(0,0,0,.25)}
+  .m-hold.hot{background:radial-gradient(circle at 35% 30%,#fff,#ff4a4a 70%);box-shadow:0 0 12px #ff4a4a}
+
+  /* ── アタッカー（大当りで開く大入賞口） ── */
+  .m-attacker{position:absolute;left:50%;top:73%;transform:translateX(-50%);z-index:3;
+    width:34%;height:5.5%;border-radius:4px;pointer-events:none;overflow:hidden;
+    background:linear-gradient(180deg,#2a3644,#101a26);border:2px solid #66788c;
+    box-shadow:inset 0 3px 6px rgba(0,0,0,.6)}
+  .m-attacker-lbl{position:absolute;left:50%;top:78.5%;transform:translateX(-50%);z-index:3;
+    font-size:8px;font-weight:800;letter-spacing:.08em;color:#9fb4c8;pointer-events:none;white-space:nowrap}
+  .m-attacker-door{position:absolute;inset:0;background:linear-gradient(180deg,#d8a43c,#a06a12);
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.5);transform-origin:50% 100%;transition:transform .45s ease}
+  .m-attacker.open .m-attacker-door{transform:rotateX(82deg)}
+  .m-attacker.open{box-shadow:0 0 18px #ffd24a,inset 0 3px 6px rgba(0,0,0,.6)}
 </style>
 </head>
 <body>
   <div class="machine">
     <div class="m-frame">
+      <div class="m-title" id="mTitle">PACHINKO</div>
       <div class="m-board">
         <div class="m-rim"></div>
         <canvas class="m-nails" id="nails"></canvas>
         <div class="m-rail l"></div><div class="m-rail r" id="railR"></div>
         <canvas class="m-balls" id="mballs"></canvas>
-        <div class="m-bukkomi"></div>
+        <div class="m-gimmick" id="mGimmick"><div class="m-gimmick-wing l"></div><div class="m-gimmick-core"></div><div class="m-gimmick-wing r"></div></div>
         <div class="m-lcd"><div class="m-chara-wrap"><div class="m-chara-inner" id="mCharaInner"></div></div><div class="m-reels" id="mreels"></div></div>
         <div class="m-windmill l"></div>
         <div class="m-windmill r"></div>
         <div class="m-chucker"></div>
         <div class="m-chucker-lbl">スタートチャッカー</div>
+        <div class="m-holds" id="mHolds"><span class="m-hold"></span><span class="m-hold"></span><span class="m-hold"></span><span class="m-hold"></span></div>
+        <div class="m-attacker" id="mAttacker"><div class="m-attacker-door"></div></div>
+        <div class="m-attacker-lbl">アタッカー</div>
         <div class="m-out"></div>
         <div class="m-shoot left" id="mshoot">◀ 左打ち</div>
       </div>
@@ -2858,6 +2927,7 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     if(ch){ ch.style.boxShadow='0 0 18px #ff5a5a'; setTimeout(()=>ch.style.boxShadow='',400); }
     // C-1: 入賞したら抽選開始（デモはランダム結果。実アプリは判定pctを渡す）
     const demoPct = Math.random()<0.15?85:(Math.random()<0.35?60:(Math.random()<0.5?40:20));
+    if(window.pachiHoldAdd) window.pachiHoldAdd(demoPct>=80);
     if(window.pachiDraw) window.pachiDraw(demoPct);
     // 大当り濃厚なら確変で右打ちへ
     if(demoPct>=80) setRight(true);
@@ -3363,6 +3433,7 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     const th=THEME[sym]; const board=document.querySelector('.m-board');
     if(th){ const cab=document.querySelector('.m-frame'); }
     const mq=document.querySelector('.m-marquee'); // 無ければ無視
+    var ttl=document.getElementById('mTitle'); if(ttl&&th) ttl.textContent=th.name;
     document.documentElement.style.setProperty('--c1', th?th.c1:'#3ad0c8');
     document.documentElement.style.setProperty('--c2', th?th.c2:'#0b5a5a');
   };
@@ -3421,6 +3492,8 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     cols.forEach(c=>{ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.12s'); });
     // 抽選中ラベル
     showDrawLabel('抽選中…');
+    if(window.pachiGimmick) window.pachiGimmick(true);
+    if(window.pachiHoldConsume) window.pachiHoldConsume();
     // 1列ずつ順に停止（C-2）
     const finalSyms = decideSyms(resultPct);
     let ci=0;
@@ -3460,9 +3533,12 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     else showDrawLabel('ハズレ');
     // C-3: 当たりならキャラの大当たりモーション
     if(win && window.pachiCharaWin) window.pachiCharaWin();
+    if(win && window.pachiAttacker) window.pachiAttacker(true);
     setTimeout(()=>{ const lab=document.querySelector('.m-draw-lab'); if(lab)lab.classList.remove('show');
       // 通常回転に戻す
       document.querySelectorAll('.m-col').forEach(c=>{ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.4s'); c.querySelectorAll('.m-sym').forEach(sy=>sy.classList.remove('hit')); });
+      if(window.pachiGimmick) window.pachiGimmick(false);
+      if(window.pachiAttacker) window.pachiAttacker(false);
       drawing=false;
     }, win?2600:1400);
   }
@@ -3487,31 +3563,89 @@ document.getElementById('toggleMode') && document.getElementById('toggleMode').a
   }catch(e){}
 })();
 <\/script>
+<script>
+(function(){
+  var holdCount=0;
+  window.pachiHoldAdd=function(hot){
+    var els=document.querySelectorAll('#mHolds .m-hold');
+    if(holdCount<els.length){ els[holdCount].classList.add(hot?'hot':'on'); holdCount++; }
+  };
+  window.pachiHoldConsume=function(){
+    var els=document.querySelectorAll('#mHolds .m-hold');
+    if(holdCount>0){ holdCount--; els[holdCount].classList.remove('on','hot'); }
+  };
+  window.pachiGimmick=function(on){
+    var g=document.getElementById('mGimmick'); if(!g) return;
+    g.classList.toggle('act', !!on);
+    var t=document.getElementById('mTitle'); if(t) t.classList.toggle('hot', !!on);
+  };
+  window.pachiAttacker=function(open){
+    var a=document.getElementById('mAttacker'); if(!a) return;
+    a.classList.toggle('open', !!open);
+  };
+})();
+<\/script>
 </body>
 </html>
 `;
+// オーバーレイ方式: iframeは永続ホルダー内に1度だけ生成し、カードのスロットに重ねる。
+// render()が#pairsを作り直してもホルダーは触られないので、iframeはリロードされない（チカチカしない）。
+window.__pachiHolder=null; window.__pachiSymActive=null;
+function ensurePachiHolder(){
+  if(window.__pachiHolder) return window.__pachiHolder;
+  var h=document.createElement('div'); h.id='pachiHolder';
+  h.style.cssText='position:absolute;z-index:5;display:none;pointer-events:auto';
+  var f=document.createElement('iframe'); f.className='pachi-embed'; f.id='pachiHolderFrame';
+  f.setAttribute('scrolling','no'); f.style.cssText='width:100%;height:100%;border:none;border-radius:12px;display:block;background:#0a0a12';
+  f.srcdoc=window.__MACHINE_HTML;
+  h.appendChild(f); document.body.appendChild(h);
+  window.__pachiHolder=h;
+  window.addEventListener('scroll', window.syncPachiHolder, {passive:true});
+  window.addEventListener('resize', window.syncPachiHolder, {passive:true});
+  return h;
+}
+window.syncPachiHolder=function(){
+  var h=window.__pachiHolder; if(!h||h.style.display==='none') return;
+  var slot=document.querySelector('.pachi-embed-slot[data-sym="'+window.__pachiSymActive+'"]');
+  if(!slot){ h.style.display='none'; return; }
+  var r=slot.getBoundingClientRect();
+  h.style.left=(r.left+window.scrollX)+'px';
+  h.style.top=(r.top+window.scrollY)+'px';
+  h.style.width=r.width+'px';
+  h.style.height=r.height+'px';
+}
 window.buildPachiEmbed=function(card, sym){
   if(!card) return;
-  if(card.querySelector('.pachi-embed')) return;
-  var wrap=document.createElement('div'); wrap.className='pachi-embed-wrap';
-  var f=document.createElement('iframe'); f.className='pachi-embed';
-  var w=card.clientWidth||320; f.style.height=Math.round(w*1.35)+'px';
-  f.setAttribute('scrolling','no');
-  f.srcdoc=window.__MACHINE_HTML;
-  f.addEventListener('load',function(){
-    try{ f.contentWindow.pachiSetSymbol && f.contentWindow.pachiSetSymbol(sym); }catch(e){}
-  });
-  wrap.appendChild(f);
-  card.appendChild(wrap);
+  ensurePachiHolder();
+  // カードに高さ確保のスロットを用意（無ければ作る）
+  var slot=card.querySelector('.pachi-embed-slot');
+  if(!slot){
+    slot=document.createElement('div'); slot.className='pachi-embed-slot'; slot.setAttribute('data-sym',sym);
+    var w=card.clientWidth||320; slot.style.height=Math.round(w*1.35)+'px'; slot.style.margin='8px 0';
+    card.appendChild(slot);
+  }
+  window.__pachiSymActive=sym;
+  var f=document.getElementById('pachiHolderFrame');
+  // 通貨切替（iframeロード済みならpachiSetSymbol）
+  var setSym=function(){ try{ f.contentWindow.pachiSetSymbol && f.contentWindow.pachiSetSymbol(sym); }catch(e){} };
+  if(f.__loaded) setSym(); else f.addEventListener('load',function(){ f.__loaded=true; setSym(); });
+  window.__pachiHolder.style.display='block';
+  // 元のカード内リールを隠す
   card.classList.add('has-pachi-embed');
   var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='none';
   var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display='none';
+  ['.pachi-cabinet','.pachi-marquee','.pachi-tray','.pachi-holds'].forEach(function(sel){
+    card.querySelectorAll(sel).forEach(function(e){ e.style.display='none'; });
+  });
+  card.querySelectorAll('.pachi-bolt,.pachi-pillar').forEach(function(e){ e.style.display='none'; });
+  requestAnimationFrame(window.syncPachiHolder);
 };
 window.removePachiEmbed=function(card){
-  if(!card) return; var e=card.querySelector('.pachi-embed-wrap'); if(e) e.remove();
-  card.classList.remove('has-pachi-embed');
-  var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='';
-  var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display='';
+  if(window.__pachiHolder) window.__pachiHolder.style.display='none';
+  window.__pachiSymActive=null;
+  if(card){ card.classList.remove('has-pachi-embed');
+    var lcd=card.querySelector('.pachi-lcd'); if(lcd) lcd.style.display='';
+    var rl=card.querySelector('.pachi-reel'); if(rl) rl.style.display=''; }
 };
 </script>
 </body>
