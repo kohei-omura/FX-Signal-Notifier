@@ -989,6 +989,29 @@ function suppressOppNotify(){try{return localStorage.getItem('fxnavi_oppsupp')==
 function adxBand(adx){if(adx==null)return{cls:'',ic:'⚪',lab:'—'};if(adx>40)return{cls:'hot',ic:'🔴',lab:'過熱'};if(adx>=30)return{cls:'ok',ic:'🟢',lab:'推奨'};if(adx>=20)return{cls:'warn',ic:'🟡',lab:'注意'};return{cls:'weak',ic:'⚪',lab:'弱'};}
 function expectancyOK(pair,st){if(!st||!pair.tp_pips||!pair.sl_pips)return null;const rr=pair.tp_pips/pair.sl_pips,be=100/(1+rr);return st.winRate>be;}
 function longEnvAlign(pair){const le=pair.longEnv;if(!le||!pair.signal)return null;return (pair.signal==='買い'&&le.dir==='up')||(pair.signal==='売り'&&le.dir==='down');}
+// ===== 段階3: ツールで学習した補正をスコアへ反映 =====
+function edgeProfile(){ try{ return JSON.parse(localStorage.getItem('fxnavi_edge')||'null'); }catch(e){ return null; } }
+function _edgeSessNow(){
+  var h=new Date(Date.now()+9*3600e3).getUTCHours();
+  if(h>=8&&h<15) return '東京';
+  if(h>=15&&h<21) return 'ロンドン';
+  if(h>=21||h<6) return 'ニューヨーク';
+  return 'オセアニア';
+}
+// 現在の時間帯・ペアに対する補正点(±)を返す
+function edgeAdjust(sym){
+  var p=edgeProfile(); if(!p) return {adj:0,why:[]};
+  var adj=0, why=[];
+  var h=new Date(Date.now()+9*3600e3).getUTCHours();
+  var se=p.sessions&&p.sessions[_edgeSessNow()];
+  if(se&&se.adj){ adj+=se.adj; why.push(_edgeSessNow()+(se.adj>0?'+':'')+se.adj); }
+  var hr=p.hours&&p.hours[String(h)];
+  if(hr&&hr.adj){ adj+=hr.adj; why.push(h+'時'+(hr.adj>0?'+':'')+hr.adj); }
+  var pr=p.pairs&&p.pairs[String(sym||'').replace('_','/')];
+  if(pr&&pr.adj){ adj+=pr.adj; why.push(String(sym||'').replace('_','/')+(pr.adj>0?'+':'')+pr.adj); }
+  adj=Math.max(-15,Math.min(15,adj));
+  return {adj:adj, why:why};
+}
 function confluence(pair,st){const W=confW();let got=0;let total=0;for(const k in W)total+=W[k];const det=[];
   const add=(w,ok,lab)=>{if(ok===true){got+=w;det.push(lab+'✓');}else if(ok===false){det.push(lab+'✗');}else{det.push(lab+'—');}};
   add(W.longEnv,longEnvAlign(pair),'長期');
@@ -1000,10 +1023,14 @@ function confluence(pair,st){const W=confW();let got=0;let total=0;for(const k i
   add(W.granville,pair.grv?[1,2].includes(pair.grv.no):null,'グランビル');
   add(W.blackout,!S.blackout,'指標');
   add(W.regime,regimeOK(pair),'レジーム');
-  const pct=got/total;let mark,cls;
+  let pct=got/total;
+  // 学習補正（過去成績の傾向）をスコアに加算・減算
+  const _e=edgeAdjust(pair.symbol);
+  if(_e.adj){ pct=Math.max(0,Math.min(1,pct+_e.adj/100)); det.push('学習'+(_e.adj>0?'+':'')+_e.adj); }
+  let mark,cls;
   if(pct>=0.75){mark='🟢 エントリーOK';cls='ok';}else if(pct>=0.45){mark='🟡 保留・検討';cls='hold';}else{mark='🔴 見送り';cls='no';}
   if(!pair.signal&&cls==='ok'){mark='🟡 保留・検討';cls='hold';}
-  return{mark,cls,got:Math.round(got*10)/10,total,pct:Math.round(pct*100),det};}
+  return{mark,cls,got:Math.round(got*10)/10,total,pct:Math.round(pct*100),det,edge:_e.adj,edgeWhy:_e.why};}
 function simStatsByCore(sym,oh,P,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
   if(!sides)sides=precomputeSides(sym,oh,P,warm);const closes=oh.map(r=>r[2]),e200=emaSeries(closes,200),adxS=adxSeries(oh,P.adx);
   let i=warm;const B={2:[0,0],1:[0,0],0:[0,0]};

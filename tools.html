@@ -96,6 +96,10 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <table id="bysession"><thead><tr><th>市場</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">スコア帯別（エントリー時の総合スコア）</div>
   <table id="byscore"><thead><tr><th>スコア帯</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">🧠 学習中の補正（ダッシュボードへ反映）</div>
+  <table id="edgeprof"><thead><tr><th>区分</th><th>回数</th><th>勝率</th><th>補正</th></tr></thead><tbody></tbody></table>
+  <div id="edgestat" class="note"></div>
+  <div style="margin-top:6px"><button class="bsub" style="font-size:12px;padding:7px 10px" onclick="clearEdgeProfile()">学習をリセット</button></div>
   <div class="tr" id="trlist"></div>
   <div style="margin-top:8px"><span class="del" onclick="clearTrades()">全削除</span></div>
   <div class="note">端末内に保存（localStorage）。GMOの約定履歴の決済損益(円)を入れると、勝率・期待値・PF・損益曲線が出ます。</div>

@@ -64,6 +64,12 @@ function importPaste(){
     var _rec={pair:pair,side:side,yen:y,ts:Date.now()};
     var _d=_parseAnyDate(ln);
     if(_d){ _rec.ts=_d.ms; _rec.closed_at=_d.jst; _rec.opened_at=_d.jst; }
+    if(_d){
+      var _pk=[_rec.closed_at,_rec.pair,_rec.yen,''].join('|');
+      if(!window.__pasteSeen){ window.__pasteSeen=new Set(t.map(function(x){return [x.closed_at||x.ts||'',x.pair||'',x.yen,(x.entry!=null?x.entry:'')].join('|');})); }
+      if(window.__pasteSeen.has(_pk)){ continue; }
+      window.__pasteSeen.add(_pk);
+    }
     t.push(_rec); added++;
   }
   if(!added){alert('数字が見つかりません');return;}
@@ -139,7 +145,10 @@ function csvImport(){
   if(!CSV_ROWS){alert('先にCSVを読み込んでください');return;}
   const pi=+$('#cPnl').value,ai=+$('#cPair').value,si=+$('#cSide').value,inv=$('#cInvert').checked;
   if(pi<0){alert('損益の列を選んでください');return;}
-  const t=loadTrades();let added=0;
+  const t=loadTrades();let added=0,dup=0;
+  // 重複防止: 決済日時+ペア+損益+建値 を一意キーにする
+  const csvKey=function(x){ return [x.closed_at||x.ts||'',x.pair||'',x.yen,(x.entry!=null?x.entry:'')].join('|'); };
+  const seen=new Set(t.map(csvKey));
   for(const r of CSV_ROWS){
     const y=numFromCell(r[pi]); if(isNaN(y)||y===0)continue;
     let pair=$('#jp').value; if(ai>=0&&r[ai]){const pm=(''+r[ai]).toUpperCase().match(PAIR_RE);pair=pm?(pm[1]+'/JPY'):(''+r[ai]).trim();}
@@ -162,12 +171,20 @@ function csvImport(){
     }
     // エントリー日時が無い場合は決済日時を建玉時刻として時間帯分析に使う（近似）
     if(!rec.opened_at&&rec.closed_at) rec.opened_at=rec.closed_at;
+    var _k=csvKey(rec);
+    if(seen.has(_k)){ dup++; continue; }     // 同じ取引は取り込まない
+    seen.add(_k);
     t.push(rec);added++;
   }
-  if(!added){alert('損益のある行が見つかりません。列の選択をご確認ください。');return;}
+  if(!added){
+    if(dup){ $('#csvmap').style.display='none'; CSV_ROWS=null;
+      $('#impmsg').innerHTML='<span class="good">すべて取込済みでした（重複 '+dup+' 件をスキップ）。二重登録はされていません。</span>';
+      renderJournal(); return; }
+    alert('損益のある行が見つかりません。列の選択をご確認ください。');return;}
   var withDate=t.filter(function(x){return !!x.opened_at;}).length;
   saveTrades(t);$('#csvmap').style.display='none';CSV_ROWS=null;
   $('#impmsg').innerHTML='<span class="good">'+added+'件を取り込みました。</span>'+
+    (dup?('<br><span class="good">重複 '+dup+' 件は自動スキップしました</span>'):'')+
     (withDate?('<br><span class="good">日時あり: '+withDate+'件 → 時間帯別・セッション別を集計しました</span>')
              :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>');
   renderJournal();
@@ -283,12 +300,61 @@ function renderJournal(){
     var nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
     return `<tr><td>${m[1]}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">マーク記録なし</td></tr>';
   renderEdgeTables(t);
+  try{renderEdgeProfile();}catch(e){}
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
     const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
     const dts=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'日時なし';
     return `<div><span>${x.mark||''}${x.pair} ${sd} <span style="opacity:.6">${dts}</span></span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
   renderTodaySummary();
 }
+/* ===== 段階3: 成績から学習する補正プロファイル ===== */
+var EDGE_KEY='fxnavi_edge', EDGE_MIN=8, EDGE_CAP=8;
+function _eStat(arr){var n=arr.length,w=arr.filter(function(a){return a.yen>0;}).length,
+  net=arr.reduce(function(a,b){return a+b.yen;},0);return {n:n,wr:n?w/n*100:0,net:net};}
+function buildEdgeProfile(){
+  var t=loadTrades().filter(function(x){return !!x.opened_at;});
+  if(t.length<10){ try{localStorage.removeItem(EDGE_KEY);}catch(e){} return null; }
+  var baseWr=t.filter(function(x){return x.yen>0;}).length/t.length*100;
+  var grp=function(fn){var m={};t.forEach(function(x){var k=fn(x);
+    if(k===null||k===undefined||k==='')return;(m[k]=m[k]||[]).push(x);});return m;};
+  var adjOf=function(st){
+    if(st.n<EDGE_MIN) return 0;
+    var d=(st.wr-baseWr)/5;
+    if(st.net<0&&st.wr<baseWr) d-=1;
+    if(st.net>0&&st.wr>baseWr) d+=0.5;
+    return Math.max(-EDGE_CAP,Math.min(EDGE_CAP,Math.round(d)));
+  };
+  var out=function(m){var o={};Object.keys(m).forEach(function(k){var st=_eStat(m[k]);
+    o[k]={n:st.n,wr:Math.round(st.wr),net:Math.round(st.net),adj:adjOf(st)};});return o;};
+  var prof={updated:Date.now(),n:t.length,baseWr:Math.round(baseWr),
+    sessions:out(grp(function(x){return _tSess(_tHour(_tOpen(x)));})),
+    hours:out(grp(function(x){var h=_tHour(_tOpen(x));return h==null?null:String(h);})),
+    pairs:out(grp(function(x){return x.pair;}))};
+  try{localStorage.setItem(EDGE_KEY,JSON.stringify(prof));}catch(e){}
+  return prof;
+}
+function renderEdgeProfile(){
+  var el=document.querySelector('#edgeprof tbody'); if(!el) return;
+  var stEl=document.getElementById('edgestat');
+  var prof=buildEdgeProfile();
+  if(!prof){ el.innerHTML='<tr><td colspan=4 style="text-align:center;color:#566">日時つきの記録が10件以上たまると学習を開始します</td></tr>';
+    if(stEl) stEl.textContent=''; return; }
+  var rows=[];
+  var ordS={'東京':1,'ロンドン':2,'ニューヨーク':3,'オセアニア':4};
+  var add=function(label,map,order,suffix){
+    var keys=Object.keys(map);
+    keys.sort(order?function(a,b){return (order[a]||99)-(order[b]||99);}:function(a,b){return (+a||0)-(+b||0)||String(a).localeCompare(String(b));});
+    keys.forEach(function(k){var v=map[k];
+      if(v.n<EDGE_MIN) return;
+      rows.push('<tr><td>'+label+' '+k+(suffix||'')+'</td><td>'+v.n+'</td><td>'+v.wr+'%</td><td class="'+(v.adj>0?'good':(v.adj<0?'warn':''))+'">'+(v.adj>0?'+':'')+v.adj+'</td></tr>');});
+  };
+  add('市場',prof.sessions,ordS,'');
+  add('時間',prof.hours,null,'時台');
+  add('ペア',prof.pairs,null,'');
+  el.innerHTML=rows.length?rows.join(''):'<tr><td colspan=4 style="text-align:center;color:#566">各区分'+EDGE_MIN+'件以上たまると補正が出ます</td></tr>';
+  if(stEl) stEl.innerHTML='学習済み: '+prof.n+'件 / 基準勝率 '+prof.baseWr+'% ／ ダッシュボードのスコアに自動反映されます';
+}
+function clearEdgeProfile(){ try{localStorage.removeItem(EDGE_KEY);}catch(e){} renderEdgeProfile(); alert('学習データを消去しました'); }
 /* ===== 勝ちパターン分析（時間帯・セッション・スコア帯） ===== */
 function _grpRows(map){
   var keys=Object.keys(map);
