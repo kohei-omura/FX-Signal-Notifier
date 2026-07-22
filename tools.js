@@ -1,6 +1,15 @@
 const $=s=>document.querySelector(s);
 const yen=x=>(x>=0?'+':'')+Math.round(x).toLocaleString()+'円';
 const PS=0.01;
+var CSV_GMO=null;
+function _detectGMO(head){
+  if(!head||!head.length) return null;
+  var idx=function(name){ return head.findIndex(function(h){ return h&&h.indexOf(name)>=0; }); };
+  var d=idx('約定日時'), p=idx('銘柄名'), sd=idx('売買区分'), pl=idx('実現損益');
+  if(d<0||p<0||sd<0||pl<0) return null;
+  return {date:d, pair:p, side:sd, pnl:pl,
+          qty:idx('約定数量'), px:idx('約定単価'), entry:idx('建単価'), kind:idx('取引区分')};
+}
 function _scanDateCol(rows,head){
   if(!rows||!rows.length) return -1;
   var n=Math.min(rows.length,20), best=-1, bestHit=0;
@@ -92,10 +101,18 @@ function csvIngest(txt){
   const opts=CSV_HEAD.map((h,i)=>`<option value="${i}">${(h||('列'+(i+1))).slice(0,16)}</option>`).join('');
   ['cPnl','cPair','cSide','cDate','cOpen'].forEach(id=>{var e=$('#'+id); if(e) e.innerHTML='<option value="-1">（なし）</option>'+opts;});
   $('#cPnl').value=guessCol(CSV_HEAD,['決済損益','実現損益','約定損益','売買損益','損益']);
+  CSV_GMO=_detectGMO(CSV_HEAD);
   if($('#cDate')){
-    var di=guessCol(CSV_HEAD,['決済日時','決済約定日時','約定日時','決済時刻','決済日','取引日時','日時','日付','時刻','Date','date']);
-    if(di<0) di=_scanDateCol(CSV_ROWS,CSV_HEAD);       // 見出しで不明なら中身を走査
+    var di=CSV_GMO?CSV_GMO.date:guessCol(CSV_HEAD,['決済日時','決済約定日時','約定日時','決済時刻','決済日','取引日時','日時','日付','時刻','Date','date']);
+    if(di<0) di=_scanDateCol(CSV_ROWS,CSV_HEAD);
     $('#cDate').value=di;
+  }
+  if(CSV_GMO){
+    if($('#cPnl')) $('#cPnl').value=CSV_GMO.pnl;
+    if($('#cPair')) $('#cPair').value=CSV_GMO.pair;
+    if($('#cSide')) $('#cSide').value=CSV_GMO.side;
+    if($('#cInvert')) $('#cInvert').checked=true;   // GMOの決済行は反対売買
+    $('#impmsg').innerHTML='<span class="good">GMOクリック証券（FXネオ）形式を自動認識しました。列は自動設定済みです。</span>';
   }
   if($('#cOpen')){
     var oi=guessCol(CSV_HEAD,['新規約定日時','建玉日時','新規日時','エントリー日時','建日時']);
@@ -128,9 +145,21 @@ function csvImport(){
     let pair=$('#jp').value; if(ai>=0&&r[ai]){const pm=(''+r[ai]).toUpperCase().match(PAIR_RE);pair=pm?(pm[1]+'/JPY'):(''+r[ai]).trim();}
     let side='-'; if(si>=0&&r[si]){const sv=''+r[si];let s=/売/.test(sv)?'売り':(/買/.test(sv)?'買い':'-');if(inv&&s!=='-')s=(s==='売り'?'買い':'売り');side=s;}
     var rec={pair:pair,side:side,yen:y,ts:Date.now()};
-    var di=(($('#cDate')&&+$('#cDate').value)||-1), oi=(($('#cOpen')&&+$('#cOpen').value)||-1);
+    var di=($('#cDate')? +$('#cDate').value : -1), oi=($('#cOpen')? +$('#cOpen').value : -1);
     if(di>=0&&r[di]){ var cd=_parseAnyDate(r[di]); if(cd){ rec.ts=cd.ms; rec.closed_at=cd.jst; } }
     if(oi>=0&&r[oi]){ var od=_parseAnyDate(r[oi]); if(od){ rec.opened_at=od.jst; } }
+    if(CSV_GMO){
+      var _q=(CSV_GMO.qty>=0)?numFromCell(r[CSV_GMO.qty]):NaN;
+      var _px=(CSV_GMO.px>=0)?parseFloat(String(r[CSV_GMO.px]).replace(/[^0-9.\-]/g,'')):NaN;
+      var _en=(CSV_GMO.entry>=0)?parseFloat(String(r[CSV_GMO.entry]).replace(/[^0-9.\-]/g,'')):NaN;
+      if(!isNaN(_q)) rec.lot=_q;
+      if(!isNaN(_px)) rec.exit=_px;
+      if(!isNaN(_en)) rec.entry=_en;
+      if(!isNaN(_px)&&!isNaN(_en)){
+        var dir=(rec.side==='買い')?1:((rec.side==='売り')?-1:0);
+        if(dir) rec.pips=Math.round(((_px-_en)/0.01)*dir*10)/10;
+      }
+    }
     // エントリー日時が無い場合は決済日時を建玉時刻として時間帯分析に使う（近似）
     if(!rec.opened_at&&rec.closed_at) rec.opened_at=rec.closed_at;
     t.push(rec);added++;
