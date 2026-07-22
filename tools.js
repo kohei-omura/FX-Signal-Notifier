@@ -1,6 +1,17 @@
 const $=s=>document.querySelector(s);
 const yen=x=>(x>=0?'+':'')+Math.round(x).toLocaleString()+'円';
 const PS=0.01;
+function _scanDateCol(rows,head){
+  if(!rows||!rows.length) return -1;
+  var n=Math.min(rows.length,20), best=-1, bestHit=0;
+  var cols=(head&&head.length)?head.length:(rows[0]?rows[0].length:0);
+  for(var c=0;c<cols;c++){
+    var hit=0;
+    for(var r=0;r<n;r++){ if(rows[r]&&rows[r][c]&&_parseAnyDate(rows[r][c])) hit++; }
+    if(hit>bestHit){ bestHit=hit; best=c; }
+  }
+  return (bestHit>=Math.max(1,Math.floor(n*0.6)))?best:-1;
+}
 function _parseAnyDate(v){
   if(v==null) return null;
   var t=String(v).trim(); if(!t) return null;
@@ -41,7 +52,10 @@ function importPaste(){
     const cleaned=ln.replace(PAIR_RE,' ').replace(/\d{1,4}\.\d+/g,' ');
     const nm=cleaned.match(/-?\d{1,3}(?:,\d{3})+|-?\d+/);
     if(!nm)continue; const y=parseInt(nm[0].replace(/,/g,''),10); if(isNaN(y))continue;
-    t.push({pair,side,yen:y,ts:Date.now()}); added++;
+    var _rec={pair:pair,side:side,yen:y,ts:Date.now()};
+    var _d=_parseAnyDate(ln);
+    if(_d){ _rec.ts=_d.ms; _rec.closed_at=_d.jst; _rec.opened_at=_d.jst; }
+    t.push(_rec); added++;
   }
   if(!added){alert('数字が見つかりません');return;}
   saveTrades(t); $('#jpaste').value=''; $('#pastebox').style.display='none'; renderJournal();
@@ -78,8 +92,15 @@ function csvIngest(txt){
   const opts=CSV_HEAD.map((h,i)=>`<option value="${i}">${(h||('列'+(i+1))).slice(0,16)}</option>`).join('');
   ['cPnl','cPair','cSide','cDate','cOpen'].forEach(id=>{var e=$('#'+id); if(e) e.innerHTML='<option value="-1">（なし）</option>'+opts;});
   $('#cPnl').value=guessCol(CSV_HEAD,['決済損益','実現損益','約定損益','売買損益','損益']);
-  if($('#cDate')) $('#cDate').value=guessCol(CSV_HEAD,['決済日時','決済約定日時','約定日時','決済時刻','決済日','日時','取引日時']);
-  if($('#cOpen')) $('#cOpen').value=guessCol(CSV_HEAD,['新規約定日時','建玉日時','新規日時','エントリー日時','建日時','約定日時(新規)']);
+  if($('#cDate')){
+    var di=guessCol(CSV_HEAD,['決済日時','決済約定日時','約定日時','決済時刻','決済日','取引日時','日時','日付','時刻','Date','date']);
+    if(di<0) di=_scanDateCol(CSV_ROWS,CSV_HEAD);       // 見出しで不明なら中身を走査
+    $('#cDate').value=di;
+  }
+  if($('#cOpen')){
+    var oi=guessCol(CSV_HEAD,['新規約定日時','建玉日時','新規日時','エントリー日時','建日時']);
+    $('#cOpen').value=oi;
+  }
   $('#cPair').value=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
   $('#cSide').value=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
   $('#csvmap').style.display='block';$('#csvpastebox').style.display='none';
@@ -115,7 +136,12 @@ function csvImport(){
     t.push(rec);added++;
   }
   if(!added){alert('損益のある行が見つかりません。列の選択をご確認ください。');return;}
-  saveTrades(t);$('#csvmap').style.display='none';CSV_ROWS=null;$('#impmsg').innerHTML=`<span class="good">${added}件を取り込みました。</span>`;renderJournal();
+  var withDate=t.filter(function(x){return !!x.opened_at;}).length;
+  saveTrades(t);$('#csvmap').style.display='none';CSV_ROWS=null;
+  $('#impmsg').innerHTML='<span class="good">'+added+'件を取り込みました。</span>'+
+    (withDate?('<br><span class="good">日時あり: '+withDate+'件 → 時間帯別・セッション別を集計しました</span>')
+             :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>');
+  renderJournal();
 }
 
 /* ---- B. iPhone標準OCRの文字を貼付 → 決済行を解析 ---- */
@@ -237,7 +263,7 @@ function renderJournal(){
 /* ===== 勝ちパターン分析（時間帯・セッション・スコア帯） ===== */
 function _grpRows(map){
   var keys=Object.keys(map);
-  if(!keys.length) return '<tr><td colspan=4 style="text-align:center;color:#566">データなし（アプリ決済を取込むと集計されます）</td></tr>';
+  if(!keys.length) return '<tr><td colspan=4 style="text-align:center;color:#566">日時が未取込です。CSV取込で「決済日時の列」を選んで取り込むと集計されます</td></tr>';
   return keys.map(function(k){
     var arr=map[k], n=arr.length, w=arr.filter(function(a){return a.yen>0;}).length;
     var net=arr.reduce(function(a,b){return a+b.yen;},0);
