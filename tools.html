@@ -37,7 +37,6 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
 <a class="back" href="index.html">← ダッシュボードへ</a>
 <h1>FX Navi ツール</h1><div class="sub">JOURNAL ・ RISK ・ BACKTEST</div>
 <div id="todaybar" style="margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px"></div>
-<!-- WorkerのURL（バックテスト・スプレッド用。FX Naviと同じ） -->
 <script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";</script>
 
 <div class="sec" data-sec="0" onclick="toggleSection('0')" style="cursor:pointer">① 成績分析（トレード記録）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
@@ -49,11 +48,6 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   </div>
   <div class="rowf" style="margin-top:6px">
     <div><label>マーク（総合判定に従ったか）</label><select id="jmark"><option value="">未記録</option><option value="🟢">🟢 OK</option><option value="🟡">🟡 保留</option><option value="🔴">🔴 見送り</option></select></div>
-  </div>
-  <div class="rowf">
-    <div><label>通貨ペア</label><select id="jp"><option>USD/JPY</option><option>EUR/JPY</option><option>GBP/JPY</option><option>AUD/JPY</option><option>その他</option></select></div>
-    <div><label>売買</label><select id="js"><option value="買い">買い</option><option value="売り">売り</option></select></div>
-    <div><label>損益(円)</label><input id="jy" type="number" inputmode="numbers" placeholder="例 90 / -59"></div>
   </div>
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
     <button class="bgo" onclick="addTrade()">記録を追加</button>
@@ -70,7 +64,6 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <textarea id="csvpaste" placeholder="（CSVの中身を貼り付け：1行目は見出し）"></textarea>
     <button class="bsub" style="margin-top:8px" onclick="csvPaste()">読み込む</button>
   </div>
-  <!-- CSV列マッピング -->
   <div id="csvmap" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px">
     <div class="rowf"><div><label>損益の列</label><select id="cPnl"></select></div><div><label>通貨ペアの列</label><select id="cPair"></select></div></div>
     <div class="rowf" style="margin-top:6px"><div><label>売買の列</label><select id="cSide"></select></div><div></div></div>
@@ -78,13 +71,11 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <button class="bgo" style="margin-top:8px" onclick="csvImport()">この設定で取り込む</button>
     <div class="note">損益が空・0の行（新規）は自動でスキップします。列が違う場合は選び直してください。</div>
   </div>
-  <!-- iPhone文字貼付 -->
   <div id="iosbox" style="display:none;margin-top:10px">
     <label>iPhoneでスクショを長押し→テキストを選択→すべて選択→コピーし、ここに貼付</label>
     <textarea id="iospaste" placeholder="（写真からコピーした文字を貼り付け）"></textarea>
     <button class="bsub" style="margin-top:8px" onclick="iosParse()">解析して下の確認欄へ</button>
   </div>
-  <!-- 確認して取込（全方式共通） -->
   <div id="pastebox" style="display:none;margin-top:10px">
     <label>1行＝1取引。「ペア サイド 損益」も可（例：USD/JPY 買い 9 / GBP/JPY 売り -953）。数字だけでも可（その場合サイドは上の選択を使用）。</label>
     <textarea id="jpaste" placeholder="-59&#10;90&#10;-23&#10;31"></textarea>
@@ -98,6 +89,12 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <table id="bymonth"><thead><tr><th>月</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">マーク別成績（総合判定に従うと勝てているか）</div>
   <table id="bymark"><thead><tr><th>マーク</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">時間帯別（エントリー時刻）</div>
+  <table id="byhour"><thead><tr><th>時間</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">セッション別</div>
+  <table id="bysession"><thead><tr><th>市場</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">スコア帯別（エントリー時の総合スコア）</div>
+  <table id="byscore"><thead><tr><th>スコア帯</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="tr" id="trlist"></div>
   <div style="margin-top:8px"><span class="del" onclick="clearTrades()">全削除</span></div>
   <div class="note">端末内に保存（localStorage）。GMOの約定履歴の決済損益(円)を入れると、勝率・期待値・PF・損益曲線が出ます。</div>

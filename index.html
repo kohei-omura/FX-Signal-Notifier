@@ -751,7 +751,17 @@ async function ghPutFile(c,path,obj,msg){let sha=undefined;
 async function addPos(){const c=needCfg();if(!c)return;
   const sym=$('#f_sym').value,side=$('#f_side').value,entry=parseFloat($('#f_entry').value),lot=parseInt($('#f_lot').value||'1000',10);
   if(!isFinite(entry)){toast('建値を入力してください');return;}
-  const pos={id:'p'+Date.now(),symbol:sym,side,entry,lot,status:'open'};
+  const pos={id:'p'+Date.now(),symbol:sym,side,entry,lot,status:'open',opened_at:nowJST()};
+  // エントリー時点の判定コンテキストを保存（後のバックテスト分析用）
+  try{
+    const _lp=(S.pairs||[]).find(x=>x.symbol===sym);
+    const _st=(typeof STATS!=='undefined'&&STATS)?STATS[((S.mode||'swing')+sym)]:null;
+    const _cf=(_lp&&typeof confluence==='function')?confluence(_lp,_st):null;
+    pos.entry_mode=S.mode||'';
+    if(_cf){ pos.entry_score=_cf.pct; pos.entry_mark=_cf.mark; pos.entry_got=_cf.got; }
+    if(_lp){ pos.entry_signal=_lp.signal||''; pos.entry_bias=_lp.bias||''; pos.entry_rsi=_lp.rsi; pos.entry_tech=_lp.tech; pos.entry_fund=_lp.fund; }
+    if(typeof zoneNow==='function'){ const _z=zoneNow(); pos.entry_zone=(_z&&_z.name)?_z.name:(''+(_z||'')); }
+  }catch(e){}
   let autoNote='';
   if($('#f_mode').value==='manual'){const tp=parseFloat($('#f_tp').value),sl=parseFloat($('#f_sl').value);
     if(isFinite(tp))pos.tp_pips=tp;if(isFinite(sl))pos.sl_pips=sl;}
@@ -1184,15 +1194,56 @@ function sparkSignal(p){
     if(p.dow.lastLow!=null)el+='<text x="'+(W-7)+'" y="'+(Y(p.dow.lastLow)+5).toFixed(1)+'" font-size="7" fill="var(--down)" text-anchor="middle">▼</text>';}
   return'<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="position:absolute;inset:0;pointer-events:none">'+el+'</svg>';
 }
+
+// ===== 成績分析用ヘルパー（CSV/バックテスト） =====
+function _jstParse(str){           // "YYYY-MM-DD HH:MM JST" → Date
+  if(!str) return null;
+  var m=String(str).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if(!m) return null;
+  return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5]));   // JST→UTC
+}
+function _openedAt(p){             // 旧データはidの時刻から復元
+  if(p.opened_at) return p.opened_at;
+  var m=String(p.id||'').match(/^p(\d{10,})$/);
+  if(m){ try{ return new Date(+m[1]).toLocaleString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,16)+' JST'; }catch(e){} }
+  return '';
+}
+function _wdJa(d){ return d?['日','月','火','水','木','金','土'][ (new Date(d.getTime()+9*3600e3)).getUTCDay() ]:''; }
+function _hourJst(d){ return d?(new Date(d.getTime()+9*3600e3)).getUTCHours():''; }
+function _sessionJa(h){
+  if(h==='') return '';
+  if(h>=8&&h<15) return '東京';
+  if(h>=15&&h<21) return 'ロンドン';
+  if(h>=21||h<6) return 'ニューヨーク';
+  return 'オセアニア';
+}
+function _holdMin(o,c){ return (o&&c)?Math.max(0,Math.round((c-o)/60000)):''; }
 // 機能7: CSVエクスポート（BOM付きUTF-8・GOV3の3段配布）
 function _csvDist(blob,filename){var file=null;try{file=new File([blob],filename,{type:blob.type});}catch(e){}
   if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],title:filename}).catch(function(){});return;}
   try{var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);}catch(_e){}URL.revokeObjectURL(u);},150);return;}catch(e){}
   try{window.open(URL.createObjectURL(blob),'_blank');}catch(e){}}
 function _csvBody(rows){return '\ufeff'+rows.map(function(r){return r.map(function(x){x=(x==null?'':''+x);return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;}).join(',');}).join('\r\n');}
-function exportHistoryCSV(){var cp=(POS.positions||[]).filter(function(p){return p.status==='closed';});
-  var rows=[['日時','ペア','方向','数量','建値','決済値','損益pips','損益円']];
-  cp.forEach(function(h){rows.push([h.closed_at||'',h.symbol,h.side==='long'?'買い':'売り',h.lot||'',h.entry,h.close_price,h.close_pips,h.close_yen]);});
+function exportHistoryCSV(){
+  var cp=(POS.positions||[]).filter(function(p){return p.status==='closed';});
+  cp.sort(function(a,b){return String(a.closed_at||'').localeCompare(String(b.closed_at||''));});
+  var rows=[['エントリー日時','決済日時','保有分','曜日(建)','時(建)','セッション(建)','ペア','方向','ロット',
+             '建値','決済値','pips','損益円','決済理由','モード',
+             'エントリー時スコア','マーク','根拠数','シグナル','RSI','テク','ファンダ',
+             'TP幅pips','SL幅pips','R倍率']];
+  cp.forEach(function(h){
+    var oa=_openedAt(h), ca=h.closed_at||'';
+    var od=_jstParse(oa), cd=_jstParse(ca);
+    var hr=_hourJst(od);
+    var sl=(h.sl_pips!=null&&h.sl_pips>0)?h.sl_pips:'';
+    var R=(sl!==''&&h.close_pips!=null)?(Math.round((h.close_pips/sl)*100)/100):'';
+    rows.push([oa,ca,_holdMin(od,cd),_wdJa(od),hr,_sessionJa(hr),
+      h.symbol,h.side==='long'?'買い':'売り',h.lot||'',
+      h.entry,h.close_price,h.close_pips,h.close_yen,h.close_reason||'',h.entry_mode||'',
+      (h.entry_score!=null?h.entry_score:''),(h.entry_mark||''),(h.entry_got!=null?h.entry_got:''),
+      (h.entry_signal||''),(h.entry_rsi!=null?h.entry_rsi:''),(h.entry_tech!=null?h.entry_tech:''),(h.entry_fund!=null?h.entry_fund:''),
+      (h.tp_pips!=null?h.tp_pips:''),(sl===''?'':sl),R]);
+  });
   _csvDist(new Blob([_csvBody(rows)],{type:'text/csv;charset=utf-8'}),'fxnavi-history.csv');}
 function exportForwardCSV(){var f=loadFwd();var rows=[['日時','ペア','方向','建値','TP','SL','仮想R','マーク','モード','状態']];
   f.forEach(function(e){rows.push([new Date(e.ts).toLocaleString('ja-JP'),e.sym,e.side==='long'?'買い':'売り',e.entry,e.tp,e.sl,(e.R!=null?e.R:''),(e.result||''),e.mode||'',e.open?'追跡中':'確定']);});
