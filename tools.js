@@ -1,6 +1,17 @@
 const $=s=>document.querySelector(s);
 const yen=x=>(x>=0?'+':'')+Math.round(x).toLocaleString()+'円';
 const PS=0.01;
+function _parseAnyDate(v){
+  if(v==null) return null;
+  var t=String(v).trim(); if(!t) return null;
+  var m=t.match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})(?:[日]?)(?:[ T　]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if(!m) return null;
+  var y=+m[1],mo=+m[2],d=+m[3],hh=(m[4]!=null?+m[4]:0),mi=(m[5]!=null?+m[5]:0);
+  if(!(y>1990&&mo>=1&&mo<=12&&d>=1&&d<=31)) return null;
+  var ms=Date.UTC(y,mo-1,d,hh-9,mi);   // JST入力として扱う
+  var pad=function(n){return (n<10?'0':'')+n;};
+  return {ms:ms, jst:y+'-'+pad(mo)+'-'+pad(d)+' '+pad(hh)+':'+pad(mi)+' JST'};
+}
 /* ===== 日時・時間帯ヘルパー（バックテスト分析用） ===== */
 function _tJst(str){ if(!str)return null;
   var m=String(str).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
@@ -65,8 +76,10 @@ function csvIngest(txt){
   if(rows.length<2){msg.innerHTML='<span class="warn">データ行が見つかりません（1行目=見出し、2行目以降=データ）。</span>';return;}
   CSV_HEAD=rows[0].map(s=>(s||'').trim());CSV_ROWS=rows.slice(1);
   const opts=CSV_HEAD.map((h,i)=>`<option value="${i}">${(h||('列'+(i+1))).slice(0,16)}</option>`).join('');
-  ['cPnl','cPair','cSide'].forEach(id=>{$('#'+id).innerHTML='<option value="-1">（なし）</option>'+opts;});
+  ['cPnl','cPair','cSide','cDate','cOpen'].forEach(id=>{var e=$('#'+id); if(e) e.innerHTML='<option value="-1">（なし）</option>'+opts;});
   $('#cPnl').value=guessCol(CSV_HEAD,['決済損益','実現損益','約定損益','売買損益','損益']);
+  if($('#cDate')) $('#cDate').value=guessCol(CSV_HEAD,['決済日時','決済約定日時','約定日時','決済時刻','決済日','日時','取引日時']);
+  if($('#cOpen')) $('#cOpen').value=guessCol(CSV_HEAD,['新規約定日時','建玉日時','新規日時','エントリー日時','建日時','約定日時(新規)']);
   $('#cPair').value=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
   $('#cSide').value=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
   $('#csvmap').style.display='block';$('#csvpastebox').style.display='none';
@@ -93,7 +106,13 @@ function csvImport(){
     const y=numFromCell(r[pi]); if(isNaN(y)||y===0)continue;
     let pair=$('#jp').value; if(ai>=0&&r[ai]){const pm=(''+r[ai]).toUpperCase().match(PAIR_RE);pair=pm?(pm[1]+'/JPY'):(''+r[ai]).trim();}
     let side='-'; if(si>=0&&r[si]){const sv=''+r[si];let s=/売/.test(sv)?'売り':(/買/.test(sv)?'買い':'-');if(inv&&s!=='-')s=(s==='売り'?'買い':'売り');side=s;}
-    t.push({pair,side,yen:y,ts:Date.now()});added++;
+    var rec={pair:pair,side:side,yen:y,ts:Date.now()};
+    var di=(($('#cDate')&&+$('#cDate').value)||-1), oi=(($('#cOpen')&&+$('#cOpen').value)||-1);
+    if(di>=0&&r[di]){ var cd=_parseAnyDate(r[di]); if(cd){ rec.ts=cd.ms; rec.closed_at=cd.jst; } }
+    if(oi>=0&&r[oi]){ var od=_parseAnyDate(r[oi]); if(od){ rec.opened_at=od.jst; } }
+    // エントリー日時が無い場合は決済日時を建玉時刻として時間帯分析に使う（近似）
+    if(!rec.opened_at&&rec.closed_at) rec.opened_at=rec.closed_at;
+    t.push(rec);added++;
   }
   if(!added){alert('損益のある行が見つかりません。列の選択をご確認ください。');return;}
   saveTrades(t);$('#csvmap').style.display='none';CSV_ROWS=null;$('#impmsg').innerHTML=`<span class="good">${added}件を取り込みました。</span>`;renderJournal();

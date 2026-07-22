@@ -66,7 +66,8 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   </div>
   <div id="csvmap" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px">
     <div class="rowf"><div><label>損益の列</label><select id="cPnl"></select></div><div><label>通貨ペアの列</label><select id="cPair"></select></div></div>
-    <div class="rowf" style="margin-top:6px"><div><label>売買の列</label><select id="cSide"></select></div><div></div></div>
+    <div class="rowf" style="margin-top:6px"><div><label>売買の列</label><select id="cSide"></select></div><div><label>決済日時の列</label><select id="cDate"></select></div></div>
+    <div class="rowf" style="margin-top:6px"><div><label>エントリー日時の列（あれば）</label><select id="cOpen"></select></div><div></div></div>
     <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="cInvert" checked style="width:auto;margin:0">決済行は反対売買 → 保有方向に反転</label>
     <button class="bgo" style="margin-top:8px" onclick="csvImport()">この設定で取り込む</button>
     <div class="note">損益が空・0の行（新規）は自動でスキップします。列が違う場合は選び直してください。</div>
