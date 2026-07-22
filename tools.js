@@ -187,6 +187,7 @@ function csvImport(){
     (dup?('<br><span class="good">重複 '+dup+' 件は自動スキップしました</span>'):'')+
     (withDate?('<br><span class="good">日時あり: '+withDate+'件 → 時間帯別・セッション別を集計しました</span>')
              :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>');
+  try{var _mg=mergeTradeSources(); if(_mg.merged||_mg.dropped){ $('#impmsg').innerHTML+='<br><span class="good">アプリ決済と突合: '+_mg.merged+'件を統合 / '+_mg.dropped+'件の重複を削除</span>'; }}catch(e){}
   renderJournal();
 }
 
@@ -248,7 +249,7 @@ async function appSync(){
     saveTrades(t);msg.innerHTML=`<span class="good">${added}件をアプリから取り込みました。</span>`;renderJournal();
   }catch(e){msg.innerHTML='<span class="warn">取得失敗: '+e.message+'</span>';}
 }
-function delTrade(i){const t=loadTrades();t.splice(i,1);saveTrades(t);renderJournal();}
+function delTrade(i){const t=loadTrades();t.splice(i,1);saveTrades(t);try{mergeTradeSources();}catch(e){}renderJournal();}
 function renderJournal(){
   const t=loadTrades();
   const wins=t.filter(x=>x.yen>0),losses=t.filter(x=>x.yen<0);
@@ -306,6 +307,58 @@ function renderJournal(){
     const dts=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'日時なし';
     return `<div><span>${x.mark||''}${x.pair} ${sd} <span style="opacity:.6">${dts}</span></span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
   renderTodaySummary();
+}
+/* ===== CSVとアプリ決済の突合・統合 =====
+   証券会社CSV: 正確な約定日時・建値・決済値・pips
+   アプリ決済 : エントリー時のスコア・判断根拠
+   同じ取引（ペア一致・損益一致・時刻が近い）を1件に統合する */
+function _hasScore(x){ return x&&x.score!=null&&x.score!==''; }
+function _hasPx(x){ return x&&x.entry!=null&&x.entry!==''; }
+function _tsOf(x){ var d=_tJst(x.closed_at||''); return d?d.getTime():(x.ts||0); }
+function mergeTradeSources(tol){
+  tol=(tol==null?12*3600e3:tol);          // 既定: 12時間以内を同一取引とみなす
+  var t=loadTrades(), used=new Array(t.length).fill(false), out=[], merged=0, dropped=0;
+  var order=t.map(function(x,i){return i;}).sort(function(a,b){return _tsOf(t[a])-_tsOf(t[b]);});
+  for(var oi=0;oi<order.length;oi++){
+    var i=order[oi]; if(used[i]) continue;
+    var a=t[i]; used[i]=true; var base=Object.assign({},a);
+    for(var oj=oi+1;oj<order.length;oj++){
+      var j=order[oj]; if(used[j]) continue;
+      var b=t[j];
+      if(a.pair!==b.pair) continue;
+      if(+a.yen!==+b.yen) continue;
+      if(Math.abs(_tsOf(a)-_tsOf(b))>tol) continue;
+      // 完全な重複か、CSVとアプリの組み合わせなら統合
+      var complement=( _hasScore(a)&&_hasPx(b) )||( _hasPx(a)&&_hasScore(b) );
+      var sameSrc = (!!a.srcId&&!!b.srcId&&a.srcId===b.srcId);
+      if(!complement && !sameSrc && _hasPx(a)===_hasPx(b) && _hasScore(a)===_hasScore(b)){
+        // 同種の重複（同じCSVを二重取込など）
+        used[j]=true; dropped++; continue;
+      }
+      if(complement||sameSrc){
+        var px=_hasPx(b)?b:(_hasPx(a)?a:null);
+        var sc=_hasScore(b)?b:(_hasScore(a)?a:null);
+        if(px){ ['opened_at','closed_at','entry','exit','lot','pips','ts'].forEach(function(k){
+          if(px[k]!=null&&px[k]!=='') base[k]=px[k]; }); }
+        if(sc){ ['score','smark','got','signal','rsi','tech','fund','mode','reason','tp','sl','opened_at'].forEach(function(k){
+          if(sc[k]!=null&&sc[k]!==''&&(base[k]==null||base[k]==='')) base[k]=sc[k]; });
+          if(_hasScore(sc)) base.score=sc.score;
+          // アプリ側が本当のエントリー時刻を持つ場合はそちらを優先
+          if(sc.opened_at&&sc.closed_at&&sc.opened_at!==sc.closed_at) base.opened_at=sc.opened_at; }
+        if(b.srcId&&!base.srcId) base.srcId=b.srcId;
+        used[j]=true; merged++;
+      }
+    }
+    out.push(base);
+  }
+  saveTrades(out);
+  return {merged:merged, dropped:dropped, total:out.length};
+}
+function mergeTradesUI(){
+  var r=mergeTradeSources();
+  renderJournal();
+  var m=$('#impmsg');
+  if(m) m.innerHTML='<span class="good">統合しました：'+r.merged+'件をCSVとアプリで突合、'+r.dropped+'件の重複を削除 → 現在 '+r.total+'件</span>';
 }
 /* ===== 段階3: 成績から学習する補正プロファイル ===== */
 var EDGE_KEY='fxnavi_edge', EDGE_MIN=8, EDGE_CAP=8;
@@ -380,7 +433,9 @@ function renderEdgeTables(t){
   var e2=document.querySelector('#bysession tbody'); if(e2) e2.innerHTML=_grpRows(ss);
   var ordB={'80%以上':1,'65-79%':2,'50-64%':3,'35-49%':4,'35%未満':5}, sb2={};
   Object.keys(bysc).sort(function(a,b){return (ordB[a]||9)-(ordB[b]||9);}).forEach(function(k){sb2[k]=bysc[k];});
-  var e3=document.querySelector('#byscore tbody'); if(e3) e3.innerHTML=_grpRows(sb2);
+  var e3=document.querySelector('#byscore tbody');
+  if(e3) e3.innerHTML=Object.keys(bysc).length?_grpRows(sb2)
+    :'<tr><td colspan=4 style="text-align:center;color:#566">エントリー時のスコアは、ナビゲーターで建てた取引に記録されます（今後の取引から集計）</td></tr>';
 }
 // 共通UX-2: 今日の1行サマリー
 function renderTodaySummary(){var el=document.getElementById('todaybar');if(!el)return;
