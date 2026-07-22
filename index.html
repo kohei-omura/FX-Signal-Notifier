@@ -1548,6 +1548,7 @@ function buildLcd(card, sym, th, stt, holds){
   return lcd;
 }
 
+function _isEmbedCard(sym){ return sym==='GBP_JPY'; }
 function applyPachi(){
   const root=document.body;
   if(!pachiOn()){
@@ -1600,6 +1601,7 @@ function applyPachi(){
     const mq=card.querySelector('.pachi-marquee');
     if(mq){ mq.textContent=(th.name||sym.replace('_','/')); }
     card.style.setProperty('--pc-c1',th.c1); card.style.setProperty('--pc-c2',th.c2);
+    if(_isEmbedCard(sym)){ try{ const _st=STATS?STATS[((S.mode||'swing')+sym)]:null; const _cf=(typeof confluence==='function')?confluence(pair,_st):null; window.pachiFeedIframe({pct:_cf?_cf.pct:0, price:(pair.bid!=null?pair.bid:pair.ask), side:pair.signal}); }catch(e){} }
 
     // 液晶パネル（3列図柄＋保留4玉）。保留色は confluence の判定から決める。
     const st4=STATS?STATS[((S.mode||'swing')+sym)]:null;
@@ -1620,15 +1622,16 @@ function applyPachi(){
       (function(cardRef,symRef,thRef,sttRef,realHolds){
         setTimeout(()=>{ try{
           const l=cardRef.querySelector('.pachi-lcd');
-          if(l && pachiOn()) buildLcd(cardRef, symRef, thRef, sttRef, realHolds);
+          if(l && pachiOn() && !_isEmbedCard(symRef)) buildLcd(cardRef, symRef, thRef, sttRef, realHolds);
         }catch(e){} },220);
       })(card, sym, th, stt, [c0, decay[c0]||'white','white','white']);
     }else if(!sigOn){
       _preread[sym]=false;                               // シグナル消灯でリセット（次回また先読み）
     }
-    buildLcd(card, sym, th, stt, holds);
+    if(!_isEmbedCard(sym)) buildLcd(card, sym, th, stt, holds);
     // 段階B: 玉物理を起動し、価格変動で玉を排出。中央入賞で軽い演出（段階Cで抽選に接続）。
     (function(){
+      if(_isEmbedCard(sym)) return;
       const lcdEl=card.querySelector('.pachi-lcd'); if(!lcdEl) return;
       const price=(pair.bid!=null?pair.bid:(pair.ask!=null?pair.ask:null));
       const onChance=()=>{ const cz=lcdEl.querySelector('.pachi-chancezone');
@@ -2751,6 +2754,18 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
   .m-attacker.open .m-attacker-door{transform:rotateX(82deg)}
   .m-attacker.open{box-shadow:0 0 18px #ffd24a,inset 0 3px 6px rgba(0,0,0,.6)}
 </style>
+<script>
+window.__fx={pct:0, price:null, moved:0, side:null};
+window.pachiFeed=function(d){
+  if(!d) return; var f=window.__fx;
+  if(d.price!=null && !isNaN(d.price)){
+    if(f.price!=null){ f.moved += Math.abs(d.price-f.price); }
+    f.price=d.price;
+  }
+  if(d.pct!=null) f.pct=d.pct;
+  if(d.side!=null) f.side=d.side;
+};
+<\/script>
 </head>
 <body>
   <div class="machine">
@@ -2925,16 +2940,25 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     chanceCount++;
     const ch=document.querySelector('.m-chucker');
     if(ch){ ch.style.boxShadow='0 0 18px #ff5a5a'; setTimeout(()=>ch.style.boxShadow='',400); }
-    // C-1: 入賞したら抽選開始（デモはランダム結果。実アプリは判定pctを渡す）
-    const demoPct = Math.random()<0.15?85:(Math.random()<0.35?60:(Math.random()<0.5?40:20));
-    if(window.pachiHoldAdd) window.pachiHoldAdd(demoPct>=80);
-    if(window.pachiDraw) window.pachiDraw(demoPct);
-    // 大当り濃厚なら確変で右打ちへ
-    if(demoPct>=80) setRight(true);
+    // 入賞したら抽選開始。結果は「アプリの判定スコア(confluence %)」で決まる（ランダムではない）
+    var fxPct = (window.__fx && window.__fx.pct!=null) ? window.__fx.pct : 0;
+    if(window.pachiHoldAdd) window.pachiHoldAdd(fxPct>=80);
+    if(window.pachiDraw) window.pachiDraw(fxPct);
+    // 大当り相当(高スコア)なら確変で右打ちへ
+    if(fxPct>=80) setRight(true); else if(fxPct<55) setRight(false);
   }
   window.setRightMode=function(on){ setRight(on); };
   function setRight(on){ rightMode=on; shoot.textContent=on?'右打ち ▶':'◀ 左打ち'; shoot.className='m-shoot '+(on?'right':'left'); const rl=document.querySelector('.m-rail.l'), rr=document.getElementById('railR'); if(rl&&rr){ rl.style.display=on?'none':'block'; rr.style.display=on?'block':'none'; } }
-  setInterval(shootBall, 850);
+  // FXの価格変動に連動して玉を発射（動くほど多く出る）
+  setInterval(function(){
+    var f=window.__fx||{moved:0};
+    var mv=f.moved||0;
+    var n=0;
+    if(mv>0){ n=Math.min(4, 1+Math.floor(mv*2000)); }
+    else if(Math.random()<0.22){ n=1; }   // 無風でも時々1玉（台が止まって見えないように）
+    for(var i=0;i<n;i++) setTimeout(shootBall, i*110);
+    if(window.__fx) window.__fx.moved=0;
+  }, 900);
   for(let i=0;i<3;i++) setTimeout(shootBall,i*300);
   step();
 })();
