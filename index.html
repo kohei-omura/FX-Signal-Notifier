@@ -1601,7 +1601,7 @@ function applyPachi(){
     const mq=card.querySelector('.pachi-marquee');
     if(mq){ mq.textContent=(th.name||sym.replace('_','/')); }
     card.style.setProperty('--pc-c1',th.c1); card.style.setProperty('--pc-c2',th.c2);
-    if(_isEmbedCard(sym)){ try{ const _st=STATS?STATS[((S.mode||'swing')+sym)]:null; const _cf=(typeof confluence==='function')?confluence(pair,_st):null; window.pachiFeedIframe({pct:_cf?_cf.pct:0, price:(pair.bid!=null?pair.bid:pair.ask), side:pair.signal}, sym); }catch(e){} }
+    if(_isEmbedCard(sym)){ try{ const _st=STATS?STATS[((S.mode||'swing')+sym)]:null; const _cf=(typeof confluence==='function')?confluence(pair,_st):null; window.pachiFeedIframe({pct:_cf?_cf.pct:0, price:(pair.bid!=null?pair.bid:pair.ask), side:pair.signal, mute:((typeof pachiMuted==='function')?pachiMuted():false)}, sym); }catch(e){} }
 
     // 液晶パネル（3列図柄＋保留4玉）。保留色は confluence の判定から決める。
     const st4=STATS?STATS[((S.mode||'swing')+sym)]:null;
@@ -2843,7 +2843,77 @@ window.pachiFeed=function(d){
   }
   if(d.pct!=null) f.pct=d.pct;
   if(d.side!=null) f.side=d.side;
+  if(d.mute!=null && window.pachiSetMute) window.pachiSetMute(d.mute);
 };
+<\/script>
+<script>
+window.__mAudio={ctx:null, muted:false};
+function _ac(){
+  var a=window.__mAudio;
+  if(!a.ctx){ try{ a.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; } }
+  if(a.ctx.state==='suspended'){ try{ a.ctx.resume(); }catch(e){} }
+  return a.ctx;
+}
+function _tone(freq,dur,type,vol,delay){
+  var a=window.__mAudio; if(a.muted) return;
+  var c=_ac(); if(!c) return;
+  var t0=c.currentTime+(delay||0);
+  var o=c.createOscillator(), g=c.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t0);
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.linearRampToValueAtTime(vol||0.12,t0+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(t0); o.stop(t0+dur+0.03);
+}
+function _sweep(f1,f2,dur,type,vol,delay){
+  var a=window.__mAudio; if(a.muted) return;
+  var c=_ac(); if(!c) return;
+  var t0=c.currentTime+(delay||0);
+  var o=c.createOscillator(), g=c.createGain();
+  o.type=type||'sawtooth';
+  o.frequency.setValueAtTime(f1,t0);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20,f2),t0+dur);
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.linearRampToValueAtTime(vol||0.10,t0+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(t0); o.stop(t0+dur+0.03);
+}
+function _noise(dur,vol,delay){
+  var a=window.__mAudio; if(a.muted) return;
+  var c=_ac(); if(!c) return;
+  var t0=c.currentTime+(delay||0);
+  var n=Math.floor(c.sampleRate*dur);
+  var buf=c.createBuffer(1,n,c.sampleRate), d=buf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  var src=c.createBufferSource(); src.buffer=buf;
+  var g=c.createGain(); g.gain.setValueAtTime(vol||0.08,t0);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  src.connect(g); g.connect(c.destination); src.start(t0);
+}
+window.pachiSetMute=function(m){ window.__mAudio.muted=!!m; };
+window.pachiSfx=function(kind){
+  if(window.__mAudio.muted) return;
+  try{
+    switch(kind){
+      case 'chucker': _tone(880,.07,'square',.09); _tone(1320,.07,'square',.07,.05); break;
+      case 'swarm':   for(var i=0;i<7;i++) _tone(680+i*130,.06,'sine',.05,i*.05); break;
+      case 'pseudo':  _sweep(200,1500,.35,'square',.11); _tone(1250,.14,'triangle',.10,.34); _noise(.10,.06,.34); break;
+      case 'reach':   _sweep(380,880,.5,'sawtooth',.09); _tone(660,.3,'triangle',.07,.22); break;
+      case 'sp':      _sweep(300,1300,.75,'sawtooth',.11); _noise(.25,.05,.55); _tone(880,.3,'square',.08,.6); break;
+      case 'spsp':    _sweep(260,1700,1.0,'sawtooth',.12); _noise(.3,.07,.7); [784,988,1175].forEach(function(f,i){_tone(f,.28,'square',.10,.75+i*.1);}); break;
+      case 'cutin':   _noise(.11,.12); _tone(170,.18,'square',.13); _tone(1600,.09,'square',.09,.02); break;
+      case 'zen':     [523,659,784,1047,1319,1568].forEach(function(f,i){ _tone(f,.55,'triangle',.10,i*.13); }); _sweep(400,2000,1.4,'sine',.06,.2); break;
+      case 'win':     [523,659,784,1047].forEach(function(f,i){ _tone(f,.34,'square',.12,i*.12); });
+                      [1047,1319,1568].forEach(function(f,i){ _tone(f,.6,'triangle',.11,.52+i*.14); });
+                      _noise(.25,.06,.5); break;
+      case 'lose':    _tone(320,.18,'sine',.06); _tone(220,.28,'sine',.05,.16); break;
+    }
+  }catch(e){}
+};
+// 初回タップで音を有効化（ブラウザの自動再生制限対策）
+document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, passive:true});
 <\/script>
 </head>
 <body>
@@ -3026,6 +3096,7 @@ window.pachiFeed=function(d){
     if(ch){ ch.style.boxShadow='0 0 18px #ff5a5a'; setTimeout(()=>ch.style.boxShadow='',400); }
     // 入賞したら抽選開始。結果は「アプリの判定スコア(confluence %)」で決まる（ランダムではない）
     var fxPct = (window.__fx && window.__fx.pct!=null) ? window.__fx.pct : 0;
+    if(window.pachiSfx) window.pachiSfx('chucker');
     if(window.pachiHoldAdd) window.pachiHoldAdd(fxPct);
     if(window.pachiDraw) window.pachiDraw(fxPct);
     // 大当り相当(高スコア)なら確変で右打ちへ
@@ -3635,6 +3706,7 @@ window.pachiFeed=function(d){
     var src=document.querySelector('#mCharaInner svg');
     if(src&&fig){ fig.innerHTML=''; var cl=src.cloneNode(true); cl.setAttribute('class','mchara '+(window.__curPrefix||'aud')+' idle'); fig.appendChild(cl); }
     if(t) t.textContent=txt||'激アツ!!';
+    if(window.pachiSfx) window.pachiSfx('cutin');
     c.classList.remove('show'); void c.offsetWidth; c.classList.add('show');
     setTimeout(function(){ c.classList.remove('show'); }, 950);
   }
@@ -3643,7 +3715,7 @@ window.pachiFeed=function(d){
     var chance = pct>=80?0.9 : pct>=60?0.55 : pct>=40?0.22 : 0.05;
     if(Math.random()>chance) return;
     var n = pct>=80?18 : pct>=60?12 : 7;
-    swarm(n);
+    swarm(n); if(window.pachiSfx) window.pachiSfx('swarm');
     setTimeout(function(){ showReachLab(pct>=80?'群予告!! 激アツ':'群予告!'); }, 300);
   }
   function swarm(n){
@@ -3669,6 +3741,7 @@ window.pachiFeed=function(d){
       // 一旦「連」で仮停止
       cols.forEach(function(c){ stopCol(c,'連'); });
       setShake(2);
+      if(window.pachiSfx) window.pachiSfx('pseudo');
       if(lab){ lab.textContent=(n>=2?'疑似連 ②!!':'疑似連!!'); lab.classList.remove('show'); void lab.offsetWidth; lab.classList.add('show'); }
       setTimeout(function(){
         setShake(0);
@@ -3682,6 +3755,7 @@ window.pachiFeed=function(d){
     var lcd=document.querySelector('.m-lcd'), lab=document.getElementById('mZenLab');
     if(lcd) lcd.classList.add('zenkai');
     if(lab){ lab.classList.remove('show'); void lab.offsetWidth; lab.classList.add('show'); }
+    if(window.pachiSfx) window.pachiSfx('zen');
     // 3列を同じ図柄でゆっくり同期回転
     cols.forEach(function(c){ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.9s');
       c.querySelectorAll('.m-sym').forEach(function(sy){ sy.textContent='7'; }); });
@@ -3698,17 +3772,17 @@ window.pachiFeed=function(d){
     var lcd=document.querySelector('.m-lcd');
     if(lcd) lcd.classList.add('reach-dim');
     if(pct>=80){
-      showReachLab('SPSPリーチ!!!'); setShake(2);
+      showReachLab('SPSPリーチ!!!'); setShake(2); if(window.pachiSfx) window.pachiSfx('spsp');
       setTimeout(function(){ cutin('激アツ!!'); }, 500);
       setTimeout(function(){ setShake(3); showReachLab('最終決戦!!'); }, 1700);
       setTimeout(function(){ cutin('勝利を掴め!!'); }, 2200);
       setTimeout(function(){ setShake(0); if(lcd) lcd.classList.remove('reach-dim'); done(); }, 3400);
     } else if(pct>=55){
-      showReachLab('SPリーチ!!'); setShake(1);
+      showReachLab('SPリーチ!!'); setShake(1); if(window.pachiSfx) window.pachiSfx('sp');
       setTimeout(function(){ cutin('チャンス!'); setShake(2); }, 700);
       setTimeout(function(){ setShake(0); if(lcd) lcd.classList.remove('reach-dim'); done(); }, 2400);
     } else {
-      showReachLab('リーチ'); setShake(1);
+      showReachLab('リーチ'); setShake(1); if(window.pachiSfx) window.pachiSfx('reach');
       setTimeout(function(){ setShake(0); if(lcd) lcd.classList.remove('reach-dim'); done(); }, 1300);
     }
   }
@@ -3733,6 +3807,7 @@ window.pachiFeed=function(d){
   function finishDraw(syms, pct){
     const win = syms[0]===syms[1] && syms[1]===syms[2];
     const reach = !win && syms[0]===syms[1];
+    if(window.pachiSfx) window.pachiSfx(win?'win':'lose');
     if(win) showDrawLabel('大当り！');
     else if(reach) showDrawLabel('リーチ…ハズレ');
     else showDrawLabel('ハズレ');
