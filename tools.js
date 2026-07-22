@@ -147,7 +147,7 @@ function csvImport(){
   if(pi<0){alert('損益の列を選んでください');return;}
   const t=loadTrades();let added=0,dup=0;
   // 重複防止: 決済日時+ペア+損益+建値 を一意キーにする
-  const csvKey=function(x){ return [x.closed_at||x.ts||'',x.pair||'',x.yen,(x.entry!=null?x.entry:'')].join('|'); };
+  const csvKey=function(x){ return [x.closed_at||x.ts||'',x.pair||'',x.yen,(x.entry!=null?x.entry:''),(x.exit!=null?x.exit:''),(x.lot!=null?x.lot:'')].join('|'); };
   const seen=new Set(t.map(csvKey));
   for(const r of CSV_ROWS){
     const y=numFromCell(r[pi]); if(isNaN(y)||y===0)continue;
@@ -316,43 +316,50 @@ function _hasScore(x){ return x&&x.score!=null&&x.score!==''; }
 function _hasPx(x){ return x&&x.entry!=null&&x.entry!==''; }
 function _tsOf(x){ var d=_tJst(x.closed_at||''); return d?d.getTime():(x.ts||0); }
 function mergeTradeSources(tol){
-  tol=(tol==null?12*3600e3:tol);          // 既定: 12時間以内を同一取引とみなす
-  var t=loadTrades(), used=new Array(t.length).fill(false), out=[], merged=0, dropped=0;
-  var order=t.map(function(x,i){return i;}).sort(function(a,b){return _tsOf(t[a])-_tsOf(t[b]);});
-  for(var oi=0;oi<order.length;oi++){
-    var i=order[oi]; if(used[i]) continue;
-    var a=t[i]; used[i]=true; var base=Object.assign({},a);
-    for(var oj=oi+1;oj<order.length;oj++){
-      var j=order[oj]; if(used[j]) continue;
-      var b=t[j];
-      if(a.pair!==b.pair) continue;
-      if(+a.yen!==+b.yen) continue;
-      if(Math.abs(_tsOf(a)-_tsOf(b))>tol) continue;
-      // 完全な重複か、CSVとアプリの組み合わせなら統合
-      var complement=( _hasScore(a)&&_hasPx(b) )||( _hasPx(a)&&_hasScore(b) );
-      var sameSrc = (!!a.srcId&&!!b.srcId&&a.srcId===b.srcId);
-      if(!complement && !sameSrc && _hasPx(a)===_hasPx(b) && _hasScore(a)===_hasScore(b)){
-        // 同種の重複（同じCSVを二重取込など）
-        used[j]=true; dropped++; continue;
-      }
-      if(complement||sameSrc){
-        var px=_hasPx(b)?b:(_hasPx(a)?a:null);
-        var sc=_hasScore(b)?b:(_hasScore(a)?a:null);
-        if(px){ ['opened_at','closed_at','entry','exit','lot','pips','ts'].forEach(function(k){
-          if(px[k]!=null&&px[k]!=='') base[k]=px[k]; }); }
-        if(sc){ ['score','smark','got','signal','rsi','tech','fund','mode','reason','tp','sl','opened_at'].forEach(function(k){
-          if(sc[k]!=null&&sc[k]!==''&&(base[k]==null||base[k]==='')) base[k]=sc[k]; });
-          if(_hasScore(sc)) base.score=sc.score;
-          // アプリ側が本当のエントリー時刻を持つ場合はそちらを優先
-          if(sc.opened_at&&sc.closed_at&&sc.opened_at!==sc.closed_at) base.opened_at=sc.opened_at; }
-        if(b.srcId&&!base.srcId) base.srcId=b.srcId;
-        used[j]=true; merged++;
-      }
+  tol=(tol==null?12*3600e3:tol);
+  var t=loadTrades();
+  var idx=t.map(function(x,i){return i;});
+  var isCsv=function(x){ return _hasPx(x); };
+  var used=new Array(t.length).fill(false);
+  var merged=0, dropped=0;
+  var csvIdx=idx.filter(function(i){return isCsv(t[i]);});
+  var appIdx=idx.filter(function(i){return !isCsv(t[i]);});
+  csvIdx.forEach(function(ci){
+    if(used[ci]) return;
+    var best=-1,bestD=Infinity;
+    appIdx.forEach(function(ai){
+      if(used[ai]) return;
+      var A=t[ai],C=t[ci];
+      if(A.pair!==C.pair) return;
+      if(+A.yen!==+C.yen) return;
+      var d=Math.abs(_tsOf(A)-_tsOf(C));
+      if(d>tol) return;
+      if(d<bestD){bestD=d;best=ai;}
+    });
+    if(best>=0){
+      var C=t[ci],A=t[best];
+      ['score','smark','got','signal','rsi','tech','fund','mode','reason','tp','sl','srcId'].forEach(function(k){
+        if(A[k]!=null&&A[k]!==''&&(C[k]==null||C[k]==='')) C[k]=A[k];
+      });
+      if(A.opened_at&&A.closed_at&&A.opened_at!==A.closed_at) C.opened_at=A.opened_at;
+      used[best]=true; merged++;
     }
-    out.push(base);
-  }
+  });
+  var seenCsv={},seenApp={};
+  idx.forEach(function(i){
+    if(used[i]) return;
+    var x=t[i];
+    if(isCsv(x)){
+      var k=[x.pair,x.yen,x.closed_at||x.ts,x.entry,x.exit,x.lot].join('|');
+      if(seenCsv[k]){used[i]=true;dropped++;} else seenCsv[k]=1;
+    }else if(x.srcId){
+      var k2='S'+x.srcId;
+      if(seenApp[k2]){used[i]=true;dropped++;} else seenApp[k2]=1;
+    }
+  });
+  var out=idx.filter(function(i){return !used[i];}).map(function(i){return t[i];});
   saveTrades(out);
-  return {merged:merged, dropped:dropped, total:out.length};
+  return {merged:merged,dropped:dropped,total:out.length};
 }
 function mergeTradesUI(){
   var r=mergeTradeSources();
