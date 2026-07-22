@@ -2753,6 +2753,49 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     box-shadow:inset 0 2px 0 rgba(255,255,255,.5);transform-origin:50% 100%;transition:transform .45s ease}
   .m-attacker.open .m-attacker-door{transform:rotateX(82deg)}
   .m-attacker.open{box-shadow:0 0 18px #ffd24a,inset 0 3px 6px rgba(0,0,0,.6)}
+
+  /* ── 画面シェイク・ズーム（アツいほど激しい） ── */
+  .m-board.shk1{animation:mShk1 .12s linear infinite}
+  .m-board.shk2{animation:mShk2 .09s linear infinite}
+  .m-board.shk3{animation:mShk3 .07s linear infinite}
+  @keyframes mShk1{0%,100%{transform:translate(0,0)}25%{transform:translate(-1px,1px)}75%{transform:translate(1px,-1px)}}
+  @keyframes mShk2{0%,100%{transform:translate(0,0) scale(1)}25%{transform:translate(-3px,2px) scale(1.008)}75%{transform:translate(3px,-2px) scale(1.008)}}
+  @keyframes mShk3{0%,100%{transform:translate(0,0) scale(1.015)}20%{transform:translate(-5px,3px) scale(1.03)}60%{transform:translate(5px,-3px) scale(1.02)}}
+  /* ── リーチ中の暗転（液晶） ── */
+  .m-lcd.reach-dim::before{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
+    background:radial-gradient(circle at 50% 45%,rgba(0,0,0,.15),rgba(0,0,0,.72) 78%)}
+  .m-lcd.reach-dim .m-reels{opacity:.28;transition:opacity .3s}
+  /* ── カットイン予告 ── */
+  .m-cutin{position:absolute;inset:0;z-index:7;pointer-events:none;display:none;
+    align-items:center;justify-content:center;overflow:hidden}
+  .m-cutin.show{display:flex;animation:mCutIn .9s ease-out}
+  @keyframes mCutIn{0%{opacity:0;transform:translateX(-40%) skewX(-12deg)}
+    18%{opacity:1;transform:translateX(0) skewX(0)}
+    78%{opacity:1;transform:translateX(0) skewX(0)}
+    100%{opacity:0;transform:translateX(28%) skewX(10deg)}}
+  .m-cutin-bg{position:absolute;inset:0;
+    background:linear-gradient(105deg,transparent 8%,var(--c2,#0b5a5a) 18%,var(--c1,#3ad0c8) 50%,var(--c2,#0b5a5a) 82%,transparent 92%);
+    opacity:.92}
+  .m-cutin-fig{position:relative;height:88%;width:auto;aspect-ratio:240/220;filter:drop-shadow(0 0 8px rgba(0,0,0,.6))}
+  .m-cutin-fig svg{width:100%;height:100%;display:block}
+  .m-cutin-txt{position:absolute;left:50%;top:16%;transform:translateX(-50%);
+    font-weight:900;font-size:20px;letter-spacing:.08em;color:#fff;white-space:nowrap;
+    text-shadow:0 0 10px #ff3a0a,0 0 20px #ff8a2a,0 2px 4px #000;-webkit-text-stroke:1px #7a1500}
+  /* ── リーチ段階ラベル ── */
+  .m-reach-lab{position:absolute;left:50%;top:78%;transform:translate(-50%,-50%) scale(0);z-index:6;
+    pointer-events:none;font-weight:900;font-size:17px;letter-spacing:.06em;white-space:nowrap;opacity:0;
+    color:#ffd24a;text-shadow:0 0 12px #ff6a2a,0 2px 4px #000}
+  .m-reach-lab.show{animation:mReachLab .6s cubic-bezier(.2,1.6,.4,1) forwards}
+  @keyframes mReachLab{0%{transform:translate(-50%,-50%) scale(0) rotate(-8deg);opacity:0}
+    70%{transform:translate(-50%,-50%) scale(1.2) rotate(3deg);opacity:1}
+    100%{transform:translate(-50%,-50%) scale(1.05) rotate(0);opacity:1}}
+  /* ── 保留ランプの色段階 ── */
+  .m-hold.c-blue{background:radial-gradient(circle at 35% 30%,#fff,#4aa0ff 70%);box-shadow:0 0 9px #4aa0ff}
+  .m-hold.c-green{background:radial-gradient(circle at 35% 30%,#fff,#3ad06a 70%);box-shadow:0 0 10px #3ad06a}
+  .m-hold.c-red{background:radial-gradient(circle at 35% 30%,#fff,#ff4a4a 70%);box-shadow:0 0 12px #ff4a4a}
+  .m-hold.c-rainbow{background:conic-gradient(#ff4a4a,#ffd24a,#3ad06a,#4aa0ff,#c078ff,#ff4a4a);
+    box-shadow:0 0 14px #fff,0 0 22px #c078ff;animation:mHoldRb 1.2s linear infinite}
+  @keyframes mHoldRb{to{filter:hue-rotate(360deg)}}
 </style>
 <script>
 window.__fx={pct:0, price:null, moved:0, side:null};
@@ -2782,6 +2825,8 @@ window.pachiFeed=function(d){
         <div class="m-windmill r"></div>
         <div class="m-chucker"></div>
         <div class="m-chucker-lbl">スタートチャッカー</div>
+        <div class="m-cutin" id="mCutin"><div class="m-cutin-bg"></div><div class="m-cutin-fig" id="mCutinFig"></div><div class="m-cutin-txt" id="mCutinTxt">激アツ!!</div></div>
+        <div class="m-reach-lab" id="mReachLab"></div>
         <div class="m-holds" id="mHolds"><span class="m-hold"></span><span class="m-hold"></span><span class="m-hold"></span><span class="m-hold"></span></div>
         <div class="m-attacker" id="mAttacker"><div class="m-attacker-door"></div></div>
         <div class="m-attacker-lbl">アタッカー</div>
@@ -2942,7 +2987,7 @@ window.pachiFeed=function(d){
     if(ch){ ch.style.boxShadow='0 0 18px #ff5a5a'; setTimeout(()=>ch.style.boxShadow='',400); }
     // 入賞したら抽選開始。結果は「アプリの判定スコア(confluence %)」で決まる（ランダムではない）
     var fxPct = (window.__fx && window.__fx.pct!=null) ? window.__fx.pct : 0;
-    if(window.pachiHoldAdd) window.pachiHoldAdd(fxPct>=80);
+    if(window.pachiHoldAdd) window.pachiHoldAdd(fxPct);
     if(window.pachiDraw) window.pachiDraw(fxPct);
     // 大当り相当(高スコア)なら確変で右打ちへ
     if(fxPct>=80) setRight(true); else if(fxPct<55) setRight(false);
@@ -3511,31 +3556,62 @@ window.pachiFeed=function(d){
   let drawing=false;
   window.pachiDraw=function(resultPct){
     if(drawing) return; drawing=true;
-    const cols=[...document.querySelectorAll('.m-col')];
-    // 全列を高速回転
-    cols.forEach(c=>{ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.12s'); });
-    // 抽選中ラベル
+    var pct=(typeof resultPct==='number')?resultPct:0;
+    var cols=[].slice.call(document.querySelectorAll('.m-col'));
+    cols.forEach(function(c){ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.12s'); });
     showDrawLabel('抽選中…');
     if(window.pachiGimmick) window.pachiGimmick(true);
     if(window.pachiHoldConsume) window.pachiHoldConsume();
-    // 1列ずつ順に停止（C-2）
-    const finalSyms = decideSyms(resultPct);
-    let ci=0;
-    const stopNext=()=>{
-      if(ci>=3){ finishDraw(finalSyms, resultPct); return; }
-      const col=cols[ci];
-      col.classList.remove('spin'); col.classList.add('stop');
-      setStripSym(col, finalSyms[ci]);
-      ci++;
-      setTimeout(stopNext, 500);
-    };
-    setTimeout(stopNext, 900);
+    var finalSyms=decideSyms(pct);
+    setTimeout(function(){ stopCol(cols[0], finalSyms[0]); }, 800);
+    setTimeout(function(){
+      stopCol(cols[1], finalSyms[1]);
+      var isReach=(finalSyms[0]===finalSyms[1]);
+      if(!isReach){ setTimeout(function(){ stopCol(cols[2], finalSyms[2]); finishDraw(finalSyms,pct); }, 450); return; }
+      runReach(pct, function(){ stopCol(cols[2], finalSyms[2]); finishDraw(finalSyms,pct); });
+    }, 1300);
   };
+  function stopCol(col, sym){ if(!col) return; col.classList.remove('spin'); col.classList.add('stop'); setStripSym(col,sym); }
+  function setShake(lv){
+    var b=document.querySelector('.m-board'); if(!b) return;
+    b.classList.remove('shk1','shk2','shk3'); if(lv) b.classList.add('shk'+lv);
+  }
+  function showReachLab(txt){
+    var l=document.getElementById('mReachLab'); if(!l) return;
+    l.textContent=txt; l.classList.remove('show'); void l.offsetWidth; l.classList.add('show');
+  }
+  function cutin(txt){
+    var c=document.getElementById('mCutin'), fig=document.getElementById('mCutinFig'), t=document.getElementById('mCutinTxt');
+    if(!c) return;
+    var src=document.querySelector('#mCharaInner svg');
+    if(src&&fig){ fig.innerHTML=''; var cl=src.cloneNode(true); cl.setAttribute('class','mchara '+(window.__curPrefix||'aud')+' idle'); fig.appendChild(cl); }
+    if(t) t.textContent=txt||'激アツ!!';
+    c.classList.remove('show'); void c.offsetWidth; c.classList.add('show');
+    setTimeout(function(){ c.classList.remove('show'); }, 950);
+  }
+  function runReach(pct, done){
+    var lcd=document.querySelector('.m-lcd');
+    if(lcd) lcd.classList.add('reach-dim');
+    if(pct>=80){
+      showReachLab('SPSPリーチ!!!'); setShake(2);
+      setTimeout(function(){ cutin('激アツ!!'); }, 500);
+      setTimeout(function(){ setShake(3); showReachLab('最終決戦!!'); }, 1700);
+      setTimeout(function(){ cutin('勝利を掴め!!'); }, 2200);
+      setTimeout(function(){ setShake(0); if(lcd) lcd.classList.remove('reach-dim'); done(); }, 3400);
+    } else if(pct>=55){
+      showReachLab('SPリーチ!!'); setShake(1);
+      setTimeout(function(){ cutin('チャンス!'); setShake(2); }, 700);
+      setTimeout(function(){ setShake(0); if(lcd) lcd.classList.remove('reach-dim'); done(); }, 2400);
+    } else {
+      showReachLab('リーチ'); setShake(1);
+      setTimeout(function(){ setShake(0); if(lcd) lcd.classList.remove('reach-dim'); done(); }, 1300);
+    }
+  }
   function decideSyms(pct){
     // 結果の強さで揃い方を決める（既存判定を映すだけ）
     if(pct>=80) return ['7','7','7'];           // 大当り濃厚
     if(pct>=55) return ['7','7','3'];           // リーチ(惜しい)
-    if(pct>=35) return ['7','3','7'];           // テンパイ気味
+    if(pct>=35) return ['7','7','5'];           // テンパイ気味
     const pool=['3','8','5']; return [pool[0],pool[1],pool[2]]; // ハズレ
   }
   function setStripSym(col, sym){
@@ -3561,6 +3637,7 @@ window.pachiFeed=function(d){
     setTimeout(()=>{ const lab=document.querySelector('.m-draw-lab'); if(lab)lab.classList.remove('show');
       // 通常回転に戻す
       document.querySelectorAll('.m-col').forEach(c=>{ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.4s'); c.querySelectorAll('.m-sym').forEach(sy=>sy.classList.remove('hit')); });
+      setShake(0); var _l=document.querySelector('.m-lcd'); if(_l) _l.classList.remove('reach-dim');
       if(window.pachiGimmick) window.pachiGimmick(false);
       if(window.pachiAttacker) window.pachiAttacker(false);
       drawing=false;
@@ -3590,19 +3667,28 @@ document.getElementById('toggleMode') && document.getElementById('toggleMode').a
 <script>
 (function(){
   var holdCount=0;
-  window.pachiHoldAdd=function(hot){
+  window.pachiHoldAdd=function(pct){
     var els=document.querySelectorAll('#mHolds .m-hold');
-    if(holdCount<els.length){ els[holdCount].classList.add(hot?'hot':'on'); holdCount++; }
+    if(holdCount>=els.length) return;
+    var p=(typeof pct==='number')?pct:0, cls='on';
+    if(p>=90) cls='c-rainbow'; else if(p>=80) cls='c-red';
+    else if(p>=65) cls='c-green'; else if(p>=50) cls='c-blue';
+    els[holdCount].classList.add(cls); holdCount++;
   };
   window.pachiHoldConsume=function(){
     var els=document.querySelectorAll('#mHolds .m-hold');
-    if(holdCount>0){ holdCount--; els[holdCount].classList.remove('on','hot'); }
+    if(holdCount>0){ holdCount--; els[holdCount].classList.remove('on','hot','c-blue','c-green','c-red','c-rainbow'); }
   };
   window.pachiGimmick=function(on){
     var g=document.getElementById('mGimmick'); if(!g) return;
     g.classList.toggle('act', !!on);
     var t=document.getElementById('mTitle'); if(t) t.classList.toggle('hot', !!on);
   };
+  (function(){
+    var lcd=document.querySelector('.m-lcd');
+    var ci=document.getElementById('mCutin'), rl=document.getElementById('mReachLab');
+    if(lcd){ if(ci) lcd.appendChild(ci); if(rl) lcd.appendChild(rl); }
+  })();
   window.pachiAttacker=function(open){
     var a=document.getElementById('mAttacker'); if(!a) return;
     a.classList.toggle('open', !!open);
