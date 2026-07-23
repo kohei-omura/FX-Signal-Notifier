@@ -187,6 +187,7 @@ function csvImport(){
     (dup?('<br><span class="good">重複 '+dup+' 件は自動スキップしました</span>'):'')+
     (withDate?('<br><span class="good">日時あり: '+withDate+'件 → 時間帯別・セッション別を集計しました</span>')
              :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>');
+  try{attachSnapScores();}catch(e){}
   try{var _mg=mergeTradeSources(); if(_mg.merged||_mg.dropped){ $('#impmsg').innerHTML+='<br><span class="good">アプリ決済と突合: '+_mg.merged+'件を統合 / '+_mg.dropped+'件の重複を削除</span>'; }}catch(e){}
   renderJournal();
 }
@@ -249,7 +250,7 @@ async function appSync(){
     saveTrades(t);msg.innerHTML=`<span class="good">${added}件をアプリから取り込みました。</span>`;renderJournal();
   }catch(e){msg.innerHTML='<span class="warn">取得失敗: '+e.message+'</span>';}
 }
-function delTrade(i){const t=loadTrades();t.splice(i,1);saveTrades(t);try{mergeTradeSources();}catch(e){}renderJournal();}
+function delTrade(i){const t=loadTrades();t.splice(i,1);saveTrades(t);try{attachSnapScores();}catch(e){}try{mergeTradeSources();}catch(e){}renderJournal();}
 function renderJournal(){
   const t=loadTrades();
   const wins=t.filter(x=>x.yen>0),losses=t.filter(x=>x.yen<0);
@@ -316,57 +317,72 @@ function _hasScore(x){ return x&&x.score!=null&&x.score!==''; }
 function _hasPx(x){ return x&&x.entry!=null&&x.entry!==''; }
 function _tsOf(x){ var d=_tJst(x.closed_at||''); return d?d.getTime():(x.ts||0); }
 function mergeTradeSources(tol){
-  tol=(tol==null?12*3600e3:tol);
+  tol=(tol==null?60*60e3:tol);
   var t=loadTrades();
-  var idx=t.map(function(x,i){return i;});
-  var isApp=function(x){ return !!x.srcId; };   // アプリ決済はsrcIdを持つ
-  var isCsv=function(x){ return !isApp(x); };
-  var used=new Array(t.length).fill(false);
-  var merged=0, dropped=0;
-  var csvIdx=idx.filter(function(i){return isCsv(t[i]);});
-  var appIdx=idx.filter(function(i){return !isCsv(t[i]);});
-  csvIdx.forEach(function(ci){
-    if(used[ci]) return;
-    var best=-1,bestD=Infinity;
-    appIdx.forEach(function(ai){
-      if(used[ai]) return;
-      var A=t[ai],C=t[ci];
-      if(A.pair!==C.pair) return;
-      if(+A.yen!==+C.yen) return;
-      var d=Math.abs(_tsOf(A)-_tsOf(C));
-      if(d>tol) return;
-      if(d<bestD){bestD=d;best=ai;}
-    });
-    if(best>=0){
-      var C=t[ci],A=t[best];
-      ['score','smark','got','signal','rsi','tech','fund','mode','reason','tp','sl','srcId'].forEach(function(k){
-        if(A[k]!=null&&A[k]!==''&&(C[k]==null||C[k]==='')) C[k]=A[k];
-      });
-      if(A.opened_at&&A.closed_at&&A.opened_at!==A.closed_at) C.opened_at=A.opened_at;
-      used[best]=true; merged++;
+  var hasPx=function(x){ return x&&x.entry!=null&&x.entry!==''; };
+  var hasScore=function(x){ return x&&x.score!=null&&x.score!==''; };
+  var rich=function(x){ var n=0; if(hasPx(x))n+=2; if(x.pips!=null&&x.pips!=='')n+=1; if(hasScore(x))n+=1; return n; };
+  var used=new Array(t.length).fill(false), merged=0, out=[];
+  var order=t.map(function(x,i){return i;}).sort(function(p,q){return _tsOf(t[p])-_tsOf(t[q]);});
+  for(var oi=0;oi<order.length;oi++){
+    var i=order[oi]; if(used[i]) continue;
+    var group=[i]; used[i]=true;
+    for(var oj=oi+1;oj<order.length;oj++){
+      var j=order[oj]; if(used[j]) continue;
+      var A=t[i], B=t[j];
+      if(A.pair!==B.pair) continue;
+      if(+A.yen!==+B.yen) continue;
+      if(Math.abs(_tsOf(A)-_tsOf(B))>tol) continue;
+      group.push(j); used[j]=true;
     }
-  });
-  var seenCsv={},seenApp={};
-  idx.forEach(function(i){
-    if(used[i]) return;
-    var x=t[i];
-    if(x.srcId){
-      var k2='S'+x.srcId;
-      if(seenApp[k2]){used[i]=true;dropped++;} else seenApp[k2]=1;
-    }else{
-      var k=[x.pair,x.yen,x.closed_at||x.ts,x.entry,x.exit,x.lot].join('|');
-      if(seenCsv[k]){used[i]=true;dropped++;} else seenCsv[k]=1;
-    }
-  });
-  var out=idx.filter(function(i){return !used[i];}).map(function(i){return t[i];});
+    if(group.length===1){ out.push(t[i]); continue; }
+    var repIdx=group.slice().sort(function(x,y){ return rich(t[y])-rich(t[x]); })[0];
+    var rep=Object.assign({}, t[repIdx]);
+    var csvRec=null, scoreRec=null;
+    group.forEach(function(k){ var r=t[k];
+      if(hasPx(r)&&!csvRec) csvRec=r;
+      if(hasScore(r)&&!scoreRec) scoreRec=r; });
+    if(csvRec){ ['closed_at','ts','entry','exit','lot','pips'].forEach(function(k){
+      if(csvRec[k]!=null&&csvRec[k]!=='') rep[k]=csvRec[k]; }); }
+    if(scoreRec){ ['score','smark','got','signal','rsi','tech','fund','mode','reason','tp','sl','srcId'].forEach(function(k){
+      if(scoreRec[k]!=null&&scoreRec[k]!=='') rep[k]=scoreRec[k]; });
+      if(scoreRec.opened_at&&scoreRec.closed_at&&scoreRec.opened_at!==scoreRec.closed_at) rep.opened_at=scoreRec.opened_at; }
+    if(!rep.opened_at&&rep.closed_at) rep.opened_at=rep.closed_at;
+    merged+=(group.length-1);
+    out.push(rep);
+  }
   saveTrades(out);
-  return {merged:merged,dropped:dropped,total:out.length};
+  return {merged:merged,dropped:0,total:out.length};
 }
 function mergeTradesUI(){
   var r=mergeTradeSources();
   renderJournal();
   var m=$('#impmsg');
   if(m) m.innerHTML='<span class="good">統合しました：'+r.merged+'件をCSVとアプリで突合、'+r.dropped+'件の重複を削除 → 現在 '+r.total+'件</span>';
+}
+/* ===== スコア自動紐付け: 約定時刻に最も近いスナップショットを採用 ===== */
+function _loadSnap(){ try{ return JSON.parse(localStorage.getItem('fxnavi_snap')||'[]'); }catch(e){ return []; } }
+function attachSnapScores(tolMin){
+  var tol=(tolMin==null?90:tolMin)*60000;
+  var snap=_loadSnap(); if(!snap.length) return {filled:0,total:0,noSnap:true};
+  var t=loadTrades(), filled=0;
+  t.forEach(function(x){
+    if(x.score!=null&&x.score!=='') return;
+    var od=_tOpen(x)||_tJst(x.closed_at||''); if(!od) return;
+    var want=String(x.pair||'').replace('/','_');
+    var ms=od.getTime(), best=null, bd=Infinity;
+    snap.forEach(function(s){
+      if(s.sym!==want) return;
+      var d=Math.abs(s.t-ms); if(d>tol) return;
+      if(d<bd){ bd=d; best=s; }
+    });
+    if(best){ x.score=best.score; x.smark=best.mark; x.got=best.got;
+      if(!x.signal) x.signal=best.signal; if(x.rsi==null||x.rsi==='') x.rsi=best.rsi;
+      if(x.tech==null||x.tech==='') x.tech=best.tech; if(x.fund==null||x.fund==='') x.fund=best.fund;
+      if(!x.mode) x.mode=best.mode; x.scoreSrc='snap'; filled++; }
+  });
+  if(filled) saveTrades(t);
+  return {filled:filled,total:t.length};
 }
 /* ===== 段階3: 成績から学習する補正プロファイル ===== */
 var EDGE_KEY='fxnavi_edge', EDGE_MIN=8, EDGE_CAP=8;

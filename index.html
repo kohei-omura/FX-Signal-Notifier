@@ -989,6 +989,31 @@ function suppressOppNotify(){try{return localStorage.getItem('fxnavi_oppsupp')==
 function adxBand(adx){if(adx==null)return{cls:'',ic:'⚪',lab:'—'};if(adx>40)return{cls:'hot',ic:'🔴',lab:'過熱'};if(adx>=30)return{cls:'ok',ic:'🟢',lab:'推奨'};if(adx>=20)return{cls:'warn',ic:'🟡',lab:'注意'};return{cls:'weak',ic:'⚪',lab:'弱'};}
 function expectancyOK(pair,st){if(!st||!pair.tp_pips||!pair.sl_pips)return null;const rr=pair.tp_pips/pair.sl_pips,be=100/(1+rr);return st.winRate>be;}
 function longEnvAlign(pair){const le=pair.longEnv;if(!le||!pair.signal)return null;return (pair.signal==='買い'&&le.dir==='up')||(pair.signal==='売り'&&le.dir==='down');}
+// ===== スコア自動スナップショット（CSV取込時に約定時刻へ紐付け） =====
+function snapScores(){
+  try{
+    if(!S||!S.pairs||!S.pairs.length) return;
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem('fxnavi_snap')||'[]'); }catch(e){ arr=[]; }
+    var now=Date.now();
+    (S.pairs||[]).forEach(function(p){
+      try{
+        var st=(typeof STATS!=='undefined'&&STATS)?STATS[((S.mode||'swing')+p.symbol)]:null;
+        var c=(typeof confluence==='function')?confluence(p,st):null;
+        if(!c) return;
+        arr.push({t:now,sym:p.symbol,score:c.pct,mark:c.mark,got:c.got,
+          signal:p.signal||'',rsi:(p.rsi!=null?p.rsi:''),tech:(p.tech!=null?p.tech:''),
+          fund:(p.fund!=null?p.fund:''),mode:(S.mode||'')});
+      }catch(e){}
+    });
+    // 30日より古いものは捨てる（容量対策）
+    var cut=now-30*24*3600e3;
+    arr=arr.filter(function(x){return x.t>=cut;});
+    if(arr.length>20000) arr=arr.slice(arr.length-20000);
+    localStorage.setItem('fxnavi_snap',JSON.stringify(arr));
+  }catch(e){}
+}
+setInterval(snapScores, 5*60*1000);
+setTimeout(snapScores, 8000);
 // ===== 段階3: ツールで学習した補正をスコアへ反映 =====
 function edgeProfile(){ try{ return JSON.parse(localStorage.getItem('fxnavi_edge')||'null'); }catch(e){ return null; } }
 function _edgeSessNow(){
