@@ -819,9 +819,9 @@ const SPREAD={USD_JPY:0.2,EUR_JPY:0.4,GBP_JPY:0.9,AUD_JPY:0.5};
 //  scalp=時間帯/ニュース支配的→zone/blackout重み2 ／ day=adxBand/longEnv中心の現行比重
 //  機能3のregime(重み1)を全モードに追加。閾値75%/45%は割合判定のまま共通維持。
 const CONFLUENCE_W_BY_MODE={
-  scalp:{longEnv:2,adxBand:2,expectancy:2,dow:1,zone:2,granville:1,blackout:2,regime:1},
-  day:  {longEnv:2,adxBand:2,expectancy:2,dow:1,zone:1,granville:1,blackout:1,regime:1},
-  swing:{longEnv:2,adxBand:2,expectancy:2,dow:1,zone:1,granville:1,blackout:1,regime:1}
+  scalp:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:2,granville:0.5,blackout:1.5,regime:1},
+  day:  {longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1,regime:1},
+  swing:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1,regime:1}
 };
 function confW(){return CONFLUENCE_W_BY_MODE[(S&&S.mode)||'swing']||CONFLUENCE_W_BY_MODE.swing;}
 // 機能3: ボラティリティ・レジーム（ATR直近200本パーセンタイル・表示のみ）
@@ -1038,9 +1038,9 @@ function edgeAdjust(sym){
   return {adj:adj, why:why};
 }
 function confluence(pair,st){const W=confW();let got=0;let total=0;for(const k in W)total+=W[k];const det=[];
-  const add=(w,ok,lab)=>{if(ok===true){got+=w;det.push(lab+'✓');}else if(ok===false){det.push(lab+'✗');}else{det.push(lab+'—');}};
+  const add=(w,ok,lab)=>{if(ok===true){got+=w;det.push(lab+'✓');}else if(typeof ok==='number'&&ok>0){got+=w*ok;det.push(lab+(ok>=1?'✓':'△'));}else if(ok===false||ok===0){det.push(lab+'✗');}else{det.push(lab+'—');}};
   add(W.longEnv,longEnvAlign(pair),'長期');
-  add(W.adxBand,pair.adx!=null?(pair.adx>=30&&pair.adx<=40):null,'ADX');
+  add(W.adxBand,pair.adx!=null?((pair.adx>=30&&pair.adx<=40)?true:(((pair.adx>=25&&pair.adx<30)||(pair.adx>40&&pair.adx<=50))?0.5:false)):null,'ADX');
   add(W.expectancy,expectancyOK(pair,st),'期待値');
   const dowOK=pair.dow&&pair.signal?((pair.signal==='買い'&&pair.dow.trend==='up')||(pair.signal==='売り'&&pair.dow.trend==='down')):null;
   add(W.dow,dowOK,'ダウ');
@@ -1053,7 +1053,7 @@ function confluence(pair,st){const W=confW();let got=0;let total=0;for(const k i
   const _e=edgeAdjust(pair.symbol);
   if(_e.adj){ pct=Math.max(0,Math.min(1,pct+_e.adj/100)); det.push('学習'+(_e.adj>0?'+':'')+_e.adj); }
   let mark,cls;
-  if(pct>=0.75){mark='🟢 エントリーOK';cls='ok';}else if(pct>=0.45){mark='🟡 保留・検討';cls='hold';}else{mark='🔴 見送り';cls='no';}
+  if(pct>=0.70){mark='🟢 エントリーOK';cls='ok';}else if(pct>=0.50){mark='🟡 保留・検討';cls='hold';}else{mark='🔴 見送り';cls='no';}
   if(!pair.signal&&cls==='ok'){mark='🟡 保留・検討';cls='hold';}
   return{mark,cls,got:Math.round(got*10)/10,total,pct:Math.round(pct*100),det,edge:_e.adj,edgeWhy:_e.why};}
 function simStatsByCore(sym,oh,P,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
@@ -1183,7 +1183,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   // 機能3: コンフルエンスメーター
   const conf=confluence(p,st);
   const meterExp=conf.det.join(' ');
-  const meter=`<div class="meter ${conf.cls}" onclick="this.classList.toggle('open')"><b>🎯 ${conf.mark}</b><span class="mscore">${conf.got}/10</span><div class="mdet">${conf.pct}%：${meterExp}</div></div>`;
+  const meter=`<div class="meter ${conf.cls}" onclick="this.classList.toggle('open')"><b>🎯 ${conf.mark}</b><span class="mscore">${conf.got}/${conf.total}</span><div class="mdet">${conf.pct}%：${meterExp}</div></div>`;
   // 統計: コア一致数別TP勝率
   let coreStatBox='';
   if(st&&st.core){const cc=st.core,seg=k=>cc[k]?`${k}/2:<b>${cc[k].wr}%</b>(${cc[k].n})`:`${k}/2:—`;

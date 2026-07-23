@@ -4,7 +4,7 @@
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
 """
 
-import os, sys, json, math, smtplib, datetime
+import os, sys, json, math, smtplib, datetime, re
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from zoneinfo import ZoneInfo
@@ -81,6 +81,9 @@ BASE = "https://forex-api.coin.z.com/public/v1"
 _OHLC_CACHE = {}
 
 
+_OHLC_T = {}
+
+
 def get_ohlc(symbol):
     if symbol in _OHLC_CACHE:
         return _OHLC_CACHE[symbol]
@@ -101,6 +104,7 @@ def get_ohlc(symbol):
         if len(rows) >= need:
             break
     out = [rows[t] for t in sorted(rows)]
+    _OHLC_T[symbol] = sorted(rows)
     _OHLC_CACHE[symbol] = out
     return out
 
@@ -521,6 +525,39 @@ def position_pl(p, ticker):
             "tp_price":round(tp_pr,3) if tp_pr else None, "sl_price":round(sl_pr,3) if sl_pr else None}
 
 
+def _opened_ms(p):
+    """建玉時刻(JST文字列)をミリ秒に変換。不明ならNone"""
+    v = p.get("opened_at") or p.get("openedAt") or p.get("created_at")
+    if not v: return None
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})", str(v))
+    if not m: return None
+    try:
+        dt = datetime.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                               int(m.group(4)), int(m.group(5)), tzinfo=JST)
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        return None
+
+
+def _touch_bars(sym, p, nb, profit=0.0, now_ms=None):
+    """TP/SLタッチ判定に使う足。建玉より前の値動きは除外する（誤報防止）"""
+    bars = get_ohlc(sym) or []
+    if not bars: return []
+    times = _OHLC_T.get(sym) or []
+    since = _opened_ms(p)
+    if since is None or len(times) != len(bars):
+        return [] if profit > 0 else bars[-nb:]
+    now_ms = now_ms if now_ms is not None else int(datetime.datetime.now(JST).timestamp() * 1000)
+    win = now_ms - TOUCH_LOOKBACK_MIN * 60000
+    bm = BARMIN.get(P["interval"], 1) * 60000
+    out = []
+    for t, b in zip(times, bars):
+        if t + bm <= win: continue
+        if t < since: continue
+        out.append(b)
+    return out[-nb:] if out else []
+
+
 def position_advice(p, ticker, sc, prev_mfe=None):
     """保有中の利確/損切り判定。最高益(MFE)は前回status.json由来の値から更新して返す
        （positions.jsonは書き換えない＝アプリとのコミット競合を避ける）。
@@ -545,10 +582,11 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     tp_pr, sl_pr = _tp_sl_prices(p)
     hit_tp = tp_pr is not None and ((side == "long" and bid >= tp_pr) or (side == "short" and ask <= tp_pr))
     hit_sl = sl_pr is not None and ((side == "long" and bid <= sl_pr) or (side == "short" and ask >= sl_pr))
+    hit_tp_now, hit_sl_now = hit_tp, hit_sl
     # B: cron実行の合間にTP/SLへ「タッチ」していたかを直近の足の高値/安値で救済（現在値が戻っていても拾う）
     bm = BARMIN.get(P["interval"], 1)
     nb = max(1, -(-TOUCH_LOOKBACK_MIN // bm))
-    rec = (get_ohlc(sym) or [])[-nb:]
+    rec = _touch_bars(sym, p, nb, profit)
     if rec:
         hi = max(b[0] for b in rec); lo = min(b[1] for b in rec)
         if side == "long":
@@ -557,15 +595,17 @@ def position_advice(p, ticker, sc, prev_mfe=None):
         else:
             if tp_pr is not None and lo <= tp_pr: hit_tp = True
             if sl_pr is not None and hi >= sl_pr: hit_sl = True
+    touch_tp = bool(hit_tp) and not hit_tp_now
+    touch_sl = bool(hit_sl) and not hit_sl_now
     rsi_against = (side == "long" and rsi_v >= 70) or (side == "short" and rsi_v <= 30)
     nw = upcoming_news(sym)   # このペアに効く重要指標が接近していれば手仕舞い検討
 
     if hit_sl:
-        level, label, reason = "cut", "🛑 損切り推奨", "SL到達"
+        level, label, reason = "cut", "🛑 損切り推奨", ("SL到達（安値でタッチ・現在値は戻り）" if touch_sl else "SL到達")
     elif aligned <= -ADV_OPP and profit <= 0:
         level, label, reason = "cut", "🛑 損切り推奨", f"逆シグナル（スコア{score:+.2f}）で含み損"
     elif hit_tp:
-        level, label, reason = "take", "🎯 利確推奨", "TP到達"
+        level, label, reason = "take", "🎯 利確推奨", ("TP到達（高値でタッチ・現在値は戻り）" if touch_tp else "TP到達")
     elif nw is not None:
         when = f"約{int(nw[3])}分後" if nw[3] >= 0 else f"発表中(±{BLACKOUT_MIN}分)"
         level, label, reason = "watch", "🟡 利確検討", f"まもなく重要指標（{nw[2]}/{when}）"
@@ -583,7 +623,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
         level, label, reason = "hold", "🟢 ホールド", f"シグナル順方向（スコア{score:+.2f}）"
     else:
         level, label, reason = "watch", "🟡 様子見", "明確なサインなし"
-    return {"level": level, "label": label, "reason": reason,
+    return {"touch_sl": touch_sl, "touch_tp": touch_tp, "level": level, "label": label, "reason": reason,
             "score": round(score, 3), "rsi": rsi_v, "adx": adx_v,
             "profit_atr": round(profit_atr, 2), "retrace_atr": round(retrace_atr, 2), "mfe": round(mfe, 3)}
 
@@ -644,9 +684,17 @@ def check_positions(data, ticker, prev_state=None):
             # 「利確検討(watch)」のうち“利確検討”ラベルだけ拾う（“様子見/明確なサインなし”は除外＝ノイズ抑制）
             is_watch_actionable = adv["level"] == "watch" and "利確検討" in adv["label"]
             if changed and (adv["level"] in ("take", "cut") or is_watch_actionable):
+                _ex = None
+                if adv.get("touch_sl") and info.get("sl_price") is not None: _ex = info["sl_price"]
+                elif adv.get("touch_tp") and info.get("tp_price") is not None: _ex = info["tp_price"]
+                if _ex is not None:
+                    _d = (_ex - info["entry"]) if side == "long" else (info["entry"] - _ex)
+                    _pp = round(_d / PIP_SIZE, 1); _yy = round(_d * info["lot"])
+                    _line = f"  建値:{info['entry']} → 約定想定:{_ex} / {_pp:+}pips / {_yy:+,}円（現在値:{info['current']}）"
+                else:
+                    _line = f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円"
                 body = (f"{adv['label']} {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
-                        f"  {adv['reason']}\n"
-                        f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円")
+                        f"  {adv['reason']}\n" + _line)
                 tail = ("\n  ※GMOで決済後、アプリに実際の結果を登録してください"
                         if adv["level"] in ("take", "cut") else "")
                 # メールには全部（利確/損切り/利確検討）
