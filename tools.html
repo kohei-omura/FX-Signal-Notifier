@@ -36,6 +36,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
 <body><div class="wrap">
 <a class="back" href="index.html">← ダッシュボードへ</a>
 <h1>FX Navi ツール</h1><div class="sub">JOURNAL ・ RISK ・ BACKTEST</div>
+<div id="syncbar" style="display:none;margin:0 0 12px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:var(--card);font-size:13px"></div>
 <div id="todaybar" style="margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px"></div>
 <script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";</script>
 
@@ -90,6 +91,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">月別サマリー</div>
   <table id="bymonth"><thead><tr><th>月</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">マーク別成績（総合判定に従うと勝てているか）</div>
+  <div id="belabel" class="note" style="margin:0 0 2px"></div>
   <table id="bymark"><thead><tr><th>マーク</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">時間帯別（エントリー時刻）</div>
   <table id="byhour"><thead><tr><th>時間</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
@@ -153,6 +155,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   </div>
   <div class="stat" id="btout" style="margin-top:10px"></div>
   <div id="btmsg" class="note"></div>
+  <div id="bthist" class="note"></div>
   <div class="note">直近データで、各シグナルをATR基準のTP/SL通りに取った場合を検証（スプレッド控除後）。要 WorkerのURL設定。過去成績は将来を保証しません。</div>
 </div>
 <script src="tools.js"></script>

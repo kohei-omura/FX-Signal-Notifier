@@ -215,6 +215,58 @@ function iosParse(){
 }
 
 /* ---- C. アプリの決済履歴（status.json / positions.json）から自動取込 ---- */
+/* ===== 3-1 決済履歴の自動同期（未取込があればバナー表示） ===== */
+function _syncSrcId(p){
+  var yen=Math.round(+(p.close_yen!=null?p.close_yen:(p.yen!=null?p.yen:NaN)));
+  if(isNaN(yen)) return null;
+  return String(p.id||(((p.symbol||'')+'|'+(p.closed_at||p.close_at||'')+'|'+yen)));
+}
+async function _fetchAppClosed(){
+  var cp=[];
+  for(const u of ['./status.json','./positions.json']){
+    try{
+      const r=await fetch(u+'?t='+Date.now(),{cache:'no-store'});
+      if(!r.ok) continue;
+      const j=await r.json();
+      if(Array.isArray(j.closed_positions)) cp=cp.concat(j.closed_positions);
+      if(Array.isArray(j.positions)) cp=cp.concat(j.positions.filter(function(p){return p&&p.status==='closed';}));
+    }catch(e){}
+  }
+  return cp;
+}
+async function autoSyncCheck(){
+  var bar=document.getElementById('syncbar');
+  if(!bar) return;
+  try{
+    var cp=await _fetchAppClosed();
+    if(!cp.length){ bar.style.display='none'; return; }
+    var have=new Set(loadTrades().map(function(x){return x.srcId;}).filter(Boolean));
+    var fresh=0;
+    cp.forEach(function(p){
+      var yen=Math.round(+(p.close_yen!=null?p.close_yen:(p.yen!=null?p.yen:NaN)));
+      if(isNaN(yen)||yen===0) return;
+      var id=_syncSrcId(p);
+      if(id&&!have.has(id)){ have.add(id); fresh++; }   // 同一IDは1件として数える
+    });
+    if(fresh<=0){ bar.style.display='none'; return; }
+    bar.style.display='block';
+    bar.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+      '<span>新しい決済 <b class="good">'+fresh+'件</b> があります。取込みますか？</span>'+
+      '<span style="margin-left:auto;display:flex;gap:8px">'+
+      '<button class="bgo" style="padding:7px 12px;font-size:12px" onclick="autoSyncRun()">取込む</button>'+
+      '<button class="bsub" style="padding:7px 12px;font-size:12px" onclick="autoSyncDismiss()">あとで</button>'+
+      '</span></div>';
+  }catch(e){ bar.style.display='none'; }
+}
+function autoSyncRun(){
+  var bar=document.getElementById('syncbar');
+  if(bar) bar.style.display='none';
+  appSync();
+}
+function autoSyncDismiss(){
+  var bar=document.getElementById('syncbar');
+  if(bar) bar.style.display='none';
+}
 async function appSync(){
   const msg=$('#impmsg');msg.textContent='アプリの決済履歴を取得中…';
   try{
@@ -298,9 +350,16 @@ function renderJournal(){
   // ①-3: マーク別成績（未記録は除外）
   var MK=[['🟢','🟢'],['🟡','🟡'],['🔴','🔴']];
   var ktb=document.querySelector('#bymark tbody');
+  var _be=_breakEven(t);
   if(ktb)ktb.innerHTML=MK.map(function(m){var arr=t.filter(function(x){return x.mark===m[0];});if(!arr.length)return'';
     var nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
-    return `<tr><td>${m[1]}</td><td>${nn}</td><td>${(w/nn*100).toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">マーク記録なし</td></tr>';
+    var wrp=w/nn*100;
+    return `<tr><td>${m[1]}</td><td>${nn}</td><td>${wrp.toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`+
+      `<tr><td colspan=4 style="padding-top:0;border-top:none">${_markBar(wrp,_be)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">マーク記録なし</td></tr>';
+  var _bel=document.getElementById('belabel');
+  if(_bel) _bel.innerHTML=(_be!=null)
+    ? '縦の金線＝損益分岐勝率 '+_be.toFixed(1)+'%（これを超えていれば勝ち越し）'
+    : '勝ちと負けの両方が貯まると損益分岐勝率を表示します';
   renderEdgeTables(t);
   try{renderEdgeProfile();}catch(e){}
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
@@ -441,6 +500,27 @@ function _grpRows(map){
     var net=arr.reduce(function(a,b){return a+b.yen;},0);
     return '<tr><td>'+k+'</td><td>'+n+'</td><td>'+(n?(w/n*100).toFixed(0):0)+'%</td><td class="'+(net>=0?'good':'warn')+'">'+yen(net)+'</td></tr>';
   }).join('');
+}
+/* ===== 3-3 マーク別のミニグラフ（損益分岐勝率を基準線に） ===== */
+function _breakEven(rows){
+  // 損益分岐勝率 = 平均損失 ÷ (平均利益 + 平均損失)
+  var w=rows.filter(function(x){return x.yen>0;});
+  var l=rows.filter(function(x){return x.yen<0;});
+  if(!w.length||!l.length) return null;
+  var aw=w.reduce(function(a,b){return a+b.yen;},0)/w.length;
+  var al=Math.abs(l.reduce(function(a,b){return a+b.yen;},0)/l.length);
+  if(aw+al<=0) return null;
+  return al/(aw+al)*100;
+}
+function _markBar(wr,be){
+  var w=Math.max(0,Math.min(100,wr));
+  var ok=(be!=null)&&(wr>=be);
+  var line=(be!=null)
+    ? '<i style="position:absolute;left:'+Math.max(0,Math.min(100,be)).toFixed(1)+'%;top:-2px;bottom:-2px;width:2px;background:var(--gold);box-shadow:0 0 4px var(--gold)"></i>'
+    : '';
+  return '<div style="position:relative;height:9px;border-radius:5px;background:#0c1118;border:1px solid var(--line);overflow:visible;margin-top:4px">'+
+    '<span style="display:block;height:100%;width:'+w.toFixed(1)+'%;border-radius:5px;background:'+(ok?'var(--up)':'var(--down)')+';opacity:.85"></span>'+
+    line+'</div>';
 }
 function renderEdgeTables(t){
   var byh={}, bys={}, bysc={};
@@ -641,6 +721,56 @@ function _kpiRow(label,s){if(!s)return `<div class="kpi" style="grid-column:span
   return `<div class="kpi"><div class="l">${label}・回数</div><div class="v">${s.n}</div></div>
     <div class="kpi"><div class="l">勝率</div><div class="v ${s.wr>=50?'up':'dn'}">${s.wr.toFixed(0)}%</div></div>
     <div class="kpi"><div class="l">純pips</div><div class="v ${s.net>=0?'up':'dn'}">${s.net>=0?'+':''}${s.net.toFixed(1)}</div></div>`;}
+/* ===== 3-2 バックテスト履歴（直近5件） ===== */
+var BT_HIST_KEY='fxnavi_bt_hist';
+function _btHistLoad(){ try{ return JSON.parse(localStorage.getItem(BT_HIST_KEY)||'[]'); }catch(e){ return []; } }
+function _btHistPush(rec){
+  try{
+    var h=_btHistLoad();
+    h.unshift(rec);
+    h=h.slice(0,5);
+    localStorage.setItem(BT_HIST_KEY,JSON.stringify(h));
+  }catch(e){}
+  _btHistRender(rec);
+}
+function _btArrow(d,unit,digits){
+  if(d===null||d===undefined||isNaN(d)) return '';
+  var v=(digits!=null)?(+d).toFixed(digits):Math.round(d);
+  if(Math.abs(+v)<1e-9) return '<span style="color:var(--mut)">±0'+(unit||'')+'</span>';
+  var up=+v>0;
+  return '<span class="'+(up?'good':'warn')+'">'+(up?'▲+':'▼')+v+(unit||'')+'</span>';
+}
+function _btHistRender(cur){
+  var el=document.getElementById('bthist'); if(!el) return;
+  var h=_btHistLoad();
+  if(!h.length){ el.innerHTML=''; return; }
+  var now=cur||h[0];
+  // 同じ条件（ペア・モード）の1つ前を探す
+  var prev=null;
+  for(var i=1;i<h.length;i++){
+    if(h[i].sym===now.sym && h[i].mode===now.mode){ prev=h[i]; break; }
+  }
+  var cmp='';
+  if(prev){
+    cmp='<div style="margin-top:5px">前回（'+_btWhen(prev.ts)+'）との比較：'+
+      '勝率 '+_btArrow(now.wr-prev.wr,'%',1)+'　'+
+      '純pips '+_btArrow(now.pips-prev.pips,'p',1)+'</div>';
+  }else{
+    cmp='<div style="margin-top:5px;color:var(--mut)">同じ条件の前回結果がまだありません</div>';
+  }
+  var list=h.slice(0,5).map(function(x){
+    return '<div style="display:flex;gap:8px;padding:2px 0;border-top:1px solid var(--line)">'+
+      '<span>'+_btWhen(x.ts)+'</span>'+
+      '<span>'+x.sym+' / '+x.mode+'</span>'+
+      '<span style="margin-left:auto">勝率'+(+x.wr).toFixed(1)+'% ／ '+(+x.pips).toFixed(1)+'p</span></div>';
+  }).join('');
+  el.innerHTML='<div style="margin-top:8px"><b>バックテスト履歴</b>'+cmp+
+    '<div style="margin-top:6px">'+list+'</div></div>';
+}
+function _btWhen(ts){
+  try{ return new Date(ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+  catch(e){ return ''; }
+}
 async function runBacktest(){
   if(!LIVE_PRICE_URL){$('#btmsg').innerHTML='<span class="warn">WorkerのURL（LIVE_PRICE_URL）を tools.html に設定してください</span>';return;}
   if(_btBusy)return; _btBusy=true;
@@ -663,6 +793,14 @@ async function runBacktest(){
       <div class="kpi"><div class="l">収益率</div><div class="v ${sim.retPct>=0?'up':'dn'}">${sim.retPct>=0?'+':''}${sim.retPct.toFixed(1)}%</div></div>
       <div class="kpi"><div class="l">最大DD%</div><div class="v dn">${sim.maxDDpct.toFixed(1)}%</div></div>`;
     $('#btout').innerHTML=html;
+    // ④-2b: 履歴に残して前回と比べる
+    try{
+      var _base=(onlyGreen&&sel)?sel:all;
+      if(_base&&_base.n){
+        _btHistPush({ts:Date.now(),sym:sym,mode:mode,
+          wr:+_base.wr, pips:+(_base.net!=null?_base.net:(_base.sum!=null?_base.sum:0)), n:_base.n});
+      }
+    }catch(e){}
     // ④-4: 免責＋サンプル注記
     const useN=(onlyGreen&&sel)?sel.n:all.n;
     $('#btmsg').innerHTML=`${sym} ${mode} 直近${R.ohlen}本・スプレッド${spr}pips控除後。サンプル${useN}件${useN<30?'（30件未満は参考値）':''}。<br>${all.exp>=0?'<span class="good">全シグナル期待値プラス</span>':'<span class="warn">全シグナル期待値マイナス</span>'}${onlyGreen&&sel?(sel.exp>=0?' ／ <span class="good">🟢厳選もプラス</span>':' ／ <span class="warn">🟢厳選はマイナス</span>'):''}<br><span style="color:var(--mut)">過去成績は将来を保証しません。</span>`;
@@ -700,3 +838,5 @@ loadRisk&&(()=>{const r=loadRisk();$('#cap').value=r.cap;$('#rpct').value=r.rpct
 try{if(localStorage.getItem('fxnavi_spr_auto')==='1'){var _sa=document.getElementById('sprAuto');if(_sa){_sa.checked=true;toggleSprAuto(_sa);}}}catch(e){}
 renderJournal();
 try{applySections();}catch(e){}
+try{ setTimeout(function(){ autoSyncCheck(); }, 400); }catch(e){}
+try{ _btHistRender(); }catch(e){}

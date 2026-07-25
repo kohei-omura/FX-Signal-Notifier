@@ -394,6 +394,28 @@
 .card.has-pachi-embed .pachi-bolt,
 .card.has-pachi-embed .pachi-pillar,
 .card.has-pachi-embed .pachi-holds{display:none !important}
+
+/* ══ データカウンター（ホール設置ランプ風） ══ */
+.dcnt{margin:0 0 12px;padding:9px 11px;border-radius:10px;cursor:pointer;
+  background:linear-gradient(180deg,#0b0d12,#05070a);
+  border:1px solid #26303f;box-shadow:inset 0 2px 8px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.04)}
+.dcnt-h{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.18em;
+  color:#6d7a8c;font-family:var(--mono,monospace);margin-bottom:7px}
+.dcnt-h::before{content:"";width:6px;height:6px;border-radius:50%;background:#ff3b30;
+  box-shadow:0 0 6px #ff3b30;animation:dcntBlink 2.4s ease-in-out infinite}
+@keyframes dcntBlink{0%,100%{opacity:1}50%{opacity:.25}}
+.dcnt-h .dcnt-tap{margin-left:auto;font-size:9px;color:#4d5665}
+.dcnt-g{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.dcnt-c{text-align:center;padding:5px 2px;border-radius:6px;background:rgba(255,255,255,.02)}
+.dcnt-c i{display:block;font-style:normal;font-size:8.5px;letter-spacing:.1em;color:#5d6878;
+  font-family:var(--mono,monospace);margin-bottom:3px;white-space:nowrap}
+.dcnt-c b{display:block;font-weight:400;font-size:19px;line-height:1.15;
+  font-family:"DSEG7","Courier New",var(--mono,monospace);
+  color:#ff2d20;text-shadow:0 0 6px rgba(255,45,32,.75),0 0 14px rgba(255,45,32,.35);
+  font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.dcnt-c b small{font-size:11px;opacity:.85}
+.dcnt-c.dim b{color:#4a2420;text-shadow:none}
+@media (max-width:340px){.dcnt-c b{font-size:16px}}
 </style>
 </head>
 <body>
@@ -422,6 +444,15 @@
     <span>リスク</span><input id="r_risk" class="inp" inputmode="decimal" style="width:54px;padding:6px 8px" onchange="setRisk()">%
     <span>レバ</span><input id="r_lev" class="inp" inputmode="numeric" style="width:48px;padding:6px 8px" onchange="setRisk()">倍
     <span style="opacity:.6">→ 必要証拠金は価格から自動</span>
+  </div>
+  <div class="dcnt" id="dcnt" onclick="toggleCounter()">
+    <div class="dcnt-h"><span id="dcnt-mode">本日</span>のデータ<span class="dcnt-tap">タップで切替</span></div>
+    <div class="dcnt-g">
+      <div class="dcnt-c"><i>回転数</i><b id="dc-spin">0</b></div>
+      <div class="dcnt-c"><i>大当り</i><b id="dc-hit">0</b></div>
+      <div class="dcnt-c"><i>初当り確率</i><b id="dc-prob">--</b></div>
+      <div class="dcnt-c"><i>最高連チャン</i><b id="dc-run">0</b></div>
+    </div>
   </div>
   <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
 
@@ -1443,8 +1474,10 @@ function render(){
       <span class="r"><span class="${cls}">${yen(h.close_yen)} / ${pips(h.close_pips)}</span><button class="x" onclick="delPos('${h.id}')">✕</button></span></div>`;}).join('')}</div>`
     :'<div class="empty">決済履歴なし</div>';
   renderExtras();
+  renderCounter();
   applyPachi();   // パチンコ演出の適用（OFFなら何もしない）
-  if(window.syncPachiHolder) requestAnimationFrame(window.syncPachiHolder);
+  // 演出OFF時は同期rAFも回さない（完全ゼロコスト）
+  if(pachiOn() && window.syncPachiHolder) requestAnimationFrame(window.syncPachiHolder);
 }
 
 /* パチンコ演出をカードに適用（DOM構築後・transform/opacityのみ）。
@@ -1652,6 +1685,53 @@ function buildLcd(card, sym, th, stt, holds){
 }
 
 function _isEmbedCard(sym){ return sym==='USD_JPY'||sym==='EUR_JPY'||sym==='GBP_JPY'||sym==='AUD_JPY'; }
+
+/* ══ データカウンター：決済履歴から実績を集計（判定には無関係） ══ */
+var _cntMode='day';
+function _cntJstKey(d){ return new Date(d.getTime()+9*3600e3).toISOString().slice(0,10); }
+function _cntRows(mode){
+  var cp=(POS.positions||[]).filter(function(p){return (p.status||'')==='closed';});
+  var now=new Date();
+  var today=_cntJstKey(now);
+  var from=_cntJstKey(new Date(now.getTime()-6*24*3600e3));
+  return cp.filter(function(p){
+    var d=String(p.closed_at||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    return mode==='day' ? (d===today) : (d>=from);
+  });
+}
+function renderCounter(){
+  var el=document.getElementById('dcnt'); if(!el) return;
+  var rows=_cntRows(_cntMode);
+  rows.sort(function(a,b){ return String(a.closed_at||'').localeCompare(String(b.closed_at||'')); });
+  var spins=rows.length;
+  var win=function(p){ var y=(p.close_yen!=null)?+p.close_yen:NaN;
+    if(!isNaN(y)) return y>0;
+    var pp=(p.close_pips!=null)?+p.close_pips:NaN;
+    return !isNaN(pp) && pp>0; };
+  var hits=rows.filter(win).length;
+  var run=0,best=0;
+  rows.forEach(function(p){ if(win(p)){ run++; if(run>best) best=run; } else run=0; });
+  var set=function(id,txt,dim){
+    var e=document.getElementById(id); if(!e) return;
+    e.innerHTML=txt;
+    var c=e.parentNode; if(c) c.classList.toggle('dim', !!dim);
+  };
+  set('dc-spin', String(spins), spins===0);
+  set('dc-hit', String(hits), hits===0);
+  // 初当り確率 = 回転数 ÷ 大当り回数
+  set('dc-prob', hits>0 ? ('<small>1/</small>'+(Math.round(spins/hits*10)/10)) : '--', hits===0);
+  set('dc-run', String(best), best===0);
+  var m=document.getElementById('dcnt-mode');
+  if(m) m.textContent=(_cntMode==='day'?'本日':'週間');
+}
+function toggleCounter(){
+  _cntMode=(_cntMode==='day')?'week':'day';
+  try{ localStorage.setItem('fxnavi_cnt_mode',_cntMode); }catch(e){}
+  renderCounter();
+}
+try{ var _cm=localStorage.getItem('fxnavi_cnt_mode'); if(_cm==='week'||_cm==='day') _cntMode=_cm; }catch(e){}
+
 function applyPachi(){
   const root=document.body;
   if(!pachiOn()){
@@ -1661,6 +1741,7 @@ function applyPachi(){
     PachiSound.stopBGM();
     if(typeof stopAllBalls==='function') stopAllBalls();
     document.querySelectorAll('.card[data-sym]').forEach(c=>{ if(window.removePachiEmbed) window.removePachiEmbed(c); });
+    if(typeof destroyPachiHolders==='function') destroyPachiHolders();
     return;
   }
   root.classList.add('pachi');
@@ -3986,6 +4067,7 @@ document.getElementById('toggleMode') && document.getElementById('toggleMode').a
 // render()が#pairsを作り直してもホルダーは触られないので、iframeはリロードされない（チカチカしない）。
 window.__pachiHolders={};
 function ensurePachiHolder(sym){
+  attachPachiListeners();
   if(window.__pachiHolders[sym]) return window.__pachiHolders[sym];
   var h=document.createElement('div'); h.className='pachiHolder'; h.setAttribute('data-sym',sym);
   h.style.cssText='position:absolute;z-index:5;display:none;pointer-events:auto';
@@ -4014,8 +4096,13 @@ window.syncPachiHolder=function(){
     o.holder.style.height=r.height+'px';
   });
 };
-window.addEventListener('scroll', function(){ if(window.syncPachiHolder) window.syncPachiHolder(); }, {passive:true});
-window.addEventListener('resize', function(){ if(window.syncPachiHolder) window.syncPachiHolder(); }, {passive:true});
+window.__pachiListenersOn=false;
+function attachPachiListeners(){
+  if(window.__pachiListenersOn) return;
+  window.__pachiListenersOn=true;
+  window.addEventListener('scroll', function(){ if(window.syncPachiHolder) window.syncPachiHolder(); }, {passive:true});
+  window.addEventListener('resize', function(){ if(window.syncPachiHolder) window.syncPachiHolder(); }, {passive:true});
+}
 window.buildPachiEmbed=function(card, sym){
   if(!card) return;
   var o=ensurePachiHolder(sym);
@@ -4035,6 +4122,14 @@ window.buildPachiEmbed=function(card, sym){
   card.querySelectorAll('.pachi-bolt,.pachi-pillar').forEach(function(e){ e.style.display='none'; });
   requestAnimationFrame(window.syncPachiHolder);
 };
+function destroyPachiHolders(){
+  var hs=window.__pachiHolders||{};
+  Object.keys(hs).forEach(function(k){
+    var o=hs[k];
+    try{ if(o&&o.holder&&o.holder.parentNode) o.holder.parentNode.removeChild(o.holder); }catch(e){}
+  });
+  window.__pachiHolders={};
+}
 window.removePachiEmbed=function(card){
   Object.keys(window.__pachiHolders||{}).forEach(function(k){
     var o=window.__pachiHolders[k]; if(o) o.holder.style.display='none';
