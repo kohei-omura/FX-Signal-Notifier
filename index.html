@@ -2418,6 +2418,19 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     box-shadow:inset 0 0 20px rgba(120,150,190,.25)}
   /* 中央の大きな液晶画面(主役) */
   .m-nails{position:absolute;inset:0;z-index:1;pointer-events:none}
+
+
+  /* ── 2-F 図柄停止の重み ── */
+  .m-frame.drop{animation:mDropShock .16s ease-out}
+  @keyframes mDropShock{0%{transform:translateY(0)}45%{transform:translateY(2px)}100%{transform:translateY(0)}}
+  .m-sym.land{animation:mSymLand .22s cubic-bezier(.2,1.7,.4,1)}
+  @keyframes mSymLand{0%{transform:scale(1)}40%{transform:scale(1.22)}100%{transform:scale(1)}}
+  /* ── 2-C ガラス面の反射 ── */
+  .m-glass{position:absolute;inset:0;z-index:6;pointer-events:none;border-radius:inherit;
+    mix-blend-mode:screen;opacity:.5;
+    background:
+      linear-gradient(112deg,transparent 14%,rgba(255,255,255,.16) 20%,rgba(255,255,255,.03) 27%,transparent 33%),
+      linear-gradient(112deg,transparent 52%,rgba(255,255,255,.11) 58%,rgba(255,255,255,.02) 63%,transparent 69%)}
   .m-balls{position:absolute;inset:0;z-index:4;pointer-events:none}
   .m-rail{position:absolute;top:10%;bottom:6%;width:2.5%;z-index:2;border-radius:4px;
     background:linear-gradient(90deg,rgba(180,200,220,.5),rgba(120,140,170,.3));box-shadow:inset 0 0 4px rgba(0,0,0,.3)}
@@ -2500,10 +2513,21 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
     box-shadow:inset 0 2px 4px rgba(255,255,255,.2),0 2px 4px rgba(0,0,0,.4);margin-bottom:6px}
   .m-tray-dn{height:16px;border-radius:8px;background:linear-gradient(180deg,#2a2a34,#12121a);
     box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}
-  .m-handle{width:56px;height:56px;border-radius:50%;flex-shrink:0;
+  .m-handle{width:56px;height:56px;border-radius:50%;flex-shrink:0;position:relative;
     background:radial-gradient(circle at 40% 35%,#ff6a6a,#c02020 70%,#801010);
     box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.3);
-    border:2px solid #601010}
+    border:2px solid #601010;cursor:pointer;touch-action:none;
+    transition:transform .12s,box-shadow .12s}
+  .m-handle::after{content:"";position:absolute;left:50%;top:8%;width:3px;height:34%;
+    border-radius:2px;background:rgba(255,255,255,.72);transform:translateX(-50%);
+    transform-origin:50% 128%;transition:transform .18s}
+  .m-handle.hold{transform:scale(.94);box-shadow:0 0 14px #ff6a6a,inset 0 2px 4px rgba(255,255,255,.35)}
+  .m-handle.hold::after{transform:translateX(-50%) rotate(32deg)}
+  .m-handle.auto{animation:mHandleAuto 1.1s ease-in-out infinite}
+  @keyframes mHandleAuto{0%,100%{box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.3)}
+    50%{box-shadow:0 0 16px #ffd24a,inset 0 2px 4px rgba(255,255,255,.4)}}
+  .m-handle-lb{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);
+    font-size:8px;letter-spacing:.06em;color:#8fa3ba;white-space:nowrap;pointer-events:none}
 
 
 /* ══ 4体キャラCSS（液晶内スコープ・名前空間化済み） ══ */
@@ -2915,6 +2939,19 @@ window.__MACHINE_HTML=`<!DOCTYPE html>
   .m-gimmick.act .m-gimmick-core{animation:mGimPulse .35s ease-in-out infinite}
   @keyframes mGimPulse{0%,100%{transform:scale(1);box-shadow:0 0 12px var(--c1)}50%{transform:scale(1.18);box-shadow:0 0 26px #fff,0 0 40px var(--c1)}}
 
+
+  /* ── 2-B 役物の開閉と発光コア ── */
+  .m-gimmick.open .m-gimmick-wing.l{transform:rotate(-96deg) translate(-40%,-14%)}
+  .m-gimmick.open .m-gimmick-wing.r{transform:rotate(96deg) translate(40%,-14%) scaleX(-1)}
+  .m-gimmick.open .m-gimmick-core{opacity:0}
+  .m-gimmick-glow{position:absolute;left:50%;top:50%;width:230%;height:230%;
+    transform:translate(-50%,-50%) scale(0);opacity:0;pointer-events:none;
+    transition:transform .42s cubic-bezier(.2,1.5,.4,1),opacity .3s}
+  .m-gimmick.open .m-gimmick-glow{transform:translate(-50%,-50%) scale(1);opacity:1;
+    animation:mGlowSpin 2.4s linear infinite}
+  @keyframes mGlowSpin{to{transform:translate(-50%,-50%) scale(1) rotate(360deg)}}
+  .m-gimmick.vib{animation:mGimVib .09s linear infinite}
+  @keyframes mGimVib{0%,100%{margin-left:0}25%{margin-left:-1.5px}75%{margin-left:1.5px}}
   /* ── 保留ランプ（液晶下に4つ） ── */
   .m-holds{position:absolute;left:50%;top:60.3%;transform:translateX(-50%);z-index:3;
     display:flex;gap:8px;pointer-events:none}
@@ -3082,6 +3119,7 @@ window.pachiSfx=function(kind){
   try{
     switch(kind){
       case 'chucker': _tone(880,.07,'square',.09); _tone(1320,.07,'square',.07,.05); break;
+      case 'stopdrop': _tone(60,.13,'sine',.15); _tone(120,.07,'sine',.08); _noise(.05,.05); break;
       case 'swarm':   for(var i=0;i<7;i++) _tone(680+i*130,.06,'sine',.05,i*.05); break;
       case 'pseudo':  _sweep(200,1500,.35,'square',.11); _tone(1250,.14,'triangle',.10,.34); _noise(.10,.06,.34); break;
       case 'reach':   _sweep(380,880,.5,'sawtooth',.09); _tone(660,.3,'triangle',.07,.22); break;
@@ -3109,7 +3147,8 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
         <canvas class="m-nails" id="nails"></canvas>
         <div class="m-rail l"></div><div class="m-rail r" id="railR"></div>
         <canvas class="m-balls" id="mballs"></canvas>
-        <div class="m-gimmick" id="mGimmick"><div class="m-gimmick-wing l"></div><div class="m-gimmick-core"></div><div class="m-gimmick-wing r"></div></div>
+        <div class="m-glass"></div>
+        <div class="m-gimmick" id="mGimmick"><div class="m-gimmick-wing l"></div><div class="m-gimmick-core"></div><svg class="m-gimmick-glow" viewBox="0 0 100 100" aria-hidden="true"><defs><radialGradient id="mGlowG" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fffbe8" stop-opacity="1"/><stop offset="38%" stop-color="var(--c1,#3ad0c8)" stop-opacity=".9"/><stop offset="70%" stop-color="var(--c2,#0b5a5a)" stop-opacity=".45"/><stop offset="100%" stop-color="var(--c2,#0b5a5a)" stop-opacity="0"/></radialGradient><filter id="mGlowB" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.4"/></filter></defs><g filter="url(#mGlowB)"><circle cx="50" cy="50" r="26" fill="url(#mGlowG)"/><g stroke="#fff8d0" stroke-width="1.6" stroke-linecap="round" opacity=".85"><line x1="50" y1="8" x2="50" y2="22"/><line x1="50" y1="78" x2="50" y2="92"/><line x1="8" y1="50" x2="22" y2="50"/><line x1="78" y1="50" x2="92" y2="50"/><line x1="20" y1="20" x2="30" y2="30"/><line x1="70" y1="70" x2="80" y2="80"/><line x1="80" y1="20" x2="70" y2="30"/><line x1="30" y1="70" x2="20" y2="80"/></g></g></svg><div class="m-gimmick-wing r"></div></div>
         <div class="m-lcd"><div class="m-chara-wrap"><div class="m-chara-inner" id="mCharaInner"></div></div><div class="m-reels" id="mreels"></div></div>
         <div class="m-windmill l"></div>
         <div class="m-windmill r"></div>
@@ -3131,7 +3170,7 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
           <div class="m-tray-up"></div>
           <div class="m-tray-dn"></div>
         </div>
-        <div class="m-handle"></div>
+        <div class="m-handle" id="mHandle"><span class="m-handle-lb">長押しで発射</span></div>
       </div>
     </div>
   </div>
@@ -3217,7 +3256,7 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
     // 右打ち: 下(90°)→右(0°)→上(-90°) を通る=角度を減らす向き(時計)で右側を昇る
     const startAng = Math.PI/2;      // 下(最下部)
     balls.push({state:'orbit', right, ang:startAng, cx, cy, rx, ry, r, life:0, turned:0, speed:0.055});
-    if(balls.length>26) balls.shift();
+    if(balls.length>30) balls.shift();   // 負荷対策：古い玉から消す
   }
   const G=0.12, REST=0.72, FR=0.998;
   function step(){
@@ -3298,6 +3337,40 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
     for(var i=0;i<n;i++) setTimeout(shootBall, i*110);
     if(window.__fx) window.__fx.moved=0;
   }, 900);
+  /* ── 2-A ハンドル長押しで連続発射（1秒4発）。確変中は自動連射 ── */
+  (function(){
+    var h=document.getElementById('mHandle');
+    var timer=0, autoTimer=0;
+    function fireStart(){
+      if(timer) return;
+      shootBall();
+      timer=setInterval(shootBall, 250);          // 1秒あたり4発
+      if(h) h.classList.add('hold');
+    }
+    function fireStop(){
+      if(timer){ clearInterval(timer); timer=0; }
+      if(h) h.classList.remove('hold');
+    }
+    if(h){
+      h.addEventListener('pointerdown', function(e){ e.preventDefault(); fireStart(); });
+      ['pointerup','pointercancel','pointerleave'].forEach(function(ev){
+        h.addEventListener(ev, fireStop);
+      });
+      h.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+    }
+    // 確変（右打ち）中は自動で連射する
+    setInterval(function(){
+      var on=!!rightMode;
+      if(h) h.classList.toggle('auto', on);
+      if(on && !autoTimer){
+        autoTimer=setInterval(function(){ if(rightMode) shootBall(); }, 260);
+      }else if(!on && autoTimer){
+        clearInterval(autoTimer); autoTimer=0;
+      }
+    }, 600);
+    window.pachiFire=fireStart;
+    window.pachiFireStop=fireStop;
+  })();
   for(let i=0;i<3;i++) setTimeout(shootBall,i*300);
   step();
 })();
@@ -3875,7 +3948,19 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
   };
   function spinAll(cols,spd){ cols.forEach(function(c){ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd',spd||'0.12s'); }); }
   function finishAll(cols, syms, pct){ cols.forEach(function(c,i){ stopCol(c, syms[i]); }); finishDraw(syms,pct); }
-  function stopCol(col, sym){ if(!col) return; col.classList.remove('spin'); col.classList.add('stop'); setStripSym(col,sym); }
+  function stopCol(col, sym){
+    if(!col) return;
+    col.classList.remove('spin'); col.classList.add('stop');
+    setStripSym(col,sym);
+    // 2-F 止まった重みを出す：ズドン＋盤面が沈む＋図柄バウンス
+    if(window.pachiSfx) window.pachiSfx('stopdrop');
+    var fr=document.querySelector('.m-frame');
+    if(fr){ fr.classList.remove('drop'); void fr.offsetWidth; fr.classList.add('drop');
+      setTimeout(function(){ fr.classList.remove('drop'); }, 200); }
+    var mid=col.querySelectorAll('.m-sym')[1];
+    if(mid){ mid.classList.remove('land'); void mid.offsetWidth; mid.classList.add('land');
+      setTimeout(function(){ mid.classList.remove('land'); }, 260); }
+  }
   function setShake(lv){
     var b=document.querySelector('.m-board'); if(!b) return;
     b.classList.remove('shk1','shk2','shk3'); if(lv) b.classList.add('shk'+lv);
@@ -3955,6 +4040,7 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
   function runReach(pct, done){
     var lcd=document.querySelector('.m-lcd');
     if(lcd) lcd.classList.add('reach-dim');
+    if(window.pachiGimmickVib) window.pachiGimmickVib(true);
     if(pct>=80){
       showReachLab('SPSPリーチ!!!'); setShake(2); if(window.pachiSfx) window.pachiSfx('spsp');
       setTimeout(function(){ cutin('激アツ!!'); }, 500);
@@ -3998,11 +4084,14 @@ document.addEventListener('pointerdown', function(){ _ac(); }, {once:false, pass
     // C-3: 当たりならキャラの大当たりモーション
     if(win && window.pachiCharaWin) window.pachiCharaWin();
     if(win && window.pachiAttacker) window.pachiAttacker(true);
+    if(win && window.pachiGimmickOpen) window.pachiGimmickOpen(true);
     setTimeout(()=>{ const lab=document.querySelector('.m-draw-lab'); if(lab)lab.classList.remove('show');
       // 通常回転に戻す
       document.querySelectorAll('.m-col').forEach(c=>{ c.classList.remove('stop'); c.classList.add('spin'); c.style.setProperty('--spd','0.4s'); c.querySelectorAll('.m-sym').forEach(sy=>sy.classList.remove('hit')); });
       setShake(0); var _l=document.querySelector('.m-lcd'); if(_l){ _l.classList.remove('reach-dim'); _l.classList.remove('zenkai'); }
       if(window.pachiGimmick) window.pachiGimmick(false);
+      if(window.pachiGimmickOpen) window.pachiGimmickOpen(false);
+      if(window.pachiGimmickVib) window.pachiGimmickVib(false);
       if(window.pachiAttacker) window.pachiAttacker(false);
       drawing=false;
     }, win?2600:1400);
@@ -4054,6 +4143,15 @@ document.getElementById('toggleMode') && document.getElementById('toggleMode').a
     if(lcd){ if(ci) lcd.appendChild(ci); if(rl) lcd.appendChild(rl);
       ['mSwarm','mPseudo','mZenLab'].forEach(function(id){ var e=document.getElementById(id); if(e) lcd.appendChild(e); }); }
   })();
+  window.pachiGimmickOpen=function(on){
+    var g=document.getElementById('mGimmick'); if(!g) return;
+    g.classList.toggle('open', !!on);
+    if(on) g.classList.remove('vib');
+  };
+  window.pachiGimmickVib=function(on){
+    var g=document.getElementById('mGimmick'); if(!g) return;
+    g.classList.toggle('vib', !!on);
+  };
   window.pachiAttacker=function(open){
     var a=document.getElementById('mAttacker'); if(!a) return;
     a.classList.toggle('open', !!open);
