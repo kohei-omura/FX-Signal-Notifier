@@ -39,8 +39,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # entry_log.json = エントリー記録簿（追記専用・検証用）も保存対象に追加
-          git add status.json positions.json entry_log.json
+          # 存在するファイルだけをaddする。entry_log.json（エントリー記録簿）は
+          # 最初のポジション登録まで生成されないため、無条件addだと exit 128 で失敗する。
+          for f in status.json positions.json entry_log.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
           if git diff --staged --quiet; then echo "no changes"; exit 0; fi
           git commit -m "auto: update state [skip ci]"
           # 通知は前ステップで送信済み。状態保存(status.json)が競合しても“失敗にしない”。
