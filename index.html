@@ -1266,6 +1266,9 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   var costChip=_cr!=null?`<span class="chip cost ${_crCls}">コスト <b>${_cr.toFixed(0)}%</b>${_crWarn}</span>`:'';
   // 機能3: レジームチップ
   var regChip=p.regime?`<span class="chip regime ${p.regime.cls}">${p.regime.ic}レジーム <b>${p.regime.lab}</b>(${p.regime.pct}%)</span>`:'';
+  // 上位足(MTF)チップ — サーバーが status.json に書いた 1h/4h のトレンド方向を表示
+  var _m=MTF_BY_SYM[p.symbol], _ag=mtfAgree(p);
+  var mtfChip=_m&&_m.label?`<span class="chip">🔭上位足 <b>${_m.label}</b>${_ag===true?' ✅順張り':(_ag===false?' ⚠️逆行':'')}</span>`:'';
   // 機能1: シンプル/詳細（既存情報は全て詳細側に温存）
   var _view='simple';try{_view=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}
   var _acc=null;try{_acc=localStorage.getItem('fxnavi_acc_'+p.symbol);}catch(e){}
@@ -1283,7 +1286,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     <div class="sparkwrap" style="position:relative">${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}${sparkSignal(p)}</div>
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
 function toggleDetail(sym,btn){try{var card=btn.parentNode;var willOpen=card.classList.contains('simple');card.classList.toggle('simple',!willOpen);localStorage.setItem('fxnavi_acc_'+sym,willOpen?'1':'0');btn.textContent=willOpen?'▲ 詳細を閉じる':'▼ 詳細';}catch(e){}}
 function setView(v){try{localStorage.setItem('fxnavi_view',v);var i=0;var keys=[];for(i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('fxnavi_acc_')===0)keys.push(k);}keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}renderViewToggle();render();}
 function renderViewToggle(){var el=document.getElementById('viewtog');if(!el)return;var v='simple';try{v=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}
@@ -2236,6 +2239,24 @@ async function notifyLive(text){
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});}catch(e){}
 }
 let LIVE_CALC_BUSY=false,LIVE_LAST=0,LIVE_AT=0,LIVE_PAIRS={};
+// 上位足(MTF)の退避先。fx_signal.py が status.json に書いた {label,aligned} を銘柄別に保持する。
+const MTF_BY_SYM={};
+// LINEライブ通知の条件（LINE月間上限の節約）
+const LIVE_NOTIFY_MIN_PCT=50;      // 総合判定がこの%以上
+const LIVE_NOTIFY_NEED_MTF=true;   // かつ上位足(1h/4h)がシグナル方向と一致していること
+// 上位足がシグナル方向と一致しているか。1=上昇一致 / -1=下降一致 / 0=レンジ・不一致
+function mtfAgree(pair){
+  const m=MTF_BY_SYM[pair.symbol];
+  if(!m||!pair.signal)return null;              // 情報が無い＝判定不能
+  const want=pair.signal==='買い'?1:-1;
+  return m.aligned===want;
+}
+function mtfShort(pair){
+  const m=MTF_BY_SYM[pair.symbol];
+  if(!m||!m.label)return '';
+  const a=mtfAgree(pair);
+  return m.label+(a===true?' ✅順張り':(a===false?' ⚠️逆行':''));
+}
 async function liveSignals(){
   if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
   if(Date.now()-LIVE_LAST<30000)return; // load()とintervalの多重起動を抑制
@@ -2271,11 +2292,24 @@ async function liveSignals(){
           const zTxt=suppressZoneNotify()?'':`\n🕒時間帯 ${ZONE.icon}${ZONE.label}${ZONE.conf?'（信頼度:'+ZONE.conf+'）':''}`;
           const dTxt=pair.dow?`\n📐ダウ ${pair.dow.icon}${pair.dow.label}`:'';
           const gTxt=pair.grv?`\n🎯グランビル ${pair.grv.label}`:'';
-          const txt=`⚡ライブ ${sym} ${sg}（${S.mode}）\nスコア${sc.score>=0?'+':''}${sc.score}（テク${sc.tech>=0?'+':''}${sc.tech}/ファンダ${sc.fund>=0?'+':''}${sc.fund}）\n${sc.reasons.join(' / ')}\n推奨 TP:+${sc.tp_pips}pips / SL:-${sc.sl_pips}pips\n▶通知価格 ${pair.entry_ref} / ${validMin}分以内(${pair.valid_until}まで) / ${arrow} ${pair.entry_limit}${stTxt}${zTxt}${dTxt}${gTxt}`;
-          const cf=confluence(pair,STATS[S.mode+sym]);const txt2=txt+'\n🎯総合判定：'+cf.mark+'（'+cf.got+'/10）';
+          const cf=confluence(pair,STATS[S.mode+sym]);
+          const _mtfTxt=mtfShort(pair);
+          // ★ライブ通知は「厳選版」。判断に直結する項目だけに絞る（詳細は画面・メールで確認）
+          const txt2=`⚡ライブ ${sym} ${sg}（${S.mode}）\n`
+            +`🎯総合判定 ${cf.mark}（${cf.pct}% ${cf.got}/${cf.total}）\n`
+            +(_mtfTxt?`🔭上位足 ${_mtfTxt}\n`:'')
+            +`▶${pair.entry_ref} / ${arrow} ${pair.entry_limit} / ${pair.valid_until}まで\n`
+            +`TP+${sc.tp_pips}p / SL-${sc.sl_pips}p`
+            +(st?` / TP勝率${st.winRate}%`:'');
           if(cf.cls==='ok'&&pair.signal)fwdRecord(pair); // 機能6: 🟢OKで仮想エントリー記録
           const _lossStop=lossStopOn()&&modeStreak(S.mode)>=4; // 機能4: 連敗時は新規通知停止
-          if((suppressOppNotify()&&longEnvAlign(pair)===false)||_lossStop){/* 抑制（手仕舞い/ポジション通知は常に送信） */}
+          // ★LINE送信条件: 総合判定がLIVE_NOTIFY_MIN_PCT%以上 かつ 上位足が一致（MTF情報が無い時は通す）
+          const _agree=mtfAgree(pair);
+          const _mtfOK=(!LIVE_NOTIFY_NEED_MTF)||(_agree===null)||(_agree===true);
+          const _scoreOK=cf.pct>=LIVE_NOTIFY_MIN_PCT;
+          if((suppressOppNotify()&&longEnvAlign(pair)===false)||_lossStop||!_scoreOK||!_mtfOK){
+            /* 抑制（LINE枠節約。画面表示とメール通知には影響しない） */
+          }
           else{notifyLive(txt2);notified[sym]={side:sig,ts:now};}
         }
       }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
@@ -2400,6 +2434,9 @@ async function load(){
   try{
   const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
+  // 上位足(MTF)はサーバー(fx_signal.py)が status.json に書き込む。
+  // ライブ計算でpairを作り直しても失われないよう、銘柄別に退避しておく。
+  if(S&&S.pairs){S.pairs.forEach(p=>{if(p&&p.mtf)MTF_BY_SYM[p.symbol]=p.mtf;});}
   // ライブ計算済みの銘柄カードは古いstatus.jsonで上書きしない（値のチカチカ防止）
   if(Date.now()-LIVE_AT<180000&&S&&S.pairs){
     S.pairs.forEach((p,i)=>{if(LIVE_PAIRS[p.symbol])S.pairs[i]=LIVE_PAIRS[p.symbol];});
