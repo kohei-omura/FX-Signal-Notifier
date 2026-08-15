@@ -72,7 +72,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <div class="rowf" style="margin-top:6px"><div><label>エントリー日時の列（あれば）</label><select id="cOpen"></select></div><div></div></div>
     <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="cInvert" checked style="width:auto;margin:0">決済行は反対売買 → 保有方向に反転</label>
     <button class="bgo" style="margin-top:8px" onclick="csvImport()">この設定で取り込む</button>
-    <div class="note">損益が空・0の行（新規）は自動でスキップします。列が違う場合は選び直してください。</div>
+    <div class="note">損益が空・0の行（新規）は自動でスキップします。列が違う場合は選び直してください。<br>「-1,234」「－１２３４」「▲1,234」「(1,234)」「¥1,234円」などの表記はすべて自動で正規化して取り込みます。</div>
   </div>
   <div id="iosbox" style="display:none;margin-top:10px">
     <label>iPhoneでスクショを長押し→テキストを選択→すべて選択→コピーし、ここに貼付</label>
@@ -84,6 +84,20 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <textarea id="jpaste" placeholder="-59&#10;90&#10;-23&#10;31"></textarea>
     <button class="bsub" style="margin-top:8px" onclick="importPaste()">取り込む</button>
   </div>
+
+  <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="bsub" onclick="exportBackup()">🗄 全データのバックアップ</button>
+      <button class="bsub" onclick="toggleBox('bkbox')">♻️ 復元（JSON貼付）</button>
+    </div>
+    <div id="bkbox" style="display:none;margin-top:8px">
+      <label>書き出したJSONの中身を貼り付けてください。既存データと統合され、重複は自動でスキップされます。</label>
+      <textarea id="bkpaste" placeholder='{"_type":"fxnavi-backup", ...}'></textarea>
+      <button class="bgo" style="margin-top:8px" onclick="importBackup()">この内容で復元（マージ）</button>
+    </div>
+    <div class="note">記録は端末内（localStorage）にのみ保存されています。Safariのデータ消去やPWAの再インストールで消えるため、定期的な書き出しをおすすめします。</div>
+  </div>
+
   <div class="stat" id="kpis"></div>
   <svg class="eq" id="eq" viewBox="0 0 320 120" preserveAspectRatio="none"></svg>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">ペア別</div>
@@ -92,7 +106,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <table id="bymonth"><thead><tr><th>月</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">マーク別成績（総合判定に従うと勝てているか）</div>
   <div id="belabel" class="note" style="margin:0 0 2px"></div>
-  <table id="bymark"><thead><tr><th>マーク</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
+  <table id="bymark"><thead><tr><th>マーク</th><th>回数</th><th>勝率（95%信頼区間）</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">時間帯別（エントリー時刻）</div>
   <table id="byhour"><thead><tr><th>時間</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">セッション別</div>
@@ -100,8 +114,9 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">スコア帯別（エントリー時の総合スコア）</div>
   <table id="byscore"><thead><tr><th>スコア帯</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">🧠 学習中の補正（ダッシュボードへ反映）</div>
-  <table id="edgeprof"><thead><tr><th>区分</th><th>回数</th><th>勝率</th><th>補正</th></tr></thead><tbody></tbody></table>
+  <table id="edgeprof"><thead><tr><th>区分</th><th>回数</th><th>勝率（95%信頼区間）</th><th>補正</th></tr></thead><tbody></tbody></table>
   <div id="edgestat" class="note"></div>
+  <div class="note">補正は「全体100件以上」かつ「その区分30件以上」で、勝率の95%信頼区間が基準勝率を完全に上回る／下回る場合にだけ発生します。採用されるのは条件を満たす区分のうち<b>1つだけ</b>（最大±5pt）で、市場・時間帯・ペアを足し合わせることはありません。</div>
   <div style="margin-top:6px"><button class="bsub" style="font-size:12px;padding:7px 10px" onclick="clearEdgeProfile()">学習をリセット</button></div>
   <div class="tr" id="trlist"></div>
   <div style="margin-top:8px"><span class="del" onclick="clearTrades()">全削除</span></div>

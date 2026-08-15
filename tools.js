@@ -140,7 +140,26 @@ function csvPaste(){
   if(!txt.trim()){alert('CSVの中身を貼り付けてください');return;}
   try{ csvIngest(txt); }catch(e){$('#impmsg').innerHTML='<span class="warn">読込失敗: '+e.message+'</span>';}
 }
-function numFromCell(s){if(s==null)return NaN;let m=(''+s).replace(/[▲△]/g,'-').replace(/[^\d.,+-]/g,'').replace(/,/g,'');if(!m||m==='-'||m==='+'||m==='.')return NaN;const v=parseFloat(m);return isNaN(v)?NaN:Math.round(v);}
+/* 損益セルの正規化。以下をすべて許容する：
+   全角数字（－１２３４）／カンマ区切り（-1,234）／会計表記の▲△／全角カンマ読点／
+   括弧書きのマイナス（(1,234)＝-1234）／通貨記号・単位（¥1,234円） */
+function numFromCell(s){
+  if(s==null)return NaN;
+  let m=(''+s)
+    // 全角英数字・記号を半角へ
+    .replace(/[０-９]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0);})
+    .replace(/[．－＋（），]/g,function(c){return {'．':'.','－':'-','＋':'+','（':'(','）':')','，':','}[c];})
+    .replace(/[‐‑‒–—―ー−]/g,'-')      // 各種ダッシュ・長音をマイナス扱い
+    .replace(/[▲△]/g,'-')             // 会計表記のマイナス
+    .replace(/[、]/g,',');
+  const paren=/^\s*\(.*\)\s*$/.test(m); // 括弧書きはマイナス
+  m=m.replace(/[^\d.,+-]/g,'').replace(/,/g,'');
+  if(!m||m==='-'||m==='+'||m==='.')return NaN;
+  let v=parseFloat(m);
+  if(isNaN(v))return NaN;
+  if(paren&&v>0)v=-v;
+  return Math.round(v);
+}
 function csvImport(){
   if(!CSV_ROWS){alert('先にCSVを読み込んでください');return;}
   const pi=+$('#cPnl').value,ai=+$('#cPair').value,si=+$('#cSide').value,inv=$('#cInvert').checked;
@@ -354,7 +373,11 @@ function renderJournal(){
   if(ktb)ktb.innerHTML=MK.map(function(m){var arr=t.filter(function(x){return x.mark===m[0];});if(!arr.length)return'';
     var nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
     var wrp=w/nn*100;
-    return `<tr><td>${m[1]}</td><td>${nn}</td><td>${wrp.toFixed(0)}%</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`+
+    // 95%信頼区間を併記。n<30は偶然のブレが大きいので「参考値」と明示する。
+    var _ci=wilsonCI(w,nn);
+    var _ciTxt='<span style="color:#8893a4;font-size:10px"> 95%CI '+(_ci[0]*100).toFixed(0)+'〜'+(_ci[1]*100).toFixed(0)+'%</span>';
+    var _ref=nn<30?'<span style="color:#8893a4;font-size:10px"> ※参考値(n&lt;30)</span>':'';
+    return `<tr><td>${m[1]}</td><td>${nn}</td><td>${wrp.toFixed(0)}%${_ciTxt}${_ref}</td><td class="${nt>=0?'good':'warn'}">${yen(nt)}</td></tr>`+
       `<tr><td colspan=4 style="padding-top:0;border-top:none">${_markBar(wrp,_be)}</td></tr>`;}).join('')||'<tr><td colspan=4 style="text-align:center;color:#566">マーク記録なし</td></tr>';
   var _bel=document.getElementById('belabel');
   if(_bel) _bel.innerHTML=(_be!=null)
@@ -443,29 +466,79 @@ function attachSnapScores(tolMin){
   if(filled) saveTrades(t);
   return {filled:filled,total:t.length};
 }
-/* ===== 段階3: 成績から学習する補正プロファイル ===== */
-var EDGE_KEY='fxnavi_edge', EDGE_MIN=8, EDGE_CAP=8;
-function _eStat(arr){var n=arr.length,w=arr.filter(function(a){return a.yen>0;}).length,
-  net=arr.reduce(function(a,b){return a+b.yen;},0);return {n:n,wr:n?w/n*100:0,net:net};}
+/* ===== 段階3: 成績から学習する補正プロファイル（統計的に健全化 v7） =====
+   旧版の問題と対策：
+   (1) 10件/8件から補正が出ていた → 全体n≥100・各バケットn≥30でのみ算出（EDGE_TOTAL_MIN/EDGE_MIN）
+   (2) session+hour+pair を単純加算＝同じトレードを三重計上 → 採用は「|補正|が最大の1バケットだけ」
+   (3) 24時間×4セッション×4ペア=32区分の多重比較で偶然の優位が必ず出る
+       → 時刻は5ゾーンに集約し、Wilson95%信頼区間がベース勝率を跨がない時のみ補正
+   (4) 最大±15ptがエントリー判定を動かしていた → EDGE_CAP=5（±5pt）
+   区分定義はこのファイルが唯一の実装。index.html は profile 内の対応表を参照するだけにする（二重定義の解消） */
+var EDGE_KEY='fxnavi_edge';
+var EDGE_MIN=30;          // 各バケットに必要な件数
+var EDGE_TOTAL_MIN=100;   // 全体に必要な件数
+var EDGE_CAP=5;           // 補正の上限（±pt）
+var EDGE_Z=1.96;          // 95%信頼区間
+
+/* 時間帯ゾーン（JST時→5区分）。index.html の時間帯判定と同じ考え方に揃える。
+   golden=ロンドン/NY重複帯, eu=欧州序盤, avoid=回避帯, normal=標準 */
+var EDGE_ZONE_OF_HOUR=(function(){
+  var m={};
+  for(var h=0;h<24;h++){
+    if(h>=21||h<=0) m[h]='golden';        // 21-24,0時 ロンドン×NY重複
+    else if(h>=16&&h<=20) m[h]='eu';      // 16-20時 欧州序盤
+    else if((h>=6&&h<8)||(h>=12&&h<15)) m[h]='avoid'; // 6-7,12-14時 回避帯
+    else m[h]='normal';
+  }
+  return m;
+})();
+var EDGE_ZONE_LABEL={golden:'🟢ゴールデン',eu:'🟡欧州序盤',avoid:'🔴回避帯',normal:'⚪標準'};
+
+/* Wilson score interval（95%）。
+   (p + z²/2n ± z√((p(1−p) + z²/4n)/n)) / (1 + z²/n)
+   例: 16勝/30回 → 下限 36.1% / 上限 69.6% */
+function wilsonCI(wins,n,z){
+  z=z||EDGE_Z;
+  if(!n) return [0,1];
+  var p=wins/n, z2=z*z, d=1+z2/n;
+  var c=(p+z2/(2*n))/d;
+  var m=(z*Math.sqrt((p*(1-p)+z2/(4*n))/n))/d;
+  return [Math.max(0,c-m),Math.min(1,c+m)];
+}
+function _eStat(arr){
+  var n=arr.length,w=arr.filter(function(a){return a.yen>0;}).length,
+      net=arr.reduce(function(a,b){return a+b.yen;},0);
+  var ci=wilsonCI(w,n);
+  return {n:n,w:w,wr:n?w/n*100:0,net:net,lo:ci[0]*100,hi:ci[1]*100};
+}
 function buildEdgeProfile(){
   var t=loadTrades().filter(function(x){return !!x.opened_at;});
-  if(t.length<10){ try{localStorage.removeItem(EDGE_KEY);}catch(e){} return null; }
-  var baseWr=t.filter(function(x){return x.yen>0;}).length/t.length*100;
+  var baseWr=t.length?t.filter(function(x){return x.yen>0;}).length/t.length*100:0;
+  var ready=t.length>=EDGE_TOTAL_MIN;
   var grp=function(fn){var m={};t.forEach(function(x){var k=fn(x);
     if(k===null||k===undefined||k==='')return;(m[k]=m[k]||[]).push(x);});return m;};
+  /* 補正の決定：件数条件を満たし、かつWilson区間がベース勝率を跨がない時だけ値を返す。
+     跨ぐ（＝偶然の範囲）なら 0。大きさは信頼下限/上限とベースの差を2で割ってpt化し±EDGE_CAPで頭打ち。 */
   var adjOf=function(st){
-    if(st.n<EDGE_MIN) return 0;
-    var d=(st.wr-baseWr)/5;
-    if(st.net<0&&st.wr<baseWr) d-=1;
-    if(st.net>0&&st.wr>baseWr) d+=0.5;
-    return Math.max(-EDGE_CAP,Math.min(EDGE_CAP,Math.round(d)));
+    if(!ready||st.n<EDGE_MIN) return 0;
+    if(st.lo>baseWr) return Math.min(EDGE_CAP,Math.max(1,Math.round((st.lo-baseWr)/2)));
+    if(st.hi<baseWr) return Math.max(-EDGE_CAP,Math.min(-1,Math.round((st.hi-baseWr)/2)));
+    return 0;
   };
   var out=function(m){var o={};Object.keys(m).forEach(function(k){var st=_eStat(m[k]);
-    o[k]={n:st.n,wr:Math.round(st.wr),net:Math.round(st.net),adj:adjOf(st)};});return o;};
-  var prof={updated:Date.now(),n:t.length,baseWr:Math.round(baseWr),
+    o[k]={n:st.n,wr:Math.round(st.wr),net:Math.round(st.net),
+          lo:Math.round(st.lo*10)/10,hi:Math.round(st.hi*10)/10,adj:adjOf(st)};});return o;};
+  var prof={
+    v:7, updated:Date.now(), n:t.length, baseWr:Math.round(baseWr*10)/10,
+    ready:ready, need:{total:EDGE_TOTAL_MIN,bucket:EDGE_MIN}, cap:EDGE_CAP,
     sessions:out(grp(function(x){return _tSess(_tHour(_tOpen(x)));})),
-    hours:out(grp(function(x){var h=_tHour(_tOpen(x));return h==null?null:String(h);})),
-    pairs:out(grp(function(x){return x.pair;}))};
+    zones:out(grp(function(x){var h=_tHour(_tOpen(x));return h==null?null:EDGE_ZONE_OF_HOUR[h];})),
+    pairs:out(grp(function(x){return x.pair;})),
+    // ★区分定義の唯一の出所。index.html はこの対応表を引くだけ（セッション判定を二重に持たない）
+    sessOfHour:(function(){var a=[];for(var h=0;h<24;h++)a.push(_tSess(h));return a;})(),
+    zoneOfHour:(function(){var a=[];for(var h=0;h<24;h++)a.push(EDGE_ZONE_OF_HOUR[h]);return a;})(),
+    zoneLabel:EDGE_ZONE_LABEL
+  };
   try{localStorage.setItem(EDGE_KEY,JSON.stringify(prof));}catch(e){}
   return prof;
 }
@@ -473,22 +546,42 @@ function renderEdgeProfile(){
   var el=document.querySelector('#edgeprof tbody'); if(!el) return;
   var stEl=document.getElementById('edgestat');
   var prof=buildEdgeProfile();
-  if(!prof){ el.innerHTML='<tr><td colspan=4 style="text-align:center;color:#566">日時つきの記録が10件以上たまると学習を開始します</td></tr>';
-    if(stEl) stEl.textContent=''; return; }
   var rows=[];
   var ordS={'東京':1,'ロンドン':2,'ニューヨーク':3,'オセアニア':4};
-  var add=function(label,map,order,suffix){
-    var keys=Object.keys(map);
-    keys.sort(order?function(a,b){return (order[a]||99)-(order[b]||99);}:function(a,b){return (+a||0)-(+b||0)||String(a).localeCompare(String(b));});
+  var ordZ={'golden':1,'eu':2,'normal':3,'avoid':4};
+  var add=function(label,map,order,suffix,labeler){
+    var keys=Object.keys(map||{});
+    keys.sort(order?function(a,b){return (order[a]||99)-(order[b]||99);}:function(a,b){return String(a).localeCompare(String(b));});
     keys.forEach(function(k){var v=map[k];
-      if(v.n<EDGE_MIN) return;
-      rows.push('<tr><td>'+label+' '+k+(suffix||'')+'</td><td>'+v.n+'</td><td>'+v.wr+'%</td><td class="'+(v.adj>0?'good':(v.adj<0?'warn':''))+'">'+(v.adj>0?'+':'')+v.adj+'</td></tr>');});
+      var nm=labeler?(labeler[k]||k):k;
+      var short=v.n<EDGE_MIN;
+      rows.push('<tr'+(v.adj?' style="background:#141b24"':'')+'><td>'+label+' '+nm+(suffix||'')
+        +'</td><td>'+v.n+(short?'<span style="color:#8893a4">/'+EDGE_MIN+'</span>':'')+'</td><td>'+v.wr+'%'
+        +'<span style="color:#8893a4;font-size:10px"> ('+v.lo+'〜'+v.hi+')</span></td>'
+        +'<td class="'+(v.adj>0?'good':(v.adj<0?'warn':''))+'">'+(v.adj>0?'+':'')+(v.adj||0)+'</td></tr>');});
   };
-  add('市場',prof.sessions,ordS,'');
-  add('時間',prof.hours,null,'時台');
-  add('ペア',prof.pairs,null,'');
-  el.innerHTML=rows.length?rows.join(''):'<tr><td colspan=4 style="text-align:center;color:#566">各区分'+EDGE_MIN+'件以上たまると補正が出ます</td></tr>';
-  if(stEl) stEl.innerHTML='学習済み: '+prof.n+'件 / 基準勝率 '+prof.baseWr+'% ／ ダッシュボードのスコアに自動反映されます';
+  add('市場',prof.sessions,ordS,'',null);
+  add('時間',prof.zones,ordZ,'',prof.zoneLabel);
+  add('ペア',prof.pairs,null,'',null);
+  el.innerHTML=rows.length?rows.join(''):'<tr><td colspan=4 style="text-align:center;color:#566">日時つきの記録がまだありません</td></tr>';
+  if(stEl){
+    var on=false; try{on=localStorage.getItem('fxnavi_edge_on')==='1';}catch(e){}
+    var msg;
+    if(!prof.ready){
+      msg='<span class="warn">学習には全体'+EDGE_TOTAL_MIN+'件必要（現在'+prof.n+'件）</span>'
+         +' ／ 各区分は'+EDGE_MIN+'件以上で有効。条件を満たすまで補正は 0 のままです。';
+    }else{
+      var live=[].concat(
+        Object.keys(prof.sessions).map(function(k){return prof.sessions[k].adj;}),
+        Object.keys(prof.zones).map(function(k){return prof.zones[k].adj;}),
+        Object.keys(prof.pairs).map(function(k){return prof.pairs[k].adj;})
+      ).filter(function(a){return a;}).length;
+      msg='学習済み '+prof.n+'件 / 基準勝率 '+prof.baseWr+'% / 有効な補正 '+live+'区分（上限±'+EDGE_CAP+'pt）';
+    }
+    msg+='<br>括弧内は勝率の95%信頼区間。区間が基準勝率を跨ぐ区分は「偶然の範囲」とみなし補正しません。';
+    msg+='<br>この補正は現在ダッシュボードで<b class="'+(on?'good':'warn')+'">'+(on?'使用中':'未使用（既定OFF）')+'</b>です。';
+    stEl.innerHTML=msg;
+  }
 }
 function clearEdgeProfile(){ try{localStorage.removeItem(EDGE_KEY);}catch(e){} renderEdgeProfile(); alert('学習データを消去しました'); }
 /* ===== 勝ちパターン分析（時間帯・セッション・スコア帯） ===== */
@@ -572,6 +665,46 @@ function exportTradesCSV(){var t=loadTrades().slice().sort(function(a,b){return 
   });
   var body='\ufeff'+rows.map(function(r){return r.map(function(c){c=(c==null?'':''+c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',');}).join('\r\n');
   _toolsCsvDist(new Blob([body],{type:'text/csv;charset=utf-8'}),'fxnavi-trades.csv');}
+/* ===== 3-C: 全データのバックアップ / 復元 =====
+   端末のlocalStorageに入っている記録は、Safariのデータ消去やPWA再インストールで消える。
+   書き出しは既存CSVと同じ同期3段方式（_toolsCsvDist）を使う（非同期を挟むとiOSでブロックされるため）。 */
+var BACKUP_KEYS=['fxnavi_trades','fxnavi_edge','fxnavi_edge_on','fxnavi_forward',
+                 'fxnavi_sec_open','fxnavi_risk','fxnavi_bthist','fxnavi_snap'];
+function exportBackup(){
+  var data={_type:'fxnavi-backup',_v:7,_at:new Date().toISOString(),store:{}};
+  BACKUP_KEYS.forEach(function(k){ try{ var v=localStorage.getItem(k); if(v!=null) data.store[k]=v; }catch(e){} });
+  var n=0; try{ n=(JSON.parse(data.store['fxnavi_trades']||'[]')||[]).length; }catch(e){}
+  var name='fxnavi-backup-'+new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})+'.json';
+  _toolsCsvDist(new Blob([JSON.stringify(data)],{type:'application/json'}),name);
+  var m=document.getElementById('impmsg'); if(m) m.textContent='バックアップを書き出しました（トレード'+n+'件・'+Object.keys(data.store).length+'項目）';
+}
+/* 復元は「置き換え」ではなく既存データとのマージ。
+   トレードは決済ID（無ければ 日時+ペア+損益）で重複排除する。 */
+function _tradeKey(x){ return String(x.id||x.deal_id||((x.closed_at||x.ts||'')+'|'+(x.pair||'')+'|'+(x.yen||'')+'|'+(x.entry||''))); }
+function importBackup(){
+  var ta=document.getElementById('bkpaste'); if(!ta) return;
+  var raw=(ta.value||'').trim();
+  var m=document.getElementById('impmsg');
+  if(!raw){ if(m)m.textContent='復元するJSONを貼り付けてください'; return; }
+  var d; try{ d=JSON.parse(raw); }catch(e){ if(m)m.innerHTML='<span class="warn">JSONとして読めませんでした</span>'; return; }
+  if(!d||!d.store){ if(m)m.innerHTML='<span class="warn">バックアップ形式ではありません</span>'; return; }
+  var added=0, dup=0, keys=0;
+  // トレードはマージ（重複排除）
+  try{
+    var cur=loadTrades()||[], seen={}; cur.forEach(function(x){ seen[_tradeKey(x)]=1; });
+    var inc=JSON.parse(d.store['fxnavi_trades']||'[]')||[];
+    inc.forEach(function(x){ var k=_tradeKey(x); if(seen[k]){dup++;return;} seen[k]=1; cur.push(x); added++; });
+    saveTrades(cur);
+  }catch(e){}
+  // トレード以外は、現在が空の項目だけ復元（既存設定を壊さない）
+  BACKUP_KEYS.forEach(function(k){
+    if(k==='fxnavi_trades') return;
+    try{ if(d.store[k]!=null && localStorage.getItem(k)==null){ localStorage.setItem(k,d.store[k]); keys++; } }catch(e){}
+  });
+  if(m) m.innerHTML='復元しました：トレード <b>'+added+'件を追加</b>／'+dup+'件は重複のためスキップ／設定'+keys+'項目を復元';
+  try{ renderJournal(); }catch(e){}
+  try{ renderEdgeProfile(); }catch(e){}
+}
 // 共通UX-1: セクションのアコーディオン
 function toggleSection(idx){try{var st=JSON.parse(localStorage.getItem('fxnavi_sec_open')||'null')||{0:true};st[idx]=!st[idx];localStorage.setItem('fxnavi_sec_open',JSON.stringify(st));applySections();}catch(e){}}
 function applySections(){var st;try{st=JSON.parse(localStorage.getItem('fxnavi_sec_open')||'null');}catch(e){st=null;}if(!st)st={0:true};
