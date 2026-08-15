@@ -33,14 +33,13 @@ FUND_BIAS = {"USD_JPY":0.5, "EUR_JPY":0.4, "GBP_JPY":0.5, "AUD_JPY":0.4}
 SL_ATR_MULT = 1.0
 TP_SL_RATIO = 1.5
 
-# ===== 通知の宛先ルーティング（LINEの無料枠節約）=====
-# エントリーシグナルはLINEに送らず、メール＋ダッシュボードに残す（既定）。
-# LINEは「保有中の利確/損切りサイン」など“今すぐ判断が要る通知”だけに絞る。
-NOTIFY_ENTRY_TO_LINE = False
-NOTIFY_ENTRY_TO_MAIL = True
-# ★LINE無料枠オーバー中の一時停止スイッチ。Falseの間はLINEに一切送らない（メールは通常どおり全送信）。
-#   来月、枠が復活したら True に戻す。Trueの時もLINEは利確/損切り(take/cut)の最重要サインだけに絞る。
-LINE_ENABLED = False
+# ===== 通知の宛先ルーティング =====
+# LINE : シグナル（エントリー）通知だけを送る。画面(index.html)発の「⚡ライブ」通知はWorker側で遮断。
+# メール: エントリー・推奨レベル設定・保有中の利確/損切り/利確検討を、すべて送る（取りこぼし防止）。
+LINE_ENABLED = True             # LINE無料枠が復活したのでON。枠が厳しくなったらFalseで全停止できる
+NOTIFY_ENTRY_TO_LINE = True     # エントリーシグナルをLINEへ
+NOTIFY_ENTRY_TO_MAIL = True     # エントリーシグナルをメールへ
+NOTIFY_POSITION_TO_LINE = False # 保有中の利確/損切りサインもLINEに欲しくなったら True（メールには常に届く）
 
 VALID_BARS = 3
 MAX_CHASE_RATIO = 0.5
@@ -76,9 +75,20 @@ _NEWS_CACHE = None
 # "show"  … 上位足トレンドを表示するだけ（エントリーは止めない）※推奨・初期値
 # "filter"… 上位足と方向が一致しないエントリーを見送る（効果を実データで確認してから）
 # "off"   … 何もしない
-MTF_MODE = "show"
+MTF_MODE = "block_opposite"
+# "show"           … 表示のみ（エントリーを止めない）
+# "block_opposite" … ★上位足と逆行するエントリーだけ見送る（レンジは通す）※実トレード337件で検証済み
+#                    順張り46%/レンジ32%/逆行25%（勝率）、逆行は平均-66円で順張りの5.5倍の損失だった
+# "filter"         … 順張り時のみ許可（最も厳格）
+# "off"            … 無効
 MTF_TFS = ("1hour", "4hour")   # 中期足・長期足
 MTF_EMA = (12, 26)             # 上位足のトレンド判定EMA
+
+# ===== 時間帯フィルタ =====
+# 実トレード実績で負けが集中した時間帯は新規シグナルを出さない。
+# 4通貨・ロット1000換算で -4,948円 → +469円（勝率38%→45%）に改善した区分。
+HOUR_FILTER_ON = True
+BAD_HOURS = {0, 6, 15, 16, 21, 23}   # JSTの時台
 
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
@@ -815,11 +825,16 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         nw = upcoming_news(sym)              # このペアに近接する重要指標（画面表示用）
         mtf = mtf_view(sym)                  # 上位足(1h/4h)のトレンド方向
         sig = None if blackout else sc["side"]
-        # MTF_MODE="filter" の時だけ、上位足と方向が食い違うエントリーを見送る
-        if sig and mtf and MTF_MODE == "filter":
+        skip_reason = None
+        if sig and mtf:
             want = 1 if sig == "買い" else -1
-            if mtf.get("aligned") != want:
-                sig = None
+            al = mtf.get("aligned")
+            if MTF_MODE == "block_opposite" and al == -want:
+                sig = None; skip_reason = "上位足と逆行"
+            elif MTF_MODE == "filter" and al != want:
+                sig = None; skip_reason = "上位足が順張りでない"
+        if sig and HOUR_FILTER_ON and now.hour in BAD_HOURS:
+            sig = None; skip_reason = f"{now.hour}時台は実績が悪いため見送り"
         bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
 
         entry = {}
@@ -843,6 +858,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             "closes":sc["closes"], "ema_f_series":sc["ef_series"], "ema_s_series":sc["es_series"],
             "blackout": blackout,
             "mtf": mtf,
+            "skip_reason": skip_reason,
             "next_news": ({"title": nw[2], "time": nw[1].strftime("%H:%M"),
                            "in_min": int(nw[3]), "country": nw[0]} if nw else None),
             **entry,
@@ -982,7 +998,9 @@ def main():
     notify = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
     # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
-    line_parts = ((list(m2_line) + (list(notify) if NOTIFY_ENTRY_TO_LINE else [])) if LINE_ENABLED else [])
+    # LINE: シグナル通知だけ。保有中サインは NOTIFY_POSITION_TO_LINE=True の時のみ追加。
+    line_parts = (((list(notify) if NOTIFY_ENTRY_TO_LINE else [])
+                   + (list(m2_line) if NOTIFY_POSITION_TO_LINE else [])) if LINE_ENABLED else [])
     # メール: 推奨レベル設定 + 保有監視(利確/損切り/利確検討) + エントリー、すべて送る。
     mail_parts = list(m1) + list(m2_mail) + (list(notify) if NOTIFY_ENTRY_TO_MAIL else [])
 

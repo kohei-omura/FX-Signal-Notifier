@@ -2244,6 +2244,11 @@ const MTF_BY_SYM={};
 // LINEライブ通知の条件（LINE月間上限の節約）
 const LIVE_NOTIFY_MIN_PCT=50;      // 総合判定がこの%以上
 const LIVE_NOTIFY_NEED_MTF=true;   // かつ上位足(1h/4h)がシグナル方向と一致していること
+// ★実トレード337件の実績で負けが集中した時間帯（JST）。ここでは新規シグナルを出さない。
+//   4通貨・ロット1000換算で -4,948円 → +469円（勝率38%→45%）に改善した区分。
+const BAD_HOURS=[0,6,15,16,21,23];
+const HOUR_FILTER_ON=true;
+function inBadHour(){return HOUR_FILTER_ON&&BAD_HOURS.includes(new Date(Date.now()+9*3600e3).getUTCHours());}
 // 上位足がシグナル方向と一致しているか。1=上昇一致 / -1=下降一致 / 0=レンジ・不一致
 function mtfAgree(pair){
   const m=MTF_BY_SYM[pair.symbol];
@@ -2271,7 +2276,12 @@ async function liveSignals(){
     for(const {sym,oh} of datas){
       if(oh.length<30)continue;
       const sc=scorePair(sym,oh,P);if(!sc)continue;
-      const sig=S.market_open?sc.side:null;
+      let sig=S.market_open?sc.side:null;
+      // ★上位足と逆行するシグナルは出さない（実績: 逆行は順張りの5.5倍の損失）
+      if(sig){const _m=MTF_BY_SYM[sym];const _w=sig==='買い'?1:-1;
+        if(_m&&_m.aligned===-_w)sig=null;}
+      // ★実績の悪い時間帯は新規シグナルを出さない
+      if(sig&&inBadHour())sig=null;
       const pair={symbol:sym,bid:(PRICE[sym]?PRICE[sym].bid:r3(sc.price)),ask:(PRICE[sym]?PRICE[sym].ask:null),
         rsi:sc.rsi,adx:sc.adx,ema_f:r3(sc.ef),ema_s:r3(sc.es),atr:r4(sc.atr),tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
         score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:sc.score>=0?'買い優勢':'売り優勢',reasons:sc.reasons,
