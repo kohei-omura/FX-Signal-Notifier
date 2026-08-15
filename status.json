@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-16 02:40 JST",
+  "generated_at": "2026-08-16 02:45 JST",
   "market_open": false,
   "mode": "day",
   "blackout": false,
@@ -908,6 +908,24 @@
       "stats_mode": "day"
     }
   ],
-  "open_positions": [],
+  "open_positions": [
+    {
+      "id": "p1786815643433",
+      "symbol": "EUR_JPY",
+      "side": "long",
+      "entry": 184.335,
+      "lot": 2000.0,
+      "current": 184.28,
+      "pips": -5.5,
+      "yen": -110,
+      "tp_price": 184.45,
+      "sl_price": 184.263,
+      "adv_level": "cut",
+      "adv_label": "🛑 損切り推奨",
+      "adv_reason": "SL到達",
+      "mfe": 184.335,
+      "profit_atr": -1.0
+    }
+  ],
   "closed_positions": []
 }
