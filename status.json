@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-21 02:51 JST",
+  "generated_at": "2026-08-21 02:56 JST",
   "market_open": true,
   "mode": "day",
   "blackout": false,
@@ -10,24 +10,24 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 159.058,
-      "ask": 159.063,
-      "rsi": 66.5,
+      "bid": 159.079,
+      "ask": 159.084,
+      "rsi": 67.6,
       "adx": 19.8,
-      "ema_f": 158.999,
-      "ema_s": 158.882,
-      "atr": 0.1047,
-      "tp_pips": 21.8,
-      "sl_pips": 13.6,
-      "score": 0.387,
-      "tech": 0.367,
+      "ema_f": 159.003,
+      "ema_s": 158.884,
+      "atr": 0.1062,
+      "tp_pips": 22.1,
+      "sl_pips": 13.8,
+      "score": 0.403,
+      "tech": 0.386,
       "fund": 0.5,
-      "signal": null,
+      "signal": "買い",
       "bias": "買い優勢",
       "reasons": [
         "手法:様子見",
         "EMA上(9vs21)",
-        "RSI66",
+        "RSI68",
         "ADX20(弱)"
       ],
       "closes": [
@@ -90,7 +90,7 @@
         159.028,
         159.029,
         159.061,
-        159.057
+        159.078
       ],
       "ema_f_series": [
         158.423,
@@ -152,7 +152,7 @@
         158.949,
         158.965,
         158.984,
-        158.999
+        159.003
       ],
       "ema_s_series": [
         158.369,
@@ -214,7 +214,7 @@
         158.826,
         158.845,
         158.864,
-        158.882
+        158.884
       ],
       "blackout": false,
       "mtf": {
@@ -225,6 +225,12 @@
       },
       "skip_reason": null,
       "next_news": null,
+      "entry_ref": 159.079,
+      "entry_limit": 159.148,
+      "maxchase_pips": 6.9,
+      "valid_minutes": 45,
+      "valid_until": "03:41",
+      "valid_until_ts": 1787251263534,
       "hold_tp_min": 128,
       "hold_sl_min": 82,
       "tp_winrate": 44,
@@ -234,24 +240,25 @@
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 185.672,
-      "ask": 185.677,
-      "rsi": 69.7,
-      "adx": 21.0,
-      "ema_f": 185.616,
-      "ema_s": 185.541,
-      "atr": 0.073,
-      "tp_pips": 15.2,
-      "sl_pips": 9.5,
-      "score": 0.416,
-      "tech": 0.419,
+      "bid": 185.695,
+      "ask": 185.7,
+      "rsi": 71.1,
+      "adx": 21.1,
+      "ema_f": 185.62,
+      "ema_s": 185.543,
+      "atr": 0.0742,
+      "tp_pips": 15.4,
+      "sl_pips": 9.6,
+      "score": 0.462,
+      "tech": 0.473,
       "fund": 0.4,
       "signal": "買い",
       "bias": "買い優勢",
       "reasons": [
-        "手法:様子見",
+        "手法:レンジ逆張り",
         "EMA上(9vs21)",
-        "RSI70",
+        "MACDヒスト+",
+        "RSI71",
         "ADX21(弱)"
       ],
       "closes": [
@@ -314,7 +321,7 @@
         185.606,
         185.644,
         185.664,
-        185.674
+        185.695
       ],
       "ema_f_series": [
         184.979,
@@ -376,7 +383,7 @@
         185.572,
         185.586,
         185.602,
-        185.616
+        185.62
       ],
       "ema_s_series": [
         184.901,
@@ -438,7 +445,7 @@
         185.501,
         185.514,
         185.527,
-        185.541
+        185.543
       ],
       "blackout": false,
       "mtf": {
@@ -449,12 +456,12 @@
       },
       "skip_reason": null,
       "next_news": null,
-      "entry_ref": 185.672,
-      "entry_limit": 185.72,
+      "entry_ref": 185.695,
+      "entry_limit": 185.743,
       "maxchase_pips": 4.8,
       "valid_minutes": 45,
-      "valid_until": "03:36",
-      "valid_until_ts": 1787250969638,
+      "valid_until": "03:41",
+      "valid_until_ts": 1787251263534,
       "hold_tp_min": 90,
       "hold_sl_min": 112,
       "tp_winrate": 24,
@@ -464,25 +471,24 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 216.739,
-      "ask": 216.748,
-      "rsi": 68.6,
-      "adx": 27.9,
-      "ema_f": 216.687,
-      "ema_s": 216.572,
-      "atr": 0.1016,
-      "tp_pips": 21.1,
-      "sl_pips": 13.2,
-      "score": 0.416,
-      "tech": 0.401,
+      "bid": 216.764,
+      "ask": 216.773,
+      "rsi": 69.6,
+      "adx": 28.0,
+      "ema_f": 216.692,
+      "ema_s": 216.574,
+      "atr": 0.1024,
+      "tp_pips": 21.3,
+      "sl_pips": 13.3,
+      "score": 0.465,
+      "tech": 0.459,
       "fund": 0.5,
       "signal": "買い",
       "bias": "買い優勢",
       "reasons": [
         "手法:順張りMA",
         "EMA上(9vs21)",
-        "MACDヒスト-",
-        "RSI69",
+        "RSI70",
         "ADX28(強)"
       ],
       "closes": [
@@ -545,7 +551,7 @@
         216.672,
         216.705,
         216.718,
-        216.741
+        216.763
       ],
       "ema_f_series": [
         215.545,
@@ -607,7 +613,7 @@
         216.653,
         216.663,
         216.674,
-        216.687
+        216.692
       ],
       "ema_s_series": [
         215.454,
@@ -669,7 +675,7 @@
         216.522,
         216.539,
         216.555,
-        216.572
+        216.574
       ],
       "blackout": false,
       "mtf": {
@@ -680,12 +686,12 @@
       },
       "skip_reason": null,
       "next_news": null,
-      "entry_ref": 216.739,
-      "entry_limit": 216.805,
-      "maxchase_pips": 6.6,
+      "entry_ref": 216.764,
+      "entry_limit": 216.831,
+      "maxchase_pips": 6.7,
       "valid_minutes": 45,
-      "valid_until": "03:36",
-      "valid_until_ts": 1787250969638,
+      "valid_until": "03:41",
+      "valid_until_ts": 1787251263534,
       "hold_tp_min": 105,
       "hold_sl_min": 60,
       "tp_winrate": 41,
@@ -695,25 +701,24 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 113.121,
-      "ask": 113.128,
-      "rsi": 62.6,
+      "bid": 113.127,
+      "ask": 113.134,
+      "rsi": 63.6,
       "adx": 21.5,
-      "ema_f": 113.102,
-      "ema_s": 113.056,
-      "atr": 0.0574,
-      "tp_pips": 11.9,
+      "ema_f": 113.104,
+      "ema_s": 113.057,
+      "atr": 0.058,
+      "tp_pips": 12.1,
       "sl_pips": 7.5,
-      "score": 0.285,
-      "tech": 0.265,
+      "score": 0.327,
+      "tech": 0.314,
       "fund": 0.4,
       "signal": null,
       "bias": "買い優勢",
       "reasons": [
         "手法:様子見",
         "EMA上(9vs21)",
-        "MACDヒスト-",
-        "RSI63",
+        "RSI64",
         "ADX21(弱)"
       ],
       "closes": [
@@ -776,7 +781,7 @@
         113.082,
         113.097,
         113.123,
-        113.122
+        113.131
       ],
       "ema_f_series": [
         112.729,
@@ -838,7 +843,7 @@
         113.09,
         113.091,
         113.097,
-        113.102
+        113.104
       ],
       "ema_s_series": [
         112.729,
@@ -900,7 +905,7 @@
         113.036,
         113.042,
         113.049,
-        113.056
+        113.057
       ],
       "blackout": false,
       "mtf": {
@@ -926,16 +931,16 @@
       "side": "long",
       "entry": 158.915,
       "lot": 3000.0,
-      "current": 159.058,
-      "pips": 14.3,
-      "yen": 429,
+      "current": 159.079,
+      "pips": 16.4,
+      "yen": 492,
       "tp_price": 159.182,
       "sl_price": 158.748,
       "adv_level": "watch",
       "adv_label": "🟡 利確検討",
-      "adv_reason": "シグナル弱化(スコア+0.39/新規基準0.4未満)・ADX低下",
+      "adv_reason": "ADX低下",
       "mfe": 159.09,
-      "profit_atr": 1.37
+      "profit_atr": 1.54
     }
   ],
   "closed_positions": [
