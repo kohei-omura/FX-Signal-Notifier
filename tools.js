@@ -118,16 +118,34 @@ function csvIngest(txt){
     if($('#cPair')) $('#cPair').value=CSV_GMO.pair;
     if($('#cSide')) $('#cSide').value=CSV_GMO.side;
     if($('#cInvert')) $('#cInvert').checked=true;   // GMOの決済行は反対売買
-    $('#impmsg').innerHTML='<span class="good">GMOクリック証券（FXネオ）形式を自動認識しました。列は自動設定済みです。</span>';
   }
   if($('#cOpen')){
     var oi=guessCol(CSV_HEAD,['新規約定日時','建玉日時','新規日時','エントリー日時','建日時']);
     $('#cOpen').value=oi;
   }
-  $('#cPair').value=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
-  $('#cSide').value=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
+  /* ★GMOとして認識済みの場合、ここで上書きしない。
+     旧版は下の2行を無条件に実行しており、guessColが-1を返すとGMOの正しい列指定が
+     「（なし）」に戻ってしまう危険があった。 */
+  if(!CSV_GMO){
+    var _pi=guessCol(CSV_HEAD,['通貨ペア','通貨対','銘柄','シンボル','通貨']);
+    var _si=guessCol(CSV_HEAD,['売買区分','売買','取引区分','売り買い']);
+    $('#cPair').value=_pi;
+    $('#cSide').value=_si;
+  }
   $('#csvmap').style.display='block';$('#csvpastebox').style.display='none';
-  msg.innerHTML=`<span class="good">${CSV_ROWS.length}行を読込。列を確認して「この設定で取り込む」を押してください。</span>`;
+  if(CSV_GMO){
+    msg.innerHTML='<span class="good">GMOクリック証券（FXネオ 約定履歴）を自動認識しました。'
+      +CSV_ROWS.length+'行を読込・列は自動設定済みです。「この設定で取り込む」を押してください。</span>';
+  }else{
+    /* 列を自動認識できない＝想定と違うCSVの可能性が高い。無言で（なし）を並べると
+       そのまま取り込んでデータを壊すので、何が起きているかを明示する。 */
+    var _pnlOK=(+$('#cPnl').value>=0);
+    msg.innerHTML='<span class="warn">⚠️ GMOの「約定履歴」形式として認識できませんでした（'+CSV_ROWS.length+'行を読込）。</span>'
+      +'<br>先頭の列名: '+CSV_HEAD.slice(0,5).map(function(h){return h||'(空)';}).join(' / ')
+      +'<br>GMOの<b>約定履歴</b>CSV（「約定日時」「取引区分」「銘柄名」「実現損益（円貨）」などの列を持つもの）をご確認ください。'
+      +'注文履歴・入出金履歴など別の種類だと列が合いません。'
+      +(_pnlOK?'':'<br><span class="warn">損益の列が特定できていません。このまま取り込むとデータが壊れるため、手動で列を選ぶか、正しいCSVを読み込んでください。</span>');
+  }
 }
 async function csvLoad(file){
   if(!file)return;const msg=$('#impmsg');msg.textContent='CSV読込中…';
