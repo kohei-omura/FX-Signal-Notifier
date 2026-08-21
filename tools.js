@@ -370,7 +370,7 @@ function renderJournal(){
   var MK=[['🟢','🟢'],['🟡','🟡'],['🔴','🔴']];
   var ktb=document.querySelector('#bymark tbody');
   var _be=_breakEven(t);
-  if(ktb)ktb.innerHTML=MK.map(function(m){var arr=t.filter(function(x){return x.mark===m[0];});if(!arr.length)return'';
+  if(ktb)ktb.innerHTML=MK.map(function(m){var arr=t.filter(function(x){return _markOf(x)===m[0];});if(!arr.length)return'';
     var nn=arr.length,w=arr.filter(a=>a.yen>0).length,nt=arr.reduce((a,b)=>a+b.yen,0);
     var wrp=w/nn*100;
     // 95%信頼区間を併記。n<30は偶然のブレが大きいので「参考値」と明示する。
@@ -388,34 +388,64 @@ function renderJournal(){
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
     const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
     const dts=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'日時なし';
-    return `<div><span>${x.mark||''}${x.pair} ${sd} <span style="opacity:.6">${dts}</span></span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
+    return `<div><span>${_markOf(x)}${x.pair} ${sd} <span style="opacity:.6">${dts}</span></span><span class="${x.yen>=0?'good':'warn'}">${yen(x.yen)} <span class="del" onclick="delTrade(${i})">×</span></span></div>`;}).join('');
   renderTodaySummary();
+}
+/* 判定マークの取得。
+   mark  = 手入力フォームで選んだマーク（CSV取込では入らない）
+   smark = エントリー時スナップショットから自動取得した総合判定（'🟢 エントリーOK' 等）
+   CSV中心の運用ではmarkが常に空になり、マーク別成績が永久に「記録なし」になっていたため、
+   smarkも対象にし、先頭の絵文字だけを取り出して集計する。 */
+function _markOf(x){
+  if(!x) return '';
+  var s=x.mark||x.smark||'';
+  s=String(s);
+  var m=s.match(/[🟢🟡🔴]/);
+  return m?m[0]:'';
 }
 /* ===== CSVとアプリ決済の突合・統合 =====
    証券会社CSV: 正確な約定日時・建値・決済値・pips
    アプリ決済 : エントリー時のスコア・判断根拠
-   同じ取引（ペア一致・損益一致・時刻が近い）を1件に統合する */
+   ★同じ「1つの取引」が2つの出所から入った場合だけを1件に統合する。
+     旧版は許容1時間かつ出所を問わなかったため、「同じペア・同じ損益が近い時刻に2回」起きた
+     別々の取引（実データで26分差・27分差の2組）まで潰していた。
+     対策：(1)許容を5分に短縮 (2)CSV同士・アプリ同士は絶対に統合しない（出所が違う組み合わせのみ） */
 function _hasScore(x){ return x&&x.score!=null&&x.score!==''; }
 function _hasPx(x){ return x&&x.entry!=null&&x.entry!==''; }
 function _tsOf(x){ var d=_tJst(x.closed_at||''); return d?d.getTime():(x.ts||0); }
+/* 出所の判定: 'csv'=約定価格を持つ証券会社データ / 'app'=スコアを持つアプリ決済 / 'manual'=手入力 */
+function _srcOf(x){
+  var px=_hasPx(x), sc=_hasScore(x);
+  if(px&&!sc) return 'csv';
+  if(sc&&!px) return 'app';
+  if(px&&sc)  return 'both';   // 既に統合済み。これ以上まとめない
+  return 'manual';
+}
+var MERGE_TOL_MS=5*60e3;       // 突合の許容時間（5分）
 function mergeTradeSources(tol){
-  tol=(tol==null?60*60e3:tol);
+  tol=(tol==null?MERGE_TOL_MS:tol);
   var t=loadTrades();
-  var hasPx=function(x){ return x&&x.entry!=null&&x.entry!==''; };
-  var hasScore=function(x){ return x&&x.score!=null&&x.score!==''; };
+  var hasPx=_hasPx, hasScore=_hasScore;
   var rich=function(x){ var n=0; if(hasPx(x))n+=2; if(x.pips!=null&&x.pips!=='')n+=1; if(hasScore(x))n+=1; return n; };
   var used=new Array(t.length).fill(false), merged=0, out=[];
   var order=t.map(function(x,i){return i;}).sort(function(p,q){return _tsOf(t[p])-_tsOf(t[q]);});
   for(var oi=0;oi<order.length;oi++){
     var i=order[oi]; if(used[i]) continue;
     var group=[i]; used[i]=true;
+    var srcA=_srcOf(t[i]);
     for(var oj=oi+1;oj<order.length;oj++){
       var j=order[oj]; if(used[j]) continue;
       var A=t[i], B=t[j];
       if(A.pair!==B.pair) continue;
       if(+A.yen!==+B.yen) continue;
       if(Math.abs(_tsOf(A)-_tsOf(B))>tol) continue;
+      // ★出所が同じものは別取引とみなし統合しない（CSVのみのデータが潰れる事故を防ぐ）
+      var srcB=_srcOf(B);
+      if(srcA===srcB) continue;
+      if(srcA==='both'||srcB==='both') continue;
+      if(!((srcA==='csv'&&srcB==='app')||(srcA==='app'&&srcB==='csv'))) continue;
       group.push(j); used[j]=true;
+      break;   // 1つのCSV取引に対して統合するアプリ決済は1件だけ
     }
     if(group.length===1){ out.push(t[i]); continue; }
     var repIdx=group.slice().sort(function(x,y){ return rich(t[y])-rich(t[x]); })[0];
