@@ -169,7 +169,16 @@ function csvImport(){
   const csvKey=function(x){ return [x.closed_at||x.ts||'',x.pair||'',x.yen,(x.entry!=null?x.entry:''),(x.exit!=null?x.exit:''),(x.lot!=null?x.lot:'')].join('|'); };
   const seen=new Set(t.map(csvKey));
   for(const r of CSV_ROWS){
-    const y=numFromCell(r[pi]); if(isNaN(y)||y===0)continue;
+    const y=numFromCell(r[pi]);
+    if(isNaN(y)) continue;                    // 数値でない行（見出し・空行）は除外
+    /* 損益0の扱い：旧版は「0＝新規行」とみなして一律スキップしていたが、
+       GMOのCSVには「建単価＝約定単価」で損益ちょうど0円になる同値決済が実在し（例 8/10 AUD/JPY）、
+       正当な決済が1件失われて件数が合わなくなっていた。
+       新規行は建単価が空なので、建単価の有無で判別する。判別できない形式のみ従来どおり0をスキップ。 */
+    if(y===0){
+      var _entryCol=(CSV_GMO&&CSV_GMO.entry>=0)?String(r[CSV_GMO.entry]||'').trim():'';
+      if(!_entryCol) continue;                // 建単価が無い＝新規行 → スキップ
+    }
     let pair=$('#jp').value; if(ai>=0&&r[ai]){const pm=(''+r[ai]).toUpperCase().match(PAIR_RE);pair=pm?(pm[1]+'/JPY'):(''+r[ai]).trim();}
     let side='-'; if(si>=0&&r[si]){const sv=''+r[si];let s=/売/.test(sv)?'売り':(/買/.test(sv)?'買い':'-');if(inv&&s!=='-')s=(s==='売り'?'買い':'売り');side=s;}
     var rec={pair:pair,side:side,yen:y,ts:Date.now()};
@@ -398,10 +407,15 @@ function renderJournal(){
    smarkも対象にし、先頭の絵文字だけを取り出して集計する。 */
 function _markOf(x){
   if(!x) return '';
-  var s=x.mark||x.smark||'';
-  s=String(s);
-  var m=s.match(/[🟢🟡🔴]/);
-  return m?m[0]:'';
+  var s=String(x.mark||x.smark||'');
+  if(!s) return '';
+  // 絵文字はサロゲートペアのため、uフラグ無しの文字クラスでは正しく一致しない。
+  // 環境によってはuフラグ非対応なので、失敗時はindexOfで代替する。
+  try{ var m=s.match(/[\u{1F7E2}\u{1F7E1}\u{1F534}]/u); if(m) return m[0]; }catch(e){}
+  if(s.indexOf('🟢')>=0) return '🟢';
+  if(s.indexOf('🟡')>=0) return '🟡';
+  if(s.indexOf('🔴')>=0) return '🔴';
+  return '';
 }
 /* ===== CSVとアプリ決済の突合・統合 =====
    証券会社CSV: 正確な約定日時・建値・決済値・pips
