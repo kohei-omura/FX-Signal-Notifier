@@ -730,8 +730,11 @@ function exportTradesCSV(){var t=loadTrades().slice().sort(function(a,b){return 
 /* ===== 3-C: 全データのバックアップ / 復元 =====
    端末のlocalStorageに入っている記録は、Safariのデータ消去やPWA再インストールで消える。
    書き出しは既存CSVと同じ同期3段方式（_toolsCsvDist）を使う（非同期を挟むとiOSでブロックされるため）。 */
-var BACKUP_KEYS=['fxnavi_trades','fxnavi_edge','fxnavi_edge_on','fxnavi_forward',
-                 'fxnavi_sec_open','fxnavi_risk','fxnavi_bthist','fxnavi_snap'];
+var BACKUP_KEYS=['fxnavi_trades','fxnavi_edge','fxnavi_edge_on',
+                 'fxnavi_forward_v1',   // ★前向き検証（index.html側のキー。旧名'fxnavi_forward'は誤り）
+                 'fxnavi_snap',         // スコアのスナップショット（マーク別成績の元データ）
+                 'fxnavi_sec_open','fxnavi_risk','fxnavi_bthist',
+                 'fxnavi_lossstop','fxnavi_oppsupp','fxnavi_zonesupp','fxnavi_nosort'];
 function exportBackup(){
   var data={_type:'fxnavi-backup',_v:7,_at:new Date().toISOString(),store:{}};
   BACKUP_KEYS.forEach(function(k){ try{ var v=localStorage.getItem(k); if(v!=null) data.store[k]=v; }catch(e){} });
@@ -758,12 +761,30 @@ function importBackup(){
     inc.forEach(function(x){ var k=_tradeKey(x); if(seen[k]){dup++;return;} seen[k]=1; cur.push(x); added++; });
     saveTrades(cur);
   }catch(e){}
-  // トレード以外は、現在が空の項目だけ復元（既存設定を壊さない）
+  // ★前向き検証・スナップショットは配列なのでマージする（既存があっても復元できるように）
+  var fwdAdd=0, snapAdd=0;
+  var mergeArr=function(key,keyFn,cap){
+    try{
+      if(d.store[key]==null) return 0;
+      var inc=JSON.parse(d.store[key]||'[]'); if(!Array.isArray(inc)) return 0;
+      var cur=[]; try{ cur=JSON.parse(localStorage.getItem(key)||'[]')||[]; }catch(e){}
+      var seen={}; cur.forEach(function(x){ seen[keyFn(x)]=1; });
+      var add=0;
+      inc.forEach(function(x){ var k=keyFn(x); if(seen[k])return; seen[k]=1; cur.push(x); add++; });
+      cur.sort(function(a,b){ return (a.ts||a.t||0)-(b.ts||b.t||0); });
+      localStorage.setItem(key,JSON.stringify(cap?cur.slice(-cap):cur));
+      return add;
+    }catch(e){ return 0; }
+  };
+  fwdAdd =mergeArr('fxnavi_forward_v1',function(x){return [x.ts,x.sym,x.entry,x.side].join('|');},300);
+  snapAdd=mergeArr('fxnavi_snap',      function(x){return [x.t,x.sym].join('|');},4000);
+  // それ以外の設定値は、現在が空の項目だけ復元（既存設定を壊さない）
   BACKUP_KEYS.forEach(function(k){
-    if(k==='fxnavi_trades') return;
+    if(k==='fxnavi_trades'||k==='fxnavi_forward_v1'||k==='fxnavi_snap') return;
     try{ if(d.store[k]!=null && localStorage.getItem(k)==null){ localStorage.setItem(k,d.store[k]); keys++; } }catch(e){}
   });
-  if(m) m.innerHTML='復元しました：トレード <b>'+added+'件を追加</b>／'+dup+'件は重複のためスキップ／設定'+keys+'項目を復元';
+  if(m) m.innerHTML='復元しました：トレード <b>'+added+'件を追加</b>／'+dup+'件は重複でスキップ'
+    +'<br>前向き検証 <b>'+fwdAdd+'件</b>／スナップショット '+snapAdd+'件／設定'+keys+'項目';
   try{ renderJournal(); }catch(e){}
   try{ renderEdgeProfile(); }catch(e){}
 }

@@ -928,7 +928,49 @@ function kellyRec(mode){var m=modeStats(mode);if(m.n<30)return{status:'acc',n:m.
 // 機能6: Wilson信頼下限（z=1.96）＋仮想エクイティカーブ（fxnavi_forward_v1・最大300件ローテ）
 function wilsonLower(wins,n,z){if(!n)return 0;z=z||1.96;var p=wins/n,z2=z*z;return (p+z2/(2*n)-z*Math.sqrt((p*(1-p)+z2/(4*n))/n))/(1+z2/n);}
 function loadFwd(){try{return JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]')||[];}catch(e){return[];}}
-function saveFwd(a){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(a.slice(-300)));}catch(e){}}
+function saveFwd(a){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(a.slice(-300)));}catch(e){}
+  fwdCloudSaveLater();}
+
+/* ===== 前向き検証のクラウド保存 =====
+   端末内(localStorage)だけだと、PWAの再インストールやSafariのデータ消去で消えてしまう。
+   GitHub連携が設定済みなら forward_log.json としてリポジトリにも保存し、
+   起動時に自動で取り込む（端末を作り直しても記録が続く）。 */
+var FWD_PATH='forward_log.json';
+var _fwdSaveTimer=null, _fwdCloudLoaded=false;
+function _fwdKey(x){ return [x.ts,x.sym,x.entry,x.side].join('|'); }
+function fwdMerge(list){
+  if(!Array.isArray(list)||!list.length) return 0;
+  var cur=loadFwd(), seen={}, add=0;
+  cur.forEach(function(x){ seen[_fwdKey(x)]=1; });
+  list.forEach(function(x){ var k=_fwdKey(x); if(seen[k])return; seen[k]=1; cur.push(x); add++; });
+  cur.sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+  try{ localStorage.setItem('fxnavi_forward_v1',JSON.stringify(cur.slice(-300))); }catch(e){}
+  return add;
+}
+// 連続保存でAPIを叩きすぎないよう、まとめて10秒後に1回だけ送る
+function fwdCloudSaveLater(){
+  var c=cfg(); if(!c||!c.token||!c.owner||!c.repo) return;
+  clearTimeout(_fwdSaveTimer);
+  _fwdSaveTimer=setTimeout(function(){ fwdCloudSave(); },10000);
+}
+async function fwdCloudSave(){
+  try{
+    var c=cfg(); if(!c||!c.token||!c.owner||!c.repo) return;
+    await ghPutFile(c,FWD_PATH,{updated:new Date().toISOString(),entries:loadFwd()},'auto: forward log [skip ci]');
+  }catch(e){ console.warn('前向き検証のクラウド保存に失敗',e); }
+}
+async function fwdCloudLoad(){
+  if(_fwdCloudLoaded) return; _fwdCloudLoaded=true;
+  try{
+    var c=cfg(); if(!c||!c.owner||!c.repo) return;
+    // 公開リポジトリなのでトークンが無くても読める
+    var url='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')+'/'+FWD_PATH+'?t='+Date.now();
+    var r=await fetch(url,{cache:'no-store'}); if(!r.ok) return;
+    var j=await r.json();
+    var n=fwdMerge(j&&j.entries);
+    if(n){ try{ toast('☁️ 前向き検証を'+n+'件復元しました'); }catch(e){} try{ renderFwdPanel(); }catch(e){} }
+  }catch(e){ console.warn('前向き検証のクラウド復元に失敗',e); }
+}
 function fwdRecord(pair){try{if(!pair||!pair.signal)return;var f=loadFwd();
   for(var i=0;i<f.length;i++){if(f[i].open&&f[i].sym===pair.symbol)return;}
   var side=pair.signal==='買い'?'long':'short',entry=(pair.entry_ref!=null?pair.entry_ref:pair.bid);
@@ -1110,6 +1152,8 @@ function snapScores(){
 }
 setInterval(snapScores, 5*60*1000);
 setTimeout(snapScores, 8000);
+// 起動時に前向き検証をクラウドから復元（端末を作り直しても記録が続く）
+setTimeout(function(){ try{ fwdCloudLoad(); }catch(e){} }, 3000);
 // ===== 段階3: ツールで学習した補正をスコアへ反映 =====
 // ===== 上位足(MTF)と時間帯フィルタ（TDZ回避のため使用箇所より前で宣言）=====
 // 上位足(MTF)の退避先。fx_signal.py が status.json に書いた {label,aligned} を銘柄別に保持する。
@@ -2116,6 +2160,20 @@ function renderExtras(){
     else ke.innerHTML='🎯 推奨リスク <b style="color:var(--gold)">'+kr.rec+'%</b>（1/4ケリー・上限2%）';}
   renderFwdPanel();
 }
+async function fwdCloudSaveNow(){
+  var c=cfg(); if(!c||!c.token||!c.owner||!c.repo){ toast('⚙でGitHub連携を設定すると保存できます'); togglePanel('setPanel'); return; }
+  toast('☁️ 保存中…');
+  try{ await fwdCloudSave(); toast('☁️ 前向き検証 '+loadFwd().length+'件を保存しました'); }
+  catch(e){ toast('保存に失敗しました'); }
+}
+async function fwdCloudRestore(){
+  _fwdCloudLoaded=false;
+  var before=loadFwd().length;
+  await fwdCloudLoad();
+  var after=loadFwd().length;
+  if(after===before) toast('復元できる新しい記録はありませんでした');
+  try{ renderFwdPanel(); }catch(e){}
+}
 function renderFwdPanel(){
   var histEl=document.getElementById('history');if(!histEl)return;
   var fp=document.getElementById('fwdpanel');
@@ -2134,7 +2192,9 @@ function renderFwdPanel(){
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">モード別：'+mb+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">学習補正別：'+_fwdEdgeSplit(s.closed)+'</div>'
     +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率 で実証。🟢OK発生時に自動記録・最大300件ローテ。</div>'
-    +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="exportHistoryCSV()">📤 決済履歴CSV</button><button class="dettog" style="width:auto;flex:1" onclick="exportForwardCSV()">📤 前向き検証CSV</button></div></div>';
+    +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="exportHistoryCSV()">📤 決済履歴CSV</button><button class="dettog" style="width:auto;flex:1" onclick="exportForwardCSV()">📤 前向き検証CSV</button></div>'
+    +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudSaveNow()">☁️ 今すぐクラウド保存</button><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudRestore()">♻️ クラウドから復元</button></div>'
+    +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">⚙のGitHub連携が設定済みなら、記録は自動でリポジトリ（'+FWD_PATH+'）にも保存され、起動時に取り込まれます。端末を作り直しても記録が続きます。</div></div>';
 }
 function setPriceFromStatus(){
   // status.jsonは古い場合がある。既にライブ値がある銘柄はそれを優先し、未取得の銘柄だけ種として入れる
