@@ -38,6 +38,12 @@ function _tJst(str){ if(!str)return null;
   if(!m)return null; return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5])); }
 function _tMs(x){ var d=_tJst(x.closed_at||''); if(d)return d.getTime(); return x.ts||0; }
 function _tOpen(x){ return _tJst(x.opened_at||'')||null; }
+/* Date → "YYYY-MM-DD HH:MM JST"（_tJstが読み戻せる形式） */
+function _fmtJst(d){
+  if(!d) return '';
+  var j=new Date(d.getTime()+9*3600e3), p=function(n){return (n<10?'0':'')+n;};
+  return j.getUTCFullYear()+'-'+p(j.getUTCMonth()+1)+'-'+p(j.getUTCDate())+' '+p(j.getUTCHours())+':'+p(j.getUTCMinutes())+' JST';
+}
 function _tHour(d){ return d?(new Date(d.getTime()+9*3600e3)).getUTCHours():null; }
 function _tWd(d){ return d?['日','月','火','水','木','金','土'][(new Date(d.getTime()+9*3600e3)).getUTCDay()]:''; }
 function _tSess(h){ if(h==null)return ''; if(h>=8&&h<15)return '東京'; if(h>=15&&h<21)return 'ロンドン'; if(h>=21||h<6)return 'ニューヨーク'; return 'オセアニア'; }
@@ -178,11 +184,51 @@ function numFromCell(s){
   if(paren&&v>0)v=-v;
   return Math.round(v);
 }
+/* ===== GMO CSVから「本当のエントリー時刻」を復元する =====
+   GMOの決済行には約定日時（＝決済時刻）しか無く、エントリー時刻の列が無い。
+   そのため従来は決済時刻をエントリー時刻の代用にしており、
+   「時間帯別（エントリー時刻）」「セッション別」「マーク別」がすべて“決済時点”の集計になっていた。
+   （実データでは保有中央値30分・32%が60分超のため、時台が大きくズレる）
+   GMOのCSVには新規行も含まれるので、決済行の「建単価」と一致する新規行の「約定単価」を
+   時系列で照合すればエントリー時刻を復元できる（実データ376件で100%照合できることを確認済み）。 */
+function buildGmoOpenMap(rows, g){
+  if(!g || g.kind<0 || g.px<0 || g.entry<0) return null;
+  var opens={};   // "pair|price" -> [{t:Date, used:false}]
+  rows.forEach(function(r){
+    if(!r||!r.length) return;
+    var kind=String(r[g.kind]||'');
+    if(kind.indexOf('新規')<0) return;
+    var pd=_parseAnyDate(r[g.date]); if(!pd) return;
+    var d=new Date(pd.ms);
+    var key=String(r[g.pair]||'').trim()+'|'+String(r[g.px]||'').trim();
+    (opens[key]=opens[key]||[]).push({t:d,used:false});
+  });
+  Object.keys(opens).forEach(function(k){ opens[k].sort(function(a,b){return a.t-b.t;}); });
+  return opens;
+}
+/* 決済行に対応する新規行の時刻を1つ取り出す（同値建てが複数ある場合は古い方から消費） */
+function takeGmoOpen(opens, pair, entryPx, closeDate){
+  if(!opens) return null;
+  var arr=opens[String(pair||'').trim()+'|'+String(entryPx||'').trim()];
+  if(!arr) return null;
+  var pick=null;
+  for(var i=0;i<arr.length;i++){
+    if(arr[i].used) continue;
+    if(closeDate && arr[i].t>closeDate) break;   // 決済より後の新規は対象外
+    pick=arr[i];
+  }
+  if(!pick) return null;
+  pick.used=true;
+  return pick.t;
+}
 function csvImport(){
   if(!CSV_ROWS){alert('先にCSVを読み込んでください');return;}
   const pi=+$('#cPnl').value,ai=+$('#cPair').value,si=+$('#cSide').value,inv=$('#cInvert').checked;
   if(pi<0){alert('損益の列を選んでください');return;}
   const t=loadTrades();let added=0,dup=0;
+  // GMO形式なら新規行を索引化して、決済行のエントリー時刻を復元できるようにする
+  var GMO_OPENS=CSV_GMO?buildGmoOpenMap(CSV_ROWS,CSV_GMO):null;
+  var _openFixed=0;
   // 重複防止: 決済日時+ペア+損益+建値 を一意キーにする
   const csvKey=function(x){ return [x.closed_at||x.ts||'',x.pair||'',x.yen,(x.entry!=null?x.entry:''),(x.exit!=null?x.exit:''),(x.lot!=null?x.lot:'')].join('|'); };
   const seen=new Set(t.map(csvKey));
@@ -215,8 +261,15 @@ function csvImport(){
         if(dir) rec.pips=Math.round(((_px-_en)/0.01)*dir*10)/10;
       }
     }
-    // エントリー日時が無い場合は決済日時を建玉時刻として時間帯分析に使う（近似）
-    if(!rec.opened_at&&rec.closed_at) rec.opened_at=rec.closed_at;
+    /* ★エントリー時刻の復元。
+       GMOのCSVなら、建単価と一致する新規行を照合して「本当のエントリー時刻」を入れる。
+       これが無いと、時間帯別・セッション別・マーク別が“決済時点”の集計になり意味を失う。 */
+    if(!rec.opened_at&&CSV_GMO&&GMO_OPENS&&rec.entry!=null){
+      var _od=takeGmoOpen(GMO_OPENS,r[CSV_GMO.pair],r[CSV_GMO.entry],(rec.closed_at?_tJst(rec.closed_at):null));
+      if(_od){ rec.opened_at=_fmtJst(_od); rec.openSrc='gmo'; _openFixed++; }
+    }
+    // それでも分からない場合のみ、決済日時を代用する（近似・精度は落ちる）
+    if(!rec.opened_at&&rec.closed_at){ rec.opened_at=rec.closed_at; rec.openSrc='approx'; }
     var _k=csvKey(rec);
     if(seen.has(_k)){ dup++; continue; }     // 同じ取引は取り込まない
     seen.add(_k);
@@ -232,7 +285,8 @@ function csvImport(){
   $('#impmsg').innerHTML='<span class="good">'+added+'件を取り込みました。</span>'+
     (dup?('<br><span class="good">重複 '+dup+' 件は自動スキップしました</span>'):'')+
     (withDate?('<br><span class="good">日時あり: '+withDate+'件 → 時間帯別・セッション別を集計しました</span>')
-             :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>');
+             :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>')
+    +(_openFixed?('<br><span class="good">エントリー時刻を新規約定から復元: '+_openFixed+'件（時間帯別・セッション別・マーク別が“建てた時点”の集計になります）</span>'):'');
   try{attachSnapScores();}catch(e){}
   try{var _mg=mergeTradeSources(); if(_mg.merged||_mg.dropped){ $('#impmsg').innerHTML+='<br><span class="good">アプリ決済と突合: '+_mg.merged+'件を統合 / '+_mg.dropped+'件の重複を削除</span>'; }}catch(e){}
   renderJournal();
