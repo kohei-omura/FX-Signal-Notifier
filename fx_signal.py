@@ -84,11 +84,17 @@ MTF_MODE = "block_opposite"
 MTF_TFS = ("1hour", "4hour")   # 中期足・長期足
 MTF_EMA = (12, 26)             # 上位足のトレンド判定EMA
 
-# ===== 時間帯フィルタ =====
-# 実トレード実績で負けが集中した時間帯は新規シグナルを出さない。
-# 4通貨・ロット1000換算で -4,948円 → +469円（勝率38%→45%）に改善した区分。
-HOUR_FILTER_ON = True
-BAD_HOURS = {0, 6, 15, 16, 21, 23}   # JSTの時台
+# ===== 時間帯フィルタ（現在は無効） =====
+# 【撤去の経緯】当初は「実績で負けが集中した時間帯」を避ける目的で導入したが、
+#   ① その集計は GMO CSV に建玉時刻が無いため“決済時刻”ベースになっていた（実データで55%の取引が別の時台に計上）
+#   ② エントリー時刻で集計し直したところ、遮断していた 16時台(+333円) と 21時台(+716円) は
+#      実際にはプラスで、止めるべきではなかった
+#   ③ 24時台すべてで勝率のWilson95%信頼区間が基準勝率を跨いでおり、
+#      「有意に悪い時間帯」は1つも無い（＝学習補正で偶然を排除したのと同じ基準では採用できない）
+# 以上より、統計的根拠のないフィルタとして無効化した。
+# 再検討するなら、エントリー時刻ベースで各時台30件以上を貯め、Wilson下限/上限で判定すること。
+HOUR_FILTER_ON = False
+BAD_HOURS = set()   # JSTの時台。HOUR_FILTER_ON=True にする場合のみ使う
 
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
@@ -834,7 +840,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             elif MTF_MODE == "filter" and al != want:
                 sig = None; skip_reason = "上位足が順張りでない"
         if sig and HOUR_FILTER_ON and now.hour in BAD_HOURS:
-            sig = None; skip_reason = f"{now.hour}時台は実績が悪いため見送り"
+            sig = None; skip_reason = f"{now.hour}時台は除外設定のため見送り"
         bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
 
         entry = {}

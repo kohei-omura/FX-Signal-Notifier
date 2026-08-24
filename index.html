@@ -1161,10 +1161,12 @@ const MTF_BY_SYM={};
 // LINEライブ通知の条件（LINE月間上限の節約）
 const LIVE_NOTIFY_MIN_PCT=50;      // 総合判定がこの%以上
 const LIVE_NOTIFY_NEED_MTF=true;   // かつ上位足(1h/4h)がシグナル方向と一致していること
-// ★実トレード337件の実績で負けが集中した時間帯（JST）。ここでは新規シグナルを出さない。
-//   4通貨・ロット1000換算で -4,948円 → +469円（勝率38%→45%）に改善した区分。
-const BAD_HOURS=[0,6,15,16,21,23];
-const HOUR_FILTER_ON=true;
+/* ===== 時間帯フィルタ（現在は無効） =====
+   当初の集計が“決済時刻”ベースで（GMO CSVに建玉時刻が無いため）、実データの55%が別の時台に入っていた。
+   エントリー時刻で取り直すと、遮断していた16時台(+333円)・21時台(+716円)はむしろプラス。
+   さらに24時台すべてでWilson95%信頼区間が基準勝率を跨ぎ、有意に悪い時間帯は1つも無かったため撤去。 */
+const BAD_HOURS=[];
+const HOUR_FILTER_ON=false;
 function inBadHour(){return HOUR_FILTER_ON&&BAD_HOURS.includes(new Date(Date.now()+9*3600e3).getUTCHours());}
 // 上位足がシグナル方向と一致しているか。1=上昇一致 / -1=下降一致 / 0=レンジ・不一致
 function mtfAgree(pair){
