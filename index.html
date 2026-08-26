@@ -1024,7 +1024,8 @@ function posAdvice(p){
   const ps=pairSig(p.symbol); if(!ps||p.current==null)return null;
   const dir=p.side==='long'?1:-1, a=ps.atr||0, score=(ps.score!=null?ps.score:0), rsi=(ps.rsi!=null?ps.rsi:50), adx=(ps.adx!=null?ps.adx:0);
   const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=score*dir;
-  const m=loadMfe(); let mfe=m[p.id]; mfe=(mfe==null)?p.entry:(p.side==='long'?Math.max(mfe,p.current):Math.min(mfe,p.current)); m[p.id]=+mfe.toFixed(3); saveMfe(m);
+  // 初回は建値だけで初期化せず現在値も取り込む（含み益ピークの取りこぼし＝トレール判定のズレを防ぐ）
+  const m=loadMfe(); let mfe=m[p.id]; if(mfe==null)mfe=p.entry; mfe=(p.side==='long'?Math.max(mfe,p.current):Math.min(mfe,p.current)); m[p.id]=+mfe.toFixed(3); saveMfe(m);
   const retrace=(p.side==='long'?(mfe-p.current):(p.current-mfe)), retraceAtr=a?retrace/a:0;
   const rsiAgainst=(p.side==='long'&&rsi>=70)||(p.side==='short'&&rsi<=30);
   const hitTp=p.tp_price!=null&&((p.side==='long'&&p.current>=p.tp_price)||(p.side==='short'&&p.current<=p.tp_price));

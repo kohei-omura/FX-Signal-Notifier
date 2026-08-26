@@ -4,7 +4,7 @@
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
 """
 
-import os, sys, json, math, smtplib, datetime
+import os, sys, json, math, time, smtplib, datetime
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from zoneinfo import ZoneInfo
@@ -135,13 +135,21 @@ def get_ohlc(symbol):
     return out
 
 
-def fetch_ticker():
+def fetch_ticker(retries=2):
+    """現在値を取る。1件も取れないと画面から価格も保有ポジションも消えるため、短くリトライする。"""
     out = {}
-    try:
-        for d in requests.get(f"{BASE}/ticker", timeout=10).json().get("data", []):
-            out[d["symbol"]] = {"bid": float(d["bid"]), "ask": float(d["ask"])}
-    except Exception as e:
-        print(f"[WARN] ticker失敗: {e}", file=sys.stderr)
+    for n in range(1, retries+1):
+        try:
+            j = requests.get(f"{BASE}/ticker", timeout=10).json()
+            for d in (j.get("data") or []):
+                out[d["symbol"]] = {"bid": float(d["bid"]), "ask": float(d["ask"])}
+            if out:
+                return out
+            print(f"[WARN] ticker応答に価格なし({n}/{retries}): {str(j)[:120]}", file=sys.stderr)
+        except Exception as e:
+            print(f"[WARN] ticker失敗({n}/{retries}): {e}", file=sys.stderr)
+        if n < retries:
+            time.sleep(2)
     return out
 
 
@@ -436,29 +444,41 @@ def gather_stats(prev):
     return stats
 
 
-def htf_trend(symbol, interval):
-    """上位足のトレンド方向を返す。1=上昇 / -1=下降 / 0=どちらでもない(レンジ)。
-       EMA(12/26)の位置関係と、速いEMAの傾きの両方が揃った時だけ方向を確定する。"""
-    today = datetime.datetime.now(JST).date()
+def _htf_closes(symbol, interval, keys):
+    """指定キー（日付 or 年）でklinesを取り、openTime->終値 の辞書を返す。"""
     rows = {}
-    # 4時間足以上は年指定、1時間足以下は日付指定（GMO APIの仕様）
-    if interval in ("4hour", "8hour", "12hour", "1day"):
-        keys = [{"date": str(today.year)}]
-    else:
-        keys = [{"date": (today - datetime.timedelta(days=b)).strftime("%Y%m%d")} for b in range(0, 5)]
     for extra in keys:
         try:
-            p = {"symbol": symbol, "priceType": PRICE_TYPE, "interval": interval}
-            p.update(extra)
-            j = requests.get(f"{BASE}/klines", timeout=15, params=p).json()
+            q = {"symbol": symbol, "priceType": PRICE_TYPE, "interval": interval}
+            q.update(extra)
+            j = requests.get(f"{BASE}/klines", timeout=15, params=q).json()
             if j.get("status") == 0:
                 for k in j.get("data", []):
                     rows[int(k["openTime"])] = float(k["close"])
         except Exception as e:
             print(f"[WARN] {symbol} {interval} MTF取得失敗: {e}", file=sys.stderr)
-    closes = [rows[t] for t in sorted(rows)]
+    return rows
+
+
+def htf_trend(symbol, interval):
+    """上位足のトレンド方向を返す。1=上昇 / -1=下降 / 0=どちらでもない(レンジ)。
+       EMA(12/26)の位置関係と、速いEMAの傾きの両方が揃った時だけ方向を確定する。"""
+    today = datetime.datetime.now(JST).date()
     ef_p, es_p = MTF_EMA
-    if len(closes) < es_p + 3:
+    need = es_p + 3
+    # 4時間足以上は年指定、1時間足以下は日付指定（GMO APIの仕様）
+    year_mode = interval in ("4hour", "8hour", "12hour", "1day")
+    if year_mode:
+        keys = [{"date": str(today.year)}]
+    else:
+        keys = [{"date": (today - datetime.timedelta(days=b)).strftime("%Y%m%d")} for b in range(0, 5)]
+    rows = _htf_closes(symbol, interval, keys)
+    # 年指定の足は年明け直後だと当年のバーが足りず、常に0(レンジ)を返してしまう
+    # ＝上位足フィルタが黙って効かなくなる。足りない時だけ前年も取りに行く。
+    if year_mode and len(rows) < need:
+        rows.update(_htf_closes(symbol, interval, [{"date": str(today.year - 1)}]))
+    closes = [rows[t] for t in sorted(rows)]
+    if len(closes) < need:
         return 0
     ef = ema_series(closes, ef_p); es = ema_series(closes, es_p)
     if ef[-1] > es[-1] and ef[-1] > ef[-2]:
@@ -606,11 +626,13 @@ def stamp_new_entries(data):
             continue
         if (pid and pid in known) or ((sym, entry) in known_key):
             continue
-        sc = score_pair(sym, get_ohlc(sym)) or {}
+        sc = score_pair(sym, get_ohlc(sym))
         mtf = mtf_view(sym) or {}
         side = p.get("side", "long")
         want = 1 if side == "long" else -1
-        score = sc.get("score", 0.0)
+        # 判定材料が取れなかった回に 0.0 を書くと「スコア0の弱シグナルで入った」記録が
+        # 残り、後の検証（強さ別の成績）が狂う。取れない時は None のまま残す。
+        score = sc.get("score") if sc else None
         th = P.get("th", 0.40)
         rec = {
             "pos_id": pid,
@@ -619,12 +641,13 @@ def stamp_new_entries(data):
             "side": "買" if side == "long" else "売",
             "entry": entry,                     # ← CSVの「建単価」と対応（突き合わせキー）
             "mode": MODE,
-            "score": round(score, 3),
-            "tech": round(sc.get("tech", 0.0), 3),
-            "fund": round(sc.get("fund", 0.0), 3),
-            "rsi": sc.get("rsi"), "adx": sc.get("adx"),
-            "strength": ("強" if abs(score) >= th*STRONG_MULT else
-                         ("標準" if abs(score) >= th else "弱")),
+            "score": round(score, 3) if score is not None else None,
+            "tech": round(sc["tech"], 3) if sc else None,
+            "fund": round(sc["fund"], 3) if sc else None,
+            "rsi": sc.get("rsi") if sc else None, "adx": sc.get("adx") if sc else None,
+            "strength": ("不明" if score is None else
+                         ("強" if abs(score) >= th*STRONG_MULT else
+                          ("標準" if abs(score) >= th else "弱"))),
             "mtf_label": mtf.get("label"),
             "mtf_aligned": mtf.get("aligned"),
             # 上位足との関係：順張り / 逆行 / レンジ
@@ -636,8 +659,9 @@ def stamp_new_entries(data):
         log["entries"].append(rec)
         known.add(pid); known_key.add((sym, entry))
         added += 1
+        stxt = f"{score:+.2f}" if score is not None else "取得失敗"
         print(f"[INFO] 記録簿に追記: {sym} {rec['side']} {entry} "
-              f"/ スコア{score:+.2f}({rec['strength']}) / 上位足{rec['mtf_vs_entry']}")
+              f"/ スコア{stxt}({rec['strength']}) / 上位足{rec['mtf_vs_entry']}")
     if added:
         log["entries"] = log["entries"][-ENTRY_LOG_MAX:]
         log["updated_at"] = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
@@ -695,9 +719,11 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     profit = (cur - entry) * d
     profit_atr = (profit / a) if a else 0.0
     aligned = score * d
-    # 最高益(MFE)を更新（保存先はstatus.json側）
-    mfe = prev_mfe
-    mfe = (entry if mfe is None else (max(mfe, cur) if side == "long" else min(mfe, cur)))
+    # 最高益(MFE)を更新（保存先はstatus.json側）。
+    # 初回は建値だけで初期化すると、その回すでに乗っていた含み益のピークを取りこぼす
+    # （＝トレール利確の押し戻し量を過小評価する）ので、現在値も必ず取り込む。
+    mfe = entry if prev_mfe is None else prev_mfe
+    mfe = max(mfe, cur) if side == "long" else min(mfe, cur)
     retrace = (mfe - cur) if side == "long" else (cur - mfe)
     retrace_atr = (retrace / a) if a else 0.0
     tp_pr, sl_pr = _tp_sl_prices(p)
@@ -1001,7 +1027,14 @@ def main():
     m2_mail, m2_line, advice_map = check_positions(data, ticker, prev_state)
     if c1:  # positions.jsonの書込はauto_set（新規autoのTP/SL設定）時のみ＝競合を最小化
         save_positions(data)
-    notify = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
+    if ticker:
+        notify = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
+    else:
+        # 価格が1件も取れない回に status.json を書き換えると、画面から価格も保有ポジションも
+        # 消えてしまう（bid/ask=null・open_positions=[]）。前回の内容を残し、次回実行で作り直す。
+        notify = []
+        print("[WARN] 価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）",
+              file=sys.stderr)
     # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
     # LINE: シグナル通知だけ。保有中サインは NOTIFY_POSITION_TO_LINE=True の時のみ追加。
