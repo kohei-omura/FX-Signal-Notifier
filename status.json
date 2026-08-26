@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26 20:45 JST",
+  "generated_at": "2026-08-26 20:50 JST",
   "market_open": true,
   "mode": "day",
   "blackout": false,
@@ -10,25 +10,25 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 159.127,
-      "ask": 159.132,
-      "rsi": 61.7,
-      "adx": 22.0,
-      "ema_f": 159.087,
-      "ema_s": 159.055,
-      "atr": 0.0513,
-      "tp_pips": 10.7,
-      "sl_pips": 6.7,
-      "score": 0.418,
-      "tech": 0.404,
+      "bid": 159.116,
+      "ask": 159.121,
+      "rsi": 59.8,
+      "adx": 21.9,
+      "ema_f": 159.084,
+      "ema_s": 159.054,
+      "atr": 0.0526,
+      "tp_pips": 10.9,
+      "sl_pips": 6.8,
+      "score": 0.385,
+      "tech": 0.364,
       "fund": 0.5,
-      "signal": "買い",
+      "signal": null,
       "bias": "買い優勢",
       "reasons": [
-        "手法:レンジ逆張り",
+        "手法:様子見",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI62",
+        "RSI60",
         "ADX22(弱)"
       ],
       "closes": [
@@ -91,7 +91,7 @@
         159.097,
         159.145,
         159.126,
-        159.128
+        159.116
       ],
       "ema_f_series": [
         159.181,
@@ -153,7 +153,7 @@
         159.043,
         159.064,
         159.076,
-        159.087
+        159.084
       ],
       "ema_s_series": [
         159.206,
@@ -215,7 +215,7 @@
         159.03,
         159.04,
         159.048,
-        159.055
+        159.054
       ],
       "blackout": false,
       "mtf": {
@@ -228,35 +228,29 @@
       "next_news": {
         "title": "Core PCE Price Index m/m",
         "time": "21:30",
-        "in_min": 44,
+        "in_min": 39,
         "country": "USD"
       },
-      "entry_ref": 159.127,
-      "entry_limit": 159.161,
-      "maxchase_pips": 3.4,
-      "valid_minutes": 45,
-      "valid_until": "21:30",
-      "valid_until_ts": 1787747435872,
       "hold_tp_min": 120,
       "hold_sl_min": 82,
       "tp_winrate": 38,
       "stats_n": 29,
-      "stats_ts": 1787741138,
+      "stats_ts": 1787745039,
       "stats_mode": "day"
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 185.627,
-      "ask": 185.632,
-      "rsi": 60.1,
-      "adx": 24.0,
+      "bid": 185.632,
+      "ask": 185.637,
+      "rsi": 60.5,
+      "adx": 24.1,
       "ema_f": 185.575,
       "ema_s": 185.556,
-      "atr": 0.0569,
-      "tp_pips": 11.8,
-      "sl_pips": 7.4,
-      "score": 0.34,
-      "tech": 0.329,
+      "atr": 0.0581,
+      "tp_pips": 12.1,
+      "sl_pips": 7.5,
+      "score": 0.347,
+      "tech": 0.338,
       "fund": 0.4,
       "signal": null,
       "bias": "買い優勢",
@@ -264,7 +258,7 @@
         "手法:様子見",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI60",
+        "RSI61",
         "ADX24(弱)"
       ],
       "closes": [
@@ -327,7 +321,7 @@
         185.597,
         185.599,
         185.627,
-        185.627
+        185.631
       ],
       "ema_f_series": [
         185.837,
@@ -471,24 +465,24 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 216.816,
-      "ask": 216.825,
-      "rsi": 56.1,
+      "bid": 216.825,
+      "ask": 216.834,
+      "rsi": 57.0,
       "adx": 38.9,
-      "ema_f": 216.748,
+      "ema_f": 216.75,
       "ema_s": 216.747,
-      "atr": 0.0725,
-      "tp_pips": 15.1,
-      "sl_pips": 9.4,
-      "score": 0.357,
-      "tech": 0.332,
+      "atr": 0.0742,
+      "tp_pips": 15.4,
+      "sl_pips": 9.7,
+      "score": 0.371,
+      "tech": 0.348,
       "fund": 0.5,
       "signal": null,
       "bias": "買い優勢",
       "reasons": [
-        "手法:順張りMA",
+        "手法:ブレイク",
         "MACDヒスト+",
-        "RSI56",
+        "RSI57",
         "ADX39(強)"
       ],
       "closes": [
@@ -551,7 +545,7 @@
         216.766,
         216.823,
         216.808,
-        216.818
+        216.827
       ],
       "ema_f_series": [
         217.266,
@@ -613,7 +607,7 @@
         216.683,
         216.711,
         216.73,
-        216.748
+        216.75
       ],
       "ema_s_series": [
         217.244,
@@ -695,17 +689,17 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 114.287,
-      "ask": 114.294,
-      "rsi": 66.5,
+      "bid": 114.275,
+      "ask": 114.282,
+      "rsi": 64.2,
       "adx": 24.0,
-      "ema_f": 114.244,
-      "ema_s": 114.211,
-      "atr": 0.0439,
-      "tp_pips": 9.1,
-      "sl_pips": 5.7,
-      "score": 0.475,
-      "tech": 0.489,
+      "ema_f": 114.242,
+      "ema_s": 114.21,
+      "atr": 0.0448,
+      "tp_pips": 9.3,
+      "sl_pips": 5.8,
+      "score": 0.409,
+      "tech": 0.411,
       "fund": 0.4,
       "signal": "買い",
       "bias": "買い優勢",
@@ -713,7 +707,7 @@
         "手法:レンジ逆張り",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI66",
+        "RSI64",
         "ADX24(弱)"
       ],
       "closes": [
@@ -776,7 +770,7 @@
         114.261,
         114.28,
         114.282,
-        114.288
+        114.275
       ],
       "ema_f_series": [
         114.024,
@@ -838,7 +832,7 @@
         114.206,
         114.221,
         114.233,
-        114.244
+        114.242
       ],
       "ema_s_series": [
         114.003,
@@ -900,7 +894,7 @@
         114.187,
         114.195,
         114.203,
-        114.211
+        114.21
       ],
       "blackout": false,
       "mtf": {
@@ -911,12 +905,12 @@
       },
       "skip_reason": null,
       "next_news": null,
-      "entry_ref": 114.287,
-      "entry_limit": 114.316,
+      "entry_ref": 114.275,
+      "entry_limit": 114.304,
       "maxchase_pips": 2.9,
       "valid_minutes": 45,
-      "valid_until": "21:30",
-      "valid_until_ts": 1787747435872,
+      "valid_until": "21:35",
+      "valid_until_ts": 1787747740455,
       "hold_tp_min": 90,
       "hold_sl_min": 75,
       "tp_winrate": 42,
@@ -932,16 +926,16 @@
       "side": "long",
       "entry": 159.153,
       "lot": 3000.0,
-      "current": 159.127,
-      "pips": -2.6,
-      "yen": -78,
+      "current": 159.116,
+      "pips": -3.7,
+      "yen": -111,
       "tp_price": 159.268,
       "sl_price": 159.081,
       "adv_level": "watch",
       "adv_label": "🟡 利確検討",
-      "adv_reason": "まもなく重要指標（Core PCE Price Index m/m/約44分後）",
+      "adv_reason": "まもなく重要指標（Core PCE Price Index m/m/約39分後）",
       "mfe": 159.153,
-      "profit_atr": -0.51
+      "profit_atr": -0.7
     }
   ],
   "closed_positions": []
