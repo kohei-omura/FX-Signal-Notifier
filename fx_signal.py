@@ -1015,12 +1015,13 @@ def load_prev_state():
 
 def check_positions(data, ticker, prev_state=None):
     """保有ポジションを評価して通知メッセージと判定マップを返す。
-       戻り値は (mail_msgs, line_msgs, advice_map)。
+       戻り値は (mail_msgs, line_msgs, advice_map, pos_events)。
        メール: 利確/損切り(take/cut) ＋『利確検討』(watch) を、判定が変わった時に送る（取りこぼし防止）。
        LINE : 最重要の take/cut だけに絞る（無料枠の節約）。『様子見(明確なサインなし)』は通知しない。
        MFE/判定はstatus.json側に保存するため、ここではpositions.jsonを書き換えない。"""
     prev_state = prev_state or {}
     mail_msgs, line_msgs = [], []
+    pos_events = []          # 実際に通知した内容（メール件名の組み立て用）
     advice_map = {}
     for p in data.get("positions", []):
         if p.get("status", "open") != "open" or p.get("symbol") not in ticker:
@@ -1032,6 +1033,7 @@ def check_positions(data, ticker, prev_state=None):
         print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} "
               f"{info['pips']:+}pips {info['yen']:+,}円" + (f" [{adv['label']} {adv['reason']}]" if adv else ""))
         if adv:
+            adv["symbol"] = info["symbol"]
             advice_map[p.get("id")] = adv
             prev_level = prev.get("adv_level")
             changed = prev_level != adv["level"]
@@ -1045,14 +1047,16 @@ def check_positions(data, ticker, prev_state=None):
                         if adv["level"] in ("take", "cut") else "")
                 # メールには全部（利確/損切り/利確検討）
                 mail_msgs.append(body + tail)
+                pos_events.append((adv["level"], info["symbol"]))
                 # LINEには最重要(take/cut)だけ
                 if adv["level"] in ("take", "cut"):
                     line_msgs.append(body + tail)
-    return mail_msgs, line_msgs, advice_map
+    return mail_msgs, line_msgs, advice_map, pos_events
 
 
 def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_signals=None):
-    pairs, notify = [], []
+    """status.json を書き出し、(通知本文リスト, 通知したシグナルの一覧) を返す。"""
+    pairs, notify, sig_events = [], [], []
     any_blackout = False
     now = datetime.datetime.now(JST)
     bar_min = BARMIN.get(P["interval"], 1)
@@ -1137,6 +1141,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                           f"   ・現在値が {entry['entry_limit']} {arrow}なら可"
                           f"（+{entry['maxchase_pips']}pipsまで追い、超過は見送り）"
                           + mtf_txt + stat_txt)
+            sig_events.append((sig, sym))
 
     open_pos, closed_pos = [], []
     for p in data.get("positions", []):
@@ -1157,8 +1162,58 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         "weights": {"tech": TECH_W, "fund": FUND_W},
         "pairs": pairs, "open_positions": open_pos, "closed_positions": closed_pos[-20:],
     }
+    # 異常があった回だけ載せる（正常時にキーを増やして毎回コミットを起こさない）。
+    # 画面はこれを読んで「なぜ表示がおかしいか」を出す。
+    if _WARNINGS:
+        status["warnings"] = list(_WARNINGS)
     json.dump(status, open(STATUS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    return notify
+    return notify, sig_events
+
+
+def save_degraded_status():
+    """価格が取れず status.json を作り直せない回。前回の内容はそのまま残し、
+       『今おかしい』ことだけを書き足して画面から見えるようにする。
+       同じ警告が続く間は書き換えない（無駄なコミットを増やさない）。"""
+    if not (_WARNINGS and os.path.exists(STATUS_FILE)):
+        return
+    try:
+        st = json.load(open(STATUS_FILE, encoding="utf-8"))
+    except Exception:
+        return
+    if st.get("degraded") and st.get("warnings") == list(_WARNINGS):
+        return
+    st["degraded"] = True
+    st["degraded_at"] = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
+    st["warnings"] = list(_WARNINGS)
+    try:
+        json.dump(st, open(STATUS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[WARN] status.json への警告書き込みに失敗: {e}", file=sys.stderr)
+
+
+def mail_subject(sig_events, pos_events, level_count):
+    """件名だけで何が起きたか分かるようにする（スマホの通知を開かずに判断できるように）。"""
+    def f(sym):
+        return sym.replace("_", "/")
+    def pick(lv):
+        return [s for l, s in pos_events if l == lv]
+    bits = []
+    for lv, mark in (("cut", "🛑損切り"), ("take", "🎯利確")):
+        got = pick(lv)
+        if got:
+            bits.append(f"{mark} " + "・".join(f(x) for x in got))
+    for sg, mark in (("買い", "🟢買い"), ("売り", "🔴売り")):
+        got = [s for g, s in sig_events if g == sg]
+        if got:
+            bits.append(f"{mark} " + "・".join(f(x) for x in got))
+    if pick("watch"):
+        bits.append("🟡利確検討 " + "・".join(f(x) for x in pick("watch")))
+    if level_count:
+        bits.append(f"🧭推奨レベル{level_count}件")
+    body = " / ".join(bits) if bits else "シグナル通知"
+    if len(body) > 70:
+        body = body[:69] + "…"
+    return f"【FX/{MODE}】{body}"
 
 
 def notify_line(text):
@@ -1236,17 +1291,17 @@ def main():
         stamp_new_entries(data)   # 新規ポジションを記録簿へ追記（削除されても残る）
     except Exception as e:
         print(f"[WARN] エントリー記録簿の追記に失敗: {e}", file=sys.stderr)
-    m2_mail, m2_line, advice_map = check_positions(data, ticker, prev_state)
+    m2_mail, m2_line, advice_map, pos_events = check_positions(data, ticker, prev_state)
     if c1:  # positions.jsonの書込はauto_set（新規autoのTP/SL設定）時のみ＝競合を最小化
         save_positions(data)
     if ticker:
-        notify = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
+        notify, sig_events = build_status(ticker, data, market_open, stats, advice_map, prev_signals)
     else:
         # 価格が1件も取れない回に status.json を書き換えると、画面から価格も保有ポジションも
         # 消えてしまう（bid/ask=null・open_positions=[]）。前回の内容を残し、次回実行で作り直す。
-        notify = []
-        print("[WARN] 価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）",
-              file=sys.stderr)
+        notify, sig_events = [], []
+        warn("価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）", tag="skip-status")
+        save_degraded_status()   # 表示内容は残したまま「今おかしい」ことだけ画面に伝える
     # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
     # LINE: シグナル通知だけ。保有中サインは NOTIFY_POSITION_TO_LINE=True の時のみ追加。
@@ -1259,13 +1314,15 @@ def main():
         print(f"[INFO] {now_str} 市場クローズ（エントリー判定スキップ）")
     if not (line_parts or mail_parts):
         print(f"[INFO] {now_str} 通知なし（mode={MODE}）。"); return
-    head = f"📊 FX通知 [{MODE}]\n時刻: {now_str}\n\n"
+    subject = mail_subject(sig_events, pos_events, len(m1))
+    # 1行目に要約を置く。LINEの通知プレビューとメール件名の両方が中身で分かるようになる。
+    head = f"{subject[len(f'【FX/{MODE}】'):]}\n📊 FX通知 [{MODE}] {now_str}\n\n"
     tail = "\n\n※スコアは目安です。最適値の保証ではなく自己責任で。"
     if line_parts:
         print("[LINE]\n" + "\n\n".join(line_parts))
         notify_line(head + "\n\n".join(line_parts) + tail)
     if mail_parts:
-        notify_mail(f"【FX/{MODE}】シグナル通知", head + "\n\n".join(mail_parts) + tail)
+        notify_mail(subject, head + "\n\n".join(mail_parts) + tail)
 
 
 if __name__ == "__main__":

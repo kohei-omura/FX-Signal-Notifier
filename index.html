@@ -1594,14 +1594,25 @@ function renderModeWarn(){
 function parseGenAt(s){if(!s)return null;const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
   if(!m)return null;return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`).getTime();}
 function ageTxt(ms){const s=Math.round(ms/1000);if(s<90)return s+'秒前';const mi=Math.round(s/60);if(mi<90)return mi+'分前';const h=mi/60;if(h<48)return Math.round(h)+'時間前';return Math.round(h/24)+'日前';}
+// サーバー側の警告文はAPIのエラーメッセージを含むので、HTMLとして解釈させない
+function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function renderStale(){
   const el=$('#stalewarn');if(!el)return;const now=Date.now();const msgs=[];
   const gt=parseGenAt(S.generated_at);
+  // degraded = アプリ自体は動いているが、価格の取得元でエラーが出ている状態。
+  // この時に「Actionsが動いているか確認」と出すのは誤誘導なので文面を分ける。
+  const degraded=!!S.degraded;
   if(gt){const age=now-gt;
-    if(age>15*60000)msgs.push(`⚠️ サーバー更新が停止中（最終 <b>${ageTxt(age)}</b>）。価格は今ライブ値で表示中ですが、GitHub Actionsの「FX Signal Notifier」が動いているか確認してください。`);
+    if(age>15*60000)msgs.push(degraded
+      ? `⚠️ 表示が更新できていません（最終 <b>${ageTxt(age)}</b>）。アプリは動いていますが、価格の取得元(GMO API)がエラーを返しています。復旧すると自動で再開します。`
+      : `⚠️ サーバー更新が停止中（最終 <b>${ageTxt(age)}</b>）。価格は今ライブ値で表示中ですが、GitHub Actionsの「FX Signal Notifier」が動いているか確認してください。`);
   }
   if(LAST_TICK_TS && now-LAST_TICK_TS>60000)
     msgs.push(`⚠️ ライブ価格の取得が停止（最終 <b>${ageTxt(now-LAST_TICK_TS)}</b>）。表示価格が実勢とズレている可能性があります。`);
+  // サーバー側が記録した具体的な原因（何が失敗しているのかを憶測させない）
+  const ws=(S.warnings||[]).map(w=>w&&w.msg).filter(Boolean);
+  if(ws.length)msgs.push('🛠 サーバー側の記録: '+ws.slice(0,3).map(escHtml).join(' ／ ')
+    +(S.degraded_at?`（${escHtml(S.degraded_at)}）`:''));
   el.innerHTML = msgs.length
     ? `<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:rgba(205,168,106,.10);font-size:12.5px;color:var(--ink);line-height:1.7">${msgs.join('<br>')}</div>`
     : '';
