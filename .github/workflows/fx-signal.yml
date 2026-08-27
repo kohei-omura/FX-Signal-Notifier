@@ -21,11 +21,15 @@ concurrency:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    # ジョブが1本ハングすると concurrency(cancel-in-progress:false) で後続が全部詰まり、
+    # 5分ごとの通知そのものが止まる。GitHubの既定は360分なので必ず自前で短く切る。
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'            # 毎回のダウンロードを省く
       - run: pip install -r requirements.txt
       - name: Run signal & position check
         env:

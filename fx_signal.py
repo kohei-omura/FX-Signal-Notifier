@@ -63,6 +63,7 @@ NEWS_BLACKOUT = []          # 手書きの予備リスト（"YYYY-MM-DD HH:MM"�
 BLACKOUT_MIN = 15           # 発表前後この分数はエントリー見送り
 WARN_BEFORE_MIN = 60        # 保有ポジションは発表この分前から「まもなく発表」警告
 NEWS_FILE = "news_blackout.json"   # news-calendar.yml が毎日生成する自動取得カレンダー
+NEWS_STALE_DAYS = 3         # カレンダーがこの日数より古かったら警告（回避が黙って無効化されるのを防ぐ）
 # 通貨ペア → 影響する国/通貨。クロス円なのでJPYは全ペア共通。AUDは最大輸出先の中国(CNY)も対象。
 PAIR_COUNTRIES = {
     "USD_JPY": {"USD", "JPY"},
@@ -163,7 +164,11 @@ def api_get(path, params=None, retries=3, timeout=API_TIMEOUT, quiet=False):
         try:
             r = _session().get(f"{BASE}{path}", params=params, timeout=timeout)
             code = getattr(r, "status_code", 200)
-            if code == 429 or code >= 500:
+            if code == 429:
+                last = "HTTP 429 (レート制限)"
+                warn("APIにレート制限されています。環境変数 API_WORKERS を下げてください"
+                     f"（現在 {API_WORKERS}）", tag="rate-limit")
+            elif code >= 500:
                 last = f"HTTP {code}"
             else:
                 j = r.json()
@@ -725,8 +730,21 @@ def load_news_events():
         return _NEWS_CACHE
     out = []
     try:
-        if os.path.exists(NEWS_FILE):
+        if not os.path.exists(NEWS_FILE):
+            warn(f"{NEWS_FILE} が無いため指標回避が働きません", tag="news-missing")
+        else:
             d = json.load(open(NEWS_FILE, encoding="utf-8"))
+            # 日次で取り直す前提のファイル。取得が続けて失敗すると中身が過去の予定だけになり、
+            # in_blackout() が常にFalse＝回避が黙って無効化される。古くなったら気づけるようにする。
+            gen = str(d.get("generated_at", ""))[:10]
+            try:
+                age = (datetime.datetime.now(JST).date()
+                       - datetime.datetime.strptime(gen, "%Y-%m-%d").date()).days
+                if age > NEWS_STALE_DAYS:
+                    warn(f"経済指標カレンダーが{age}日前のままです（指標回避が効いていない可能性）",
+                         tag="news-stale")
+            except ValueError:
+                warn(f"{NEWS_FILE} の generated_at を読めません", tag="news-genat")
             for e in d.get("events", []):
                 try:
                     t = datetime.datetime.strptime(e["time"], "%Y-%m-%d %H:%M").replace(tzinfo=JST)
@@ -734,7 +752,7 @@ def load_news_events():
                 except Exception:
                     pass
     except Exception as ex:
-        print(f"[WARN] {NEWS_FILE}読込失敗: {ex}", file=sys.stderr)
+        warn(f"{NEWS_FILE}読込失敗: {ex}", tag="news-read")
     _NEWS_CACHE = out
     return out
 
