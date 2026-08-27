@@ -81,7 +81,8 @@ def main():
         "impacts": sorted(IMPACTS),
         "events": events,
     }
-    json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    with open(OUT, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
     print(f"[OK] 高インパクト指標 {len(events)}件 を {OUT} に保存")
     for ev in events:
         print(f"  {ev['time']} JST [{ev['country']}] {ev['title']}")

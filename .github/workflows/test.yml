@@ -1,0 +1,35 @@
+name: Tests
+
+# シグナルエンジンのリグレッションテスト。ネットワーク不要（GMO APIはモック）。
+# 5分ごとの通知ワークフローとは分離してあるので、通知の実行時間には影響しない。
+# 状態の自動コミットは [skip ci] 付きなので、ここは走らない。
+
+on:
+  push:
+    paths:
+      - 'fx_signal.py'
+      - 'fetch_news.py'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'fx_signal.py'
+      - 'fetch_news.py'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # テストはネットワークを使わないので依存のインストールも不要
+      - name: Run tests
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v

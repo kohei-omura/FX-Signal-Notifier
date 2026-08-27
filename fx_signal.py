@@ -278,6 +278,21 @@ def market_is_open():
     return (j.get("data") or {}).get("status") == "OPEN"
 
 
+def read_json(path, default=None):
+    """JSONを読む。開いたファイルは必ず閉じる。読めなければ default。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def write_json(path, obj, indent=2):
+    """JSONを書く。開いたファイルは必ず閉じる。"""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=indent)
+
+
 def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
@@ -623,7 +638,7 @@ def load_prev_stats():
     if not os.path.exists(STATUS_FILE):
         return out
     try:
-        prev = json.load(open(STATUS_FILE, encoding="utf-8"))
+        prev = read_json(STATUS_FILE) or {}
         for p in prev.get("pairs", []):
             if p.get("stats_ts"):
                 out[p["symbol"]] = {"n": p.get("stats_n"), "tp_winrate": p.get("tp_winrate"),
@@ -733,7 +748,7 @@ def load_news_events():
         if not os.path.exists(NEWS_FILE):
             warn(f"{NEWS_FILE} が無いため指標回避が働きません", tag="news-missing")
         else:
-            d = json.load(open(NEWS_FILE, encoding="utf-8"))
+            d = read_json(NEWS_FILE) or {}
             # 日次で取り直す前提のファイル。取得が続けて失敗すると中身が過去の予定だけになり、
             # in_blackout() が常にFalse＝回避が黙って無効化される。古くなったら気づけるようにする。
             gen = str(d.get("generated_at", ""))[:10]
@@ -800,7 +815,9 @@ def load_positions():
     if not os.path.exists(POSITIONS_FILE):
         return {"positions": []}
     try:
-        data = json.load(open(POSITIONS_FILE, encoding="utf-8"))
+        data = read_json(POSITIONS_FILE)
+        if data is None:
+            raise ValueError("読み込めません")
         return data if "positions" in data else {"positions": []}
     except Exception as e:
         print(f"[WARN] positions.json読込失敗: {e}", file=sys.stderr)
@@ -808,7 +825,7 @@ def load_positions():
 
 
 def save_positions(data):
-    json.dump(data, open(POSITIONS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    write_json(POSITIONS_FILE, data)
 
 
 def _tp_sl_prices(p):
@@ -826,7 +843,9 @@ def load_entry_log():
     if not os.path.exists(ENTRY_LOG_FILE):
         return {"entries": []}
     try:
-        d = json.load(open(ENTRY_LOG_FILE, encoding="utf-8"))
+        d = read_json(ENTRY_LOG_FILE)
+        if d is None:
+            raise ValueError("読み込めません")
         if isinstance(d.get("entries"), list):
             return d
     except Exception as e:
@@ -894,7 +913,7 @@ def stamp_new_entries(data):
         log["entries"] = log["entries"][-ENTRY_LOG_MAX:]
         log["updated_at"] = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
         try:
-            json.dump(log, open(ENTRY_LOG_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            write_json(ENTRY_LOG_FILE, log, indent=1)
         except Exception as e:
             print(f"[WARN] {ENTRY_LOG_FILE}保存失敗: {e}", file=sys.stderr)
             return 0
@@ -1006,7 +1025,7 @@ def load_prev_signals():
     if not os.path.exists(STATUS_FILE):
         return out
     try:
-        prev = json.load(open(STATUS_FILE, encoding="utf-8"))
+        prev = read_json(STATUS_FILE) or {}
         for pr in prev.get("pairs", []):
             if pr.get("symbol"):
                 out[pr["symbol"]] = pr.get("signal")
@@ -1022,7 +1041,7 @@ def load_prev_state():
     if not os.path.exists(STATUS_FILE):
         return out
     try:
-        prev = json.load(open(STATUS_FILE, encoding="utf-8"))
+        prev = read_json(STATUS_FILE) or {}
         for op in prev.get("open_positions", []):
             if op.get("id"):
                 out[op["id"]] = {"adv_level": op.get("adv_level"), "mfe": op.get("mfe")}
@@ -1184,7 +1203,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
     # 画面はこれを読んで「なぜ表示がおかしいか」を出す。
     if _WARNINGS:
         status["warnings"] = list(_WARNINGS)
-    json.dump(status, open(STATUS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    write_json(STATUS_FILE, status)
     return notify, sig_events
 
 
@@ -1194,9 +1213,8 @@ def save_degraded_status():
        同じ警告が続く間は書き換えない（無駄なコミットを増やさない）。"""
     if not (_WARNINGS and os.path.exists(STATUS_FILE)):
         return
-    try:
-        st = json.load(open(STATUS_FILE, encoding="utf-8"))
-    except Exception:
+    st = read_json(STATUS_FILE)
+    if not isinstance(st, dict):
         return
     if st.get("degraded") and st.get("warnings") == list(_WARNINGS):
         return
@@ -1204,7 +1222,7 @@ def save_degraded_status():
     st["degraded_at"] = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     st["warnings"] = list(_WARNINGS)
     try:
-        json.dump(st, open(STATUS_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        write_json(STATUS_FILE, st)
     except Exception as e:
         print(f"[WARN] status.json への警告書き込みに失敗: {e}", file=sys.stderr)
 
@@ -1270,7 +1288,7 @@ def get_selected_mode():
        どこから決めたかをログに必ず出す（設定の取り違えを一目で分かるように）。"""
     try:
         if os.path.exists(MODE_FILE):
-            m = (json.load(open(MODE_FILE, encoding="utf-8")) or {}).get("mode", "").lower()
+            m = (read_json(MODE_FILE) or {}).get("mode", "").lower()
             if m in PARAMS:
                 print(f"[INFO] モード採用元: mode.json → {m}")
                 return m
