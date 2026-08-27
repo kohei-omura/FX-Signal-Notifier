@@ -4,7 +4,8 @@
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
 """
 
-import os, sys, json, math, time, smtplib, datetime
+import os, sys, json, math, time, smtplib, datetime, threading
+from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from zoneinfo import ZoneInfo
@@ -108,7 +109,129 @@ ENTRY_LOG_MAX = 2000            # 古いものから間引く上限
 STRONG_MULT = 1.5               # スコアが新規閾値のこの倍以上なら「強シグナル」扱い
 CHART_POINTS = 60
 BASE = "https://forex-api.coin.z.com/public/v1"
+API_TIMEOUT = 15
+API_WORKERS = int(os.environ.get("API_WORKERS", "4"))   # 同時接続数。増やしすぎるとAPI側に弾かれる
 _OHLC_CACHE = {}
+_KLINE_DAY_CACHE = {}     # (symbol, interval, date) -> {openTime: (high,low,close)}
+_MTF_CACHE = {}           # symbol -> mtf_view の結果
+_SCORE_CACHE = {}         # symbol -> score_pair の結果
+_WARNINGS = []            # 実行中に起きた異常。status.json に載せて画面から見えるようにする
+_tls = threading.local()
+_warn_lock = threading.Lock()
+_kline_lock = threading.Lock()
+_kline_locks = {}
+
+
+def warn(msg, tag=None):
+    """警告を出しつつ記録する。status.json 経由で画面にも出す（黙って劣化させない）。"""
+    print(f"[WARN] {msg}", file=sys.stderr)
+    with _warn_lock:
+        if tag and any(w.get("tag") == tag for w in _WARNINGS):
+            return
+        if len(_WARNINGS) < 20:
+            _WARNINGS.append({"tag": tag or "warn", "msg": msg})
+
+
+def _session():
+    """スレッドごとに使い回すHTTPセッション。TLSハンドシェイクの繰り返しを避ける。"""
+    s = getattr(_tls, "sess", None)
+    if s is None:
+        s = requests.Session()
+        try:
+            s.headers.update({"User-Agent": "fx-signal-notifier"})
+        except Exception:
+            pass
+        _tls.sess = s
+    return s
+
+
+API_BREAKER_AFTER = 5     # 連続でこの回数コケたらAPI全体がダメとみなし、以降は1発勝負にする
+_fail_streak = [0]
+
+
+def api_get(path, params=None, retries=3, timeout=API_TIMEOUT, quiet=False):
+    """GMO Public API を叩く共通口。接続を使い回し、失敗は指数バックオフで再試行する。
+       status!=0 / 5xx / 429 / 例外 のいずれもリトライ対象。全滅なら None を返す。
+
+       API側が完全に落ちている時に全リクエストで律儀に待つと1回の実行が何分もかかるので、
+       連続失敗が続いたらリトライを打ち切る（サーキットブレーカー）。
+       1件でも成功したら通常動作に戻す。"""
+    if _fail_streak[0] >= API_BREAKER_AFTER:
+        retries = 1
+    last = None
+    for n in range(1, retries+1):
+        try:
+            r = _session().get(f"{BASE}{path}", params=params, timeout=timeout)
+            code = getattr(r, "status_code", 200)
+            if code == 429 or code >= 500:
+                last = f"HTTP {code}"
+            else:
+                j = r.json()
+                if j.get("status") == 0:
+                    _fail_streak[0] = 0
+                    return j
+                last = f"status={j.get('status')} {str(j.get('messages'))[:80]}"
+        except Exception as e:
+            last = f"{type(e).__name__}: {e}"
+        if n < retries:
+            time.sleep(min(2 ** (n-1), 4))
+    _fail_streak[0] += 1
+    if _fail_streak[0] == API_BREAKER_AFTER:
+        warn(f"API連続失敗{API_BREAKER_AFTER}回。以降は再試行を打ち切って早く抜ける", tag="breaker")
+    if not quiet:
+        warn(f"API失敗 {path} {params or ''}: {last}", tag=f"api:{path}")
+    return None
+
+
+def klines_day(symbol, datestr, interval=None):
+    """1日(または1年)ぶんのローソク足。同じ日を二度取りに行かないよう実行中はキャッシュする。
+       並列取得でも同じ日に同時に飛ばないようキー単位でロックする。"""
+    interval = interval or P["interval"]
+    key = (symbol, interval, datestr)
+    hit = _KLINE_DAY_CACHE.get(key)
+    if hit is not None:
+        return hit
+    with _kline_lock:
+        lk = _kline_locks.setdefault(key, threading.Lock())
+    with lk:
+        hit = _KLINE_DAY_CACHE.get(key)
+        if hit is not None:
+            return hit
+        rows = {}
+        j = api_get("/klines", {"symbol": symbol, "priceType": PRICE_TYPE,
+                                "interval": interval, "date": datestr})
+        if j:
+            for k in j.get("data", []):
+                rows[int(k["openTime"])] = (float(k["high"]), float(k["low"]), float(k["close"]))
+        _KLINE_DAY_CACHE[key] = rows
+        return rows
+
+
+def warm_up(symbols):
+    """1回の実行で要る外部データ（市場状態・現在値・ローソク足・上位足）をまとめて並列取得する。
+       APIは待ち時間が支配的なので、ここで束ねるだけで実行時間が大きく縮む。
+       戻り値: (market_open, ticker)"""
+    syms = [x for x in dict.fromkeys(symbols) if x]
+    with ThreadPoolExecutor(max_workers=max(1, API_WORKERS)) as ex:
+        f_open = ex.submit(market_is_open)
+        f_tick = ex.submit(fetch_ticker)
+        futs = [ex.submit(get_ohlc, x) for x in syms]
+        if MTF_MODE != "off":
+            futs += [ex.submit(mtf_view, x) for x in syms]
+        for f in futs:
+            try:
+                f.result()
+            except Exception as e:
+                warn(f"先読み失敗: {e}", tag="prefetch")
+        try:
+            mo = f_open.result()
+        except Exception:
+            mo = True
+        try:
+            tk = f_tick.result()
+        except Exception as e:
+            warn(f"ticker取得失敗: {e}", tag="ticker"); tk = {}
+    return mo, tk
 
 
 def get_ohlc(symbol):
@@ -119,45 +242,35 @@ def get_ohlc(symbol):
     rows = {}
     for back in range(0, 7):
         d = today - datetime.timedelta(days=back)
-        try:
-            j = requests.get(f"{BASE}/klines", timeout=15, params={
-                "symbol": symbol, "priceType": PRICE_TYPE,
-                "interval": P["interval"], "date": d.strftime("%Y%m%d")}).json()
-            if j.get("status") == 0:
-                for k in j.get("data", []):
-                    rows[int(k["openTime"])] = (float(k["high"]), float(k["low"]), float(k["close"]))
-        except Exception as e:
-            print(f"[WARN] {symbol} klines失敗: {e}", file=sys.stderr)
+        rows.update(klines_day(symbol, d.strftime("%Y%m%d")))
         if len(rows) >= need:
             break
     out = [rows[t] for t in sorted(rows)]
+    if not out:
+        warn(f"{symbol} のローソク足が取得できませんでした", tag=f"ohlc:{symbol}")
     _OHLC_CACHE[symbol] = out
     return out
 
 
-def fetch_ticker(retries=2):
-    """現在値を取る。1件も取れないと画面から価格も保有ポジションも消えるため、短くリトライする。"""
+def fetch_ticker():
+    """現在値を取る。1件も取れないと画面から価格も保有ポジションも消えるため、必ず再試行する。"""
     out = {}
-    for n in range(1, retries+1):
+    j = api_get("/ticker", retries=3, timeout=10)
+    for d in ((j or {}).get("data") or []):
         try:
-            j = requests.get(f"{BASE}/ticker", timeout=10).json()
-            for d in (j.get("data") or []):
-                out[d["symbol"]] = {"bid": float(d["bid"]), "ask": float(d["ask"])}
-            if out:
-                return out
-            print(f"[WARN] ticker応答に価格なし({n}/{retries}): {str(j)[:120]}", file=sys.stderr)
-        except Exception as e:
-            print(f"[WARN] ticker失敗({n}/{retries}): {e}", file=sys.stderr)
-        if n < retries:
-            time.sleep(2)
+            out[d["symbol"]] = {"bid": float(d["bid"]), "ask": float(d["ask"])}
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not out:
+        warn("現在値(ticker)を取得できませんでした", tag="ticker")
     return out
 
 
 def market_is_open():
-    try:
-        return requests.get(f"{BASE}/status", timeout=10).json().get("data", {}).get("status") == "OPEN"
-    except Exception:
-        return True
+    j = api_get("/status", retries=2, timeout=10, quiet=True)
+    if not j:
+        return True   # 判定できない時は開いている前提（判定を止めない）
+    return (j.get("data") or {}).get("status") == "OPEN"
 
 
 def clamp(x, lo=-1.0, hi=1.0):
@@ -251,13 +364,131 @@ def adx(ohlc, p):
     return av, pdi[-1], mdi[-1]
 
 
+# ---------------- 指標の「系列版」 ----------------
+# EMA/RSI/MACD/BB/ATR/ADX はいずれも causal（そのバーまでの値だけで決まる）。
+# よって末尾までまとめて計算した系列の i 番目は、oh[:i+1] で計算し直した値と一致する。
+# バックテストでバーごとに全指標を作り直す O(n^2) を O(n) にするための土台。
+
+def rsi_series(v, p):
+    out = [None]*len(v)
+    if len(v) < p+1:
+        return out
+    d = [v[i]-v[i-1] for i in range(1, len(v))]
+    g = [max(x, 0.0) for x in d]; l = [max(-x, 0.0) for x in d]
+    ag, al = sum(g[:p])/p, sum(l[:p])/p
+    out[p] = 100.0 if al == 0 else 100.0 - 100.0/(1.0+ag/al)
+    for i in range(p, len(d)):
+        ag = (ag*(p-1)+g[i])/p; al = (al*(p-1)+l[i])/p
+        out[i+1] = 100.0 if al == 0 else 100.0 - 100.0/(1.0+ag/al)
+    return out
+
+
+def atr_series(ohlc, p):
+    out = [None]*len(ohlc)
+    if len(ohlc) < p+1:
+        return out
+    trs = []
+    for i in range(1, len(ohlc)):
+        h, l, _ = ohlc[i]; pc = ohlc[i-1][2]
+        trs.append(max(h-l, abs(h-pc), abs(l-pc)))
+    a = sum(trs[:p])/p
+    out[p] = a
+    for i in range(p, len(trs)):
+        a = (a*(p-1)+trs[i])/p
+        out[i+1] = a
+    return out
+
+
+def adx_series(ohlc, p):
+    """各バー末尾での (ADX, +DI, -DI)。データ不足のバーは None（adx()の判定条件と同じ）。"""
+    out = [None]*len(ohlc)
+    if len(ohlc) < 2*p+1:
+        return out
+    pdm, mdm, tr = [], [], []
+    for i in range(1, len(ohlc)):
+        h, l, c = ohlc[i]; ph, pl, pc = ohlc[i-1]
+        up, dn = h-ph, pl-l
+        pdm.append(up if (up > dn and up > 0) else 0.0)
+        mdm.append(dn if (dn > up and dn > 0) else 0.0)
+        tr.append(max(h-l, abs(h-pc), abs(l-pc)))
+    def wilder(a):
+        s = sum(a[:p]); res = [s]
+        for i in range(p, len(a)):
+            s = s - s/p + a[i]; res.append(s)
+        return res
+    atrs, pds, mds = wilder(tr), wilder(pdm), wilder(mdm)
+    pdi = [100*pds[i]/atrs[i] if atrs[i] else 0 for i in range(len(atrs))]
+    mdi = [100*mds[i]/atrs[i] if atrs[i] else 0 for i in range(len(atrs))]
+    dx = [100*abs(pdi[i]-mdi[i])/((pdi[i]+mdi[i]) or 1) for i in range(len(pdi))]
+    av = sum(dx[:p])/p
+    # dx[j] は「oh[:j+p+1] まで見た時点」の値。adx()のガード(2p+1本必要)に合わせて j>=p から出す。
+    for j in range(p, len(dx)):
+        av = (av*(p-1)+dx[j])/p
+        out[j+p] = (av, pdi[j], mdi[j])
+    return out
+
+
+def macd_hist_series(v, f, s, sig):
+    """各バーの (ヒストグラム, 1本前のヒストグラム)。データ不足は None。"""
+    out = [None]*len(v)
+    ef, es = ema_series(v, f), ema_series(v, s)
+    idx, vals = [], []
+    for i in range(len(v)):
+        if ef[i] is not None and es[i] is not None:
+            idx.append(i); vals.append(ef[i]-es[i])
+    if len(vals) < sig+1:
+        return out
+    ss = ema_series(vals, sig)
+    for j in range(1, len(vals)):
+        if ss[j] is None or ss[j-1] is None:
+            continue
+        out[idx[j]] = (vals[j]-ss[j], vals[j-1]-ss[j-1])
+    return out
+
+
+def bb_series(v, p, k):
+    """各バーの (中心線, 標準偏差)。bollinger()と同じ式（丸め誤差も含めて一致させる）。"""
+    out = [None]*len(v)
+    for i in range(p-1, len(v)):
+        w = v[i-p+1:i+1]
+        mid = sum(w)/p
+        sd = (sum((x-mid)**2 for x in w)/p) ** 0.5
+        out[i] = (mid, sd)
+    return out
+
+
+def _compose_score(symbol, price, ef, es, rv, hist, hist_prev, bb_mid, bb_sd, a, adx_val):
+    """スコア合成の唯一の実装。ライブ判定(score_pair)とバックテストが必ず同じ式を通る。"""
+    adxf = max(clamp(adx_val/40.0, 0.0, 1.0), 0.25)
+    ema_sig = clamp((ef-es)/(a if a else 1e-9))
+    macd_sig = clamp(hist/(0.6*a if a else 1e-9))
+    if hist > hist_prev: macd_sig = clamp(macd_sig+0.1)
+    elif hist < hist_prev: macd_sig = clamp(macd_sig-0.1)
+    rsi_sig = clamp((rv-50)/50.0)
+    bb_sig = clamp((price-bb_mid)/(P["bb"][1]*bb_sd if bb_sd else 1e-9))
+    tech = clamp(W_EMA*ema_sig*adxf + W_MACD*macd_sig*adxf + W_RSI*rsi_sig + W_BB*bb_sig)
+    fund = clamp(FUND_BIAS.get(symbol, 0.0))
+    total = clamp(TECH_W*tech + FUND_W*fund)
+    return {"tech": tech, "fund": fund, "total": total,
+            "ema_sig": ema_sig, "macd_sig": macd_sig, "bb_sig": bb_sig}
+
+
 def suggest_tp_sl(a):
     sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
     tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
     return (round(tp_pips, 1), round(sl_pips, 1))
 
 
-def score_pair(symbol, ohlc):
+def score_pair(symbol, ohlc=None):
+    """1回の実行内では同じ足から同じスコアになるのでメモ化する（同一シンボルの再計算をやめる）。"""
+    if symbol in _SCORE_CACHE:
+        return _SCORE_CACHE[symbol]
+    r = _score_pair_uncached(symbol, get_ohlc(symbol) if ohlc is None else ohlc)
+    _SCORE_CACHE[symbol] = r
+    return r
+
+
+def _score_pair_uncached(symbol, ohlc):
     closes = [r[2] for r in ohlc]
     if len(closes) < max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2:
         return None
@@ -271,20 +502,9 @@ def score_pair(symbol, ohlc):
     if None in (ef, es, rv, a) or md is None or bb is None or ax is None:
         return None
     adx_val, pdi, mdi = ax
-    adxf = clamp(adx_val/40.0, 0.0, 1.0)
-    adxf = max(adxf, 0.25)
-
-    ema_sig = clamp((ef-es)/(a if a else 1e-9))
-    macd_sig = clamp(md[2]/(0.6*a if a else 1e-9))
-    if md[2] > md[3]: macd_sig = clamp(macd_sig+0.1)
-    elif md[2] < md[3]: macd_sig = clamp(macd_sig-0.1)
-    rsi_sig = clamp((rv-50)/50.0)
-    bb_sig = clamp((price-bb[0])/(P["bb"][1]*bb[3] if bb[3] else 1e-9))
-
-    tech = (W_EMA*ema_sig*adxf + W_MACD*macd_sig*adxf + W_RSI*rsi_sig + W_BB*bb_sig)
-    tech = clamp(tech)
-    fund = clamp(FUND_BIAS.get(symbol, 0.0))
-    total = clamp(TECH_W*tech + FUND_W*fund)
+    r = _compose_score(symbol, price, ef, es, rv, md[2], md[3], bb[0], bb[3], a, adx_val)
+    ema_sig, macd_sig, bb_sig = r["ema_sig"], r["macd_sig"], r["bb_sig"]
+    tech, fund, total = r["tech"], r["fund"], r["total"]
 
     reasons = []
     if abs(ema_sig) > 0.2: reasons.append(f"EMA{'上' if ema_sig>0 else '下'}({P['ema_f']}vs{P['ema_s']})")
@@ -311,51 +531,16 @@ def score_pair(symbol, ohlc):
 
 # ---------------- シグナル統計（想定保有時間・TP勝率） ----------------
 def get_ohlc_hist(symbol, days, cap):
+    """統計用の長めの足。日次キャッシュ経由なので get_ohlc が取った日は取り直さない。"""
     today = datetime.datetime.now(JST).date()
     rows = {}
     for back in range(0, days+2):
         d = today - datetime.timedelta(days=back)
-        try:
-            j = requests.get(f"{BASE}/klines", timeout=15, params={
-                "symbol": symbol, "priceType": PRICE_TYPE,
-                "interval": P["interval"], "date": d.strftime("%Y%m%d")}).json()
-            if j.get("status") == 0:
-                for k in j.get("data", []):
-                    rows[int(k["openTime"])] = (float(k["high"]), float(k["low"]), float(k["close"]))
-        except Exception as e:
-            print(f"[WARN] {symbol} hist失敗: {e}", file=sys.stderr)
+        rows.update(klines_day(symbol, d.strftime("%Y%m%d")))
+        if len(rows) >= cap:
+            break
     out = [rows[t] for t in sorted(rows)]
     return out[-cap:] if len(out) > cap else out
-
-
-def eval_side(symbol, ohlc):
-    """過去バーでの売買サイド + SL/TP(pips)。score_pairと同じ判定。"""
-    closes = [r[2] for r in ohlc]
-    if len(closes) < max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2:
-        return None
-    price = closes[-1]
-    ef, es = ema(closes, P["ema_f"]), ema(closes, P["ema_s"])
-    rv = rsi(closes, P["rsi"]); md = macd(closes, *P["macd"])
-    bb = bollinger(closes, P["bb"][0], P["bb"][1]); a = atr(ohlc, P["atr"]); ax = adx(ohlc, P["adx"])
-    if None in (ef, es, rv, a) or md is None or bb is None or ax is None:
-        return None
-    adx_val = ax[0]; adxf = max(clamp(adx_val/40.0, 0.0, 1.0), 0.25)
-    ema_sig = clamp((ef-es)/(a if a else 1e-9))
-    macd_sig = clamp(md[2]/(0.6*a if a else 1e-9))
-    if md[2] > md[3]: macd_sig = clamp(macd_sig+0.1)
-    elif md[2] < md[3]: macd_sig = clamp(macd_sig-0.1)
-    rsi_sig = clamp((rv-50)/50.0)
-    bb_sig = clamp((price-bb[0])/(P["bb"][1]*bb[3] if bb[3] else 1e-9))
-    tech = clamp(W_EMA*ema_sig*adxf + W_MACD*macd_sig*adxf + W_RSI*rsi_sig + W_BB*bb_sig)
-    fund = clamp(FUND_BIAS.get(symbol, 0.0))
-    total = clamp(TECH_W*tech + FUND_W*fund)
-    th = P["th"]
-    side = "買い" if total >= th else ("売り" if total <= -th else None)
-    if not side:
-        return None
-    sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
-    tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
-    return side, sl_pips, tp_pips
 
 
 def _median(a):
@@ -366,20 +551,38 @@ def _median(a):
 
 
 def compute_signal_stats(symbol):
+    """過去バーを歩いて『シグナル→TP/SLのどちらに先に当たったか』を数える。
+       指標はバーごとに作り直さず、全バーぶんを1回だけ計算して参照する（O(n^2)→O(n)）。
+       判定式は _compose_score に一本化してあるのでライブ判定と必ず一致する。"""
     days = STATS_DAYS.get(MODE, 3); cap = STATS_MAX_BARS.get(MODE, 1000)
     oh = get_ohlc_hist(symbol, days, cap)
     if len(oh) < 120:
         return None
+    closes = [r[2] for r in oh]
     warm = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 5
+    min_len = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2
     bar_min = BARMIN.get(P["interval"], 1)
+    th = P["th"]
+    ef_s = ema_series(closes, P["ema_f"]); es_s = ema_series(closes, P["ema_s"])
+    rsi_s = rsi_series(closes, P["rsi"]); md_s = macd_hist_series(closes, *P["macd"])
+    bb_s = bb_series(closes, P["bb"][0], P["bb"][1])
+    atr_s = atr_series(oh, P["atr"]); adx_s = adx_series(oh, P["adx"])
     wins, losses = [], []
     n = len(oh); i = warm
     while i < n-1:
-        e = eval_side(symbol, oh[:i+1])
-        if not e:
+        side = None
+        if i+1 >= min_len:
+            ef, es, rv = ef_s[i], es_s[i], rsi_s[i]
+            md, bb, a, ax = md_s[i], bb_s[i], atr_s[i], adx_s[i]
+            if None not in (ef, es, rv, a) and None not in (md, bb, ax):
+                total = _compose_score(symbol, closes[i], ef, es, rv,
+                                       md[0], md[1], bb[0], bb[1], a, ax[0])["total"]
+                side = "買い" if total >= th else ("売り" if total <= -th else None)
+        if not side:
             i += 1; continue
-        side, sl_pips, tp_pips = e
-        entry = oh[i][2]
+        sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
+        tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
+        entry = closes[i]
         tp = entry + tp_pips*PIP_SIZE if side == "買い" else entry - tp_pips*PIP_SIZE
         sl = entry - sl_pips*PIP_SIZE if side == "買い" else entry + sl_pips*PIP_SIZE
         res = None; xj = None
@@ -427,20 +630,30 @@ def load_prev_stats():
 
 
 def gather_stats(prev):
-    """新鮮なキャッシュは再利用、古い/無いものだけ再計算。"""
+    """新鮮なキャッシュは再利用、古い/無いものだけ再計算する。
+       再計算は通貨ごとに独立なので並列に回す（1時間に1回の重い処理をここで畳む）。"""
     stats = {}
     now_ts = int(datetime.datetime.now(JST).timestamp())
+    todo = []
     for sym in SYMBOLS:
         c = prev.get(sym)
-        if c and c.get("stats_ts") and c.get("stats_mode") == MODE and (now_ts - c["stats_ts"] < STATS_TTL_SEC):
-            stats[sym] = c
-        else:
-            st = None
-            try:
-                st = compute_signal_stats(sym)
-            except Exception as e:
-                print(f"[WARN] {sym} 統計計算失敗: {e}", file=sys.stderr)
-            stats[sym] = st if st else c
+        stats[sym] = c        # 再計算できなかった時は前回値を残す
+        if not (c and c.get("stats_ts") and c.get("stats_mode") == MODE
+                and (now_ts - c["stats_ts"] < STATS_TTL_SEC)):
+            todo.append(sym)
+    if not todo:
+        return stats
+
+    def one(sym):
+        try:
+            return sym, compute_signal_stats(sym)
+        except Exception as e:
+            warn(f"{sym} 統計計算失敗: {e}", tag=f"stats:{sym}")
+            return sym, None
+    with ThreadPoolExecutor(max_workers=max(1, API_WORKERS)) as ex:
+        for sym, st in ex.map(one, todo):
+            if st:
+                stats[sym] = st
     return stats
 
 
@@ -448,15 +661,8 @@ def _htf_closes(symbol, interval, keys):
     """指定キー（日付 or 年）でklinesを取り、openTime->終値 の辞書を返す。"""
     rows = {}
     for extra in keys:
-        try:
-            q = {"symbol": symbol, "priceType": PRICE_TYPE, "interval": interval}
-            q.update(extra)
-            j = requests.get(f"{BASE}/klines", timeout=15, params=q).json()
-            if j.get("status") == 0:
-                for k in j.get("data", []):
-                    rows[int(k["openTime"])] = float(k["close"])
-        except Exception as e:
-            print(f"[WARN] {symbol} {interval} MTF取得失敗: {e}", file=sys.stderr)
+        for t, hlc in klines_day(symbol, extra["date"], interval).items():
+            rows[t] = hlc[2]
     return rows
 
 
@@ -489,9 +695,12 @@ def htf_trend(symbol, interval):
 
 
 def mtf_view(symbol):
-    """ペアの上位足トレンドをまとめて返す。{"1hour":1, "4hour":-1, "label":"1h↑ / 4h↓"}"""
+    """ペアの上位足トレンドをまとめて返す。{"1hour":1, "4hour":-1, "label":"1h↑ / 4h↓"}
+       1回の実行内では同じ結果になるので、記録簿と画面生成で二重取得しないようメモ化する。"""
     if MTF_MODE == "off":
         return None
+    if symbol in _MTF_CACHE:
+        return _MTF_CACHE[symbol]
     out = {}
     for tf in MTF_TFS:
         try:
@@ -505,6 +714,7 @@ def mtf_view(symbol):
     vals = [out[tf] for tf in MTF_TFS]
     # 全上位足が同じ方向に揃っていれば「目線が固定」できている状態
     out["aligned"] = vals[0] if (vals and all(v == vals[0] and v != 0 for v in vals)) else 0
+    _MTF_CACHE[symbol] = out
     return out
 
 
@@ -1012,9 +1222,11 @@ def main():
         m = f"✅ テスト通知\n時刻: {now_str}\nLINEとメールの疎通確認です。"
         print(m); notify_line(m); notify_mail("【FX】テスト通知", m); return
 
-    market_open = market_is_open()
-    ticker = fetch_ticker()
     data = load_positions()
+    # 外部データは待ち時間が支配的。必要なぶんを最初にまとめて並列取得しておく。
+    market_open, ticker = warm_up(
+        list(SYMBOLS) + [p.get("symbol") for p in data.get("positions", [])
+                         if p.get("status", "open") == "open"])
     prev_stats = load_prev_stats()
     prev_state = load_prev_state()
     prev_signals = load_prev_signals()
