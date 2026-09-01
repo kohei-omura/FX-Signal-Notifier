@@ -441,6 +441,65 @@ class ExitPolicyTest(RunTestCase):
         self.assertAlmostEqual(s["pf"], 3.2/3.0, places=2)
 
 
+class LongBacktestTest(RunTestCase):
+    """長期バックテスト(backtest.py)。判定に優位性があるかを見るための母数を確保する。"""
+
+    def setUp(self):
+        super().setUp()
+        import backtest
+        self.bt = backtest
+        self.out = os.path.join(self.dir, "backtest.json")
+        self._orig_out = backtest.OUT
+        backtest.OUT = self.out
+        self.addCleanup(setattr, backtest, "OUT", self._orig_out)
+        # 期間を詰めてテストを速く保つ（仕組みの検証が目的）
+        self._orig_win = backtest.WINDOWS
+        backtest.WINDOWS = {"scalp": (3, 800), "day": (3, 800), "swing": (3, 800)}
+        self.addCleanup(setattr, backtest, "WINDOWS", self._orig_win)
+
+    def test_writes_report_with_policies_and_bands(self):
+        self.bt.MODES = ["day"]
+        self.bt.main()
+        d = self.read(self.out)
+        self.assertIn("day", d["modes"])
+        m = d["modes"]["day"]
+        for k in ("days", "n", "policies", "bands", "symbols"):
+            self.assertIn(k, m)
+        for name in F.EXIT_POLICIES:
+            self.assertIn(name, m["policies"])
+        self.assertEqual(sum(b["n"] for b in m["bands"].values()),
+                         m["policies"]["tp_sl"]["n"], "スコア帯の合計が採用数と合わない")
+
+    def test_sample_is_larger_than_the_5min_stats(self):
+        """長期検証の母数が、通常統計(直近8日)より多いこと。これが導入の目的。"""
+        self.bt.WINDOWS = {"day": (12, 3000)}
+        self.bt.MODES = ["day"]
+        self.bt.main()
+        deep = self.read(self.out)["modes"]["day"]["n"]
+        self.reset_caches()
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        F.STATS_DAYS = {"day": 8}; F.STATS_MAX_BARS = {"day": 1000}
+        short = sum((F.compute_signal_stats(s) or {}).get("n", 0) for s in F.SYMBOLS)
+        self.assertGreater(deep, short, f"母数が増えていない（長期{deep} vs 通常{short}）")
+
+    def test_engine_globals_are_restored_per_mode(self):
+        """モードごとに TECH_W/FUND_W を本番と同じ値に合わせること。"""
+        self.bt.MODES = ["swing"]
+        self.bt.run_mode("swing")
+        self.assertEqual((F.TECH_W, F.FUND_W), (0.45, 0.55))
+        self.bt.run_mode("day")
+        self.assertEqual((F.TECH_W, F.FUND_W), (0.85, 0.15))
+
+    def test_failure_keeps_previous_report(self):
+        """集計できない時に既存のレポートを壊さないこと。"""
+        self.write(self.out, {"keep": True})
+        self.bt.MODES = ["day"]
+        mock_api.fail_mode = lambda url, params: mock_api.Resp({}) if url.endswith("/klines") else None
+        with self.assertRaises(SystemExit):
+            self.bt.main()
+        self.assertTrue(self.read(self.out).get("keep"), "既存レポートが壊された")
+
+
 class MfeTest(RunTestCase):
     def test_peak_includes_current_price_on_first_evaluation(self):
         """初回評価でも現在値を最高益に取り込む（トレール利確の押し戻し量がズレる）。"""

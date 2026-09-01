@@ -666,11 +666,17 @@ async function entryLogSync(){
   try{
     var c=_ghCfg();
     if(c.owner&&c.repo){
-      var sr=await fetch('https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'
-        +(c.branch||'main')+'/status.json?t='+Date.now(),{cache:'no-store'});
-      if(sr.ok) renderExitPolicies(await sr.json());
+      var base='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')+'/';
+      var st=null;
+      try{ var sr=await fetch(base+'status.json?t='+Date.now(),{cache:'no-store'});
+           if(sr.ok) st=await sr.json(); }catch(e){}
+      // 長期検証(1日1回)があればそちらを使う。直近8日ぶんの status.json より母数が多い。
+      var bt=null;
+      try{ var br=await fetch(base+'backtest.json?t='+Date.now(),{cache:'no-store'});
+           if(br.ok) bt=await br.json(); }catch(e){}
+      renderExitPolicies(st, bt);
     }
-  }catch(e){ console.warn('status.json の取得に失敗', e); }
+  }catch(e){ console.warn('検証データの取得に失敗', e); }
   var el=document.getElementById('impmsg');
   if(el) el.innerHTML='<span class="good">記録簿を'+_elLoad().length+'件保持（新規'+added+'件）／ '
     +r.filled+'件の取引に判断材料を紐付けました</span>'
@@ -727,10 +733,22 @@ function renderVerdict(){
 /* ===== 決済ポリシーの比較（サーバー側バックテスト結果の表示） =====
    fx_signal.py が status.json に載せた policies を読む。
    同じシグナルに対し「TPまで持つ／推奨で降りる／利確検討でも降りる」の期待Rを並べる。 */
-function renderExitPolicies(status){
+function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function renderExitPolicies(status, backtest){
   var el=document.getElementById('policies'); if(!el) return;
-  var pairs=(status&&status.pairs)||[];
   var lab={tp_sl:'TPまで持つ（設計どおり）', advice:'🎯利確推奨/🛑損切り推奨で降りる', advice_watch:'🟡利確検討でも降りる'};
+  var mode=(status&&status.mode)||'day';
+  var deep=backtest&&backtest.modes&&backtest.modes[mode];
+  var src;
+  if(deep){
+    // 長期検証（1日1回）。母数が多いのでこちらを優先する。
+    src={pairs:[{policies:deep.policies, bands:deep.bands, mtf_blocked:deep.mtf_blocked}],
+         label:'長期検証 '+deep.days+'日ぶん（'+(backtest.generated_at||'')+' 時点）'};
+  }else{
+    src={pairs:(status&&status.pairs)||[],
+         label:'直近の統計（'+(status&&status.mode||'')+'・約8日ぶん）'};
+  }
+  var pairs=src.pairs;
   var agg={};
   pairs.forEach(function(p){
     var pol=p.policies||{};
@@ -779,9 +797,10 @@ function renderExitPolicies(status){
         +a.n+'</td><td>'+Math.round(a.win/a.n*100)+'%</td>'
         +'<td class="'+(e>=0?'good':'bad')+'">'+(e>=0?'+':'')+e.toFixed(3)+'</td></tr>';
     }).join('')+'</tbody></table>'
-    +'<div class="note">直近の実データで、同じシグナルに対して<b>出口だけ</b>変えた場合の比較です。'
+    +'<div class="note">出典: <b>'+escHtml(src.label)+'</b>。同じシグナルに対して<b>出口だけ</b>変えた場合の比較です。'
     +'★が最も期待Rが高い降り方。'
     +(blocked?'上位足と逆行する'+blocked+'件は本番と同じく見送ったうえでの集計です。':'')
+    +(deep?'':'<br>※母数が少ないため参考値です。1日1回の長期検証(backtest.json)が生成されると自動でそちらに切り替わります。')
     +'</div>'
     +(allNeg
       ? '<div class="note" style="border:1px solid var(--down);border-radius:8px;padding:8px 10px;margin-top:6px">'
