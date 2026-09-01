@@ -57,6 +57,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
     <button class="bsub" onclick="appSync()">アプリ決済を取込</button>
     <button class="bsub" onclick="toggleBox('pastebox')">数値貼付</button>
     <button class="bsub" onclick="mergeTradesUI()">🔗 重複を統合</button>
+    <button class="bsub" onclick="entryLogSync()">🧠 記録簿を取込</button>
     <button class="bsub" onclick="exportTradesCSV()">📤 CSV書き出し</button>
   </div>
   <div id="impmsg" class="note"></div>
@@ -99,7 +100,12 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   </div>
 
   <div class="stat" id="kpis"></div>
+  <div id="verdict" style="margin:10px 0"></div>
   <svg class="eq" id="eq" viewBox="0 0 320 120" preserveAspectRatio="none"></svg>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">決済品質（設計どおりに決済できているか）</div>
+  <div id="exitq"></div>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">決済ポリシー比較（出口だけ変えたら期待値はどうなるか）</div>
+  <div id="policies"><div class="note">「🧠 記録簿を取込」を押すと最新のサーバー統計を読み込みます。</div></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">ペア別</div>
   <table id="bypair"><thead><tr><th>ペア</th><th>回数</th><th>勝率</th><th>純損益</th></tr></thead><tbody></tbody></table>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">月別サマリー</div>

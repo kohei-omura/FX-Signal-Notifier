@@ -279,6 +279,49 @@ class MtfTest(RunTestCase):
         self.assertEqual(len(years), 1, "通常時に余計な取得が発生している")
 
 
+class ExitPolicyTest(RunTestCase):
+    """決済ポリシー比較。同じシグナルに対して出口だけ変えたRを並べる。"""
+
+    def setUp(self):
+        super().setUp()
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+
+    def test_policies_are_produced_for_each_symbol(self):
+        st = F.compute_signal_stats("USD_JPY")
+        self.assertIsNotNone(st)
+        self.assertIn("policies", st)
+        for name in F.EXIT_POLICIES:
+            self.assertIn(name, st["policies"], f"{name} が出ていない")
+            p = st["policies"][name]
+            self.assertGreater(p["n"], 0)
+            self.assertIsNotNone(p["avg_r"])
+
+    def test_all_policies_share_the_same_entries(self):
+        """出口だけの比較なので、母数（エントリー数）は全ポリシーで一致していること。"""
+        st = F.compute_signal_stats("EUR_JPY")
+        ns = {st["policies"][k]["n"] for k in F.EXIT_POLICIES if k in st["policies"]}
+        self.assertEqual(len(ns), 1, f"母数が揃っていない: {ns}")
+
+    def test_tp_sl_policy_only_yields_designed_r(self):
+        """TP/SLだけで回したポリシーは +設計RR か -1R しか取らない。"""
+        st = F.compute_signal_stats("GBP_JPY")
+        p = st["policies"]["tp_sl"]
+        self.assertAlmostEqual(p["payoff"], F.P["tsr"], places=2)
+
+    def test_existing_stats_keys_are_unchanged(self):
+        st = F.compute_signal_stats("AUD_JPY")
+        for k in ("n", "tp_winrate", "hold_tp_min", "hold_sl_min", "stats_ts", "stats_mode"):
+            self.assertIn(k, st)
+
+    def test_r_summary_math(self):
+        s = F._r_summary([1.6, 1.6, -1.0, -1.0, -1.0])
+        self.assertEqual(s["n"], 5)
+        self.assertEqual(s["winrate"], 40)
+        self.assertAlmostEqual(s["payoff"], 1.6, places=2)
+        self.assertAlmostEqual(s["avg_r"], 0.04, places=3)
+        self.assertAlmostEqual(s["pf"], 3.2/3.0, places=2)
+
+
 class MfeTest(RunTestCase):
     def test_peak_includes_current_price_on_first_evaluation(self):
         """初回評価でも現在値を最高益に取り込む（トレール利確の押し戻し量がズレる）。"""

@@ -588,6 +588,7 @@ def compute_signal_stats(symbol):
     bb_s = bb_series(closes, P["bb"][0], P["bb"][1])
     atr_s = atr_series(oh, P["atr"]); adx_s = adx_series(oh, P["adx"])
     wins, losses = [], []
+    policy_r = {}
     n = len(oh); i = warm
     while i < n-1:
         side = None
@@ -621,15 +622,104 @@ def compute_signal_stats(symbol):
         if res is None:
             break
         (wins if res == "tp" else losses).append(xj - i)
+        # 同じシグナルを別の決済ポリシーで回した場合のRも記録する（比較の公平性のため
+        # エントリー地点は共通、出口だけ変える）
+        for name, r in _simulate_exit_policies(
+                symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
+                ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th).items():
+            policy_r.setdefault(name, []).append(r)
         i = xj + 1
     nn = len(wins) + len(losses)
     if nn < 8:
         return None
     tm = _median(wins); sm = _median(losses)
-    return {"n": nn, "tp_winrate": round(len(wins)/nn*100),
-            "hold_tp_min": round(tm*bar_min) if tm is not None else None,
-            "hold_sl_min": round(sm*bar_min) if sm is not None else None,
-            "stats_ts": int(datetime.datetime.now(JST).timestamp()), "stats_mode": MODE}
+    out = {"n": nn, "tp_winrate": round(len(wins)/nn*100),
+           "hold_tp_min": round(tm*bar_min) if tm is not None else None,
+           "hold_sl_min": round(sm*bar_min) if sm is not None else None,
+           "stats_ts": int(datetime.datetime.now(JST).timestamp()), "stats_mode": MODE}
+    pol = {k: _r_summary(v) for k, v in policy_r.items() if v}
+    if pol:
+        out["policies"] = pol
+    return out
+
+
+# ===== 決済ポリシーの比較 =====
+# 実測(406件)で「設計ペイオフ1.6 → 実現1.19」と2割以上目減りしていた。
+# 勝ちだけ早く切って負けは-1Rまで走らせると必ずこうなるので、
+# 同じシグナルに対して出口だけ変えた場合のRを並べて比較できるようにする。
+#   tp_sl        … TP/SLに当たるまで持つ（設計どおり）
+#   advice       … 現行の「🎯利確推奨 / 🛑損切り推奨」で降りる（LINE+メールで届く分）
+#   advice_watch … 「🟡利確検討」でも降りる（メールに届く分に全部従った場合）
+EXIT_POLICIES = ("tp_sl", "advice", "advice_watch")
+
+
+def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
+                            ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th):
+    """1つのシグナルを各決済ポリシーで最後まで回し、R倍率を返す。
+       position_advice() と同じ順序・同じ閾値で判定する（指標接近だけは過去再現できないので除外）。"""
+    n = len(oh)
+    d = 1 if side == "買い" else -1
+    risk = sl_pips * PIP_SIZE
+    out = {}
+    # 設計どおり（TP/SLのみ）
+    for j in range(i+1, n):
+        h, l, _ = oh[j]
+        if (side == "買い" and l <= sl) or (side == "売り" and h >= sl):
+            out["tp_sl"] = -1.0; break
+        if (side == "買い" and h >= tp) or (side == "売り" and l <= tp):
+            out["tp_sl"] = P.get("tsr", TP_SL_RATIO); break
+    # アドバイスに従って降りる場合
+    for name in ("advice", "advice_watch"):
+        use_watch = (name == "advice_watch")
+        mfe = entry
+        for j in range(i+1, n):
+            h, l, c = oh[j]
+            # まず価格でTP/SLに触れていないか（ライブと同じく到達を優先）
+            if (side == "買い" and l <= sl) or (side == "売り" and h >= sl):
+                out[name] = -1.0; break
+            if (side == "買い" and h >= tp) or (side == "売り" and l <= tp):
+                out[name] = P.get("tsr", TP_SL_RATIO); break
+            a, ax, md, bb = atr_s[j], adx_s[j], md_s[j], bb_s[j]
+            ef, es, rv = ef_s[j], es_s[j], rsi_s[j]
+            if None in (ef, es, rv, a) or None in (md, bb, ax):
+                continue
+            score = _compose_score(symbol, c, ef, es, rv, md[0], md[1],
+                                   bb[0], bb[1], a, ax[0])["total"]
+            adx_v = ax[0]
+            profit = (c - entry) * d
+            aligned = score * d
+            mfe = max(mfe, c) if side == "買い" else min(mfe, c)
+            retrace = (mfe - c) if side == "買い" else (c - mfe)
+            hit = None
+            if aligned <= -ADV_OPP and profit <= 0:
+                hit = "cut"
+            elif a and profit/a >= PROFIT_ATR and retrace/a >= TRAIL_ATR:
+                hit = "take"
+            elif profit > 0 and aligned <= -ADV_OPP:
+                hit = "take"
+            elif use_watch and profit > 0 and (
+                    aligned < th
+                    or (side == "買い" and rv >= 70) or (side == "売り" and rv <= 30)
+                    or adx_v < ADX_WEAK):
+                hit = "watch"
+            if hit:
+                out[name] = (profit / risk) if risk else 0.0
+                break
+    return out
+
+
+def _r_summary(rs):
+    """R倍率の並びを 勝率 / 平均R / 期待値 / PF にまとめる。"""
+    n = len(rs)
+    win = [r for r in rs if r > 0]; lose = [r for r in rs if r <= 0]
+    gp = sum(win); gl = -sum(lose)
+    avg_win = (gp/len(win)) if win else 0.0
+    avg_lose = (gl/len(lose)) if lose else 0.0
+    return {"n": n,
+            "winrate": round(len(win)/n*100) if n else None,
+            "avg_r": round(sum(rs)/n, 3) if n else None,       # = 1トレードあたり期待R
+            "payoff": round(avg_win/avg_lose, 2) if avg_lose else None,
+            "pf": round(gp/gl, 2) if gl else None}
 
 
 def load_prev_stats():

@@ -466,6 +466,8 @@ function renderJournal(){
     : '勝ちと負けの両方が貯まると損益分岐勝率を表示します';
   renderEdgeTables(t);
   try{renderEdgeProfile();}catch(e){}
+  try{renderExitQuality();}catch(e){}
+  try{renderVerdict();}catch(e){}
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
     const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
     const dts=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'日時なし';
@@ -582,6 +584,226 @@ function attachSnapScores(tolMin){
   if(filled) saveTrades(t);
   return {filled:filled,total:t.length};
 }
+/* ===== エントリー記録簿(entry_log.json)の取り込みと突合 =====
+   fx_signal.py が新規ポジションごとにサーバ側で残している判断材料
+   （スコア・強さ・上位足との関係・設計TP/SL幅）を、証券会社CSVの実約定に紐付ける。
+
+   なぜ要るか: 判断材料はこれまでブラウザ側スナップショット(fxnavi_snap)だけが頼りで、
+   これはアプリを開いている間の5分おきにしか記録されない。実測でも406件中30件しか
+   スコアが付いておらず、「判定に従うと勝てるのか」を9割以上の取引で検証できなかった。
+   entry_log.json は Actions 側で常時記録されるので、突合すれば取りこぼしがなくなる。
+
+   突合キー: 通貨ペア ＋ 建値。記録簿側が意図した設計そのもの（fx_signal.py 参照）。 */
+var ENTRYLOG_KEY = 'fxnavi_entrylog';
+function _elLoad(){ try{ return JSON.parse(localStorage.getItem(ENTRYLOG_KEY)||'[]'); }catch(e){ return []; } }
+function _elSave(a){ try{ localStorage.setItem(ENTRYLOG_KEY, JSON.stringify(a)); }catch(e){} }
+
+function _ghCfg(){ try{ return JSON.parse(localStorage.getItem('fxnavi_gh'))||{}; }catch(e){ return {}; } }
+
+/* リポジトリから entry_log.json を取得して端末に貯める（公開リポなのでトークン不要）。*/
+async function entryLogFetch(quiet){
+  var c=_ghCfg();
+  if(!c.owner||!c.repo){
+    if(!quiet) alert('先にダッシュボードの⚙でオーナー/リポジトリを設定してください');
+    return 0;
+  }
+  var url='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')
+          +'/entry_log.json?t='+Date.now();
+  var got=[];
+  try{
+    var r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var j=await r.json();
+    got=(j&&j.entries)||[];
+  }catch(e){
+    if(!quiet) alert('entry_log.json を取得できませんでした: '+e.message);
+    return 0;
+  }
+  // 端末側と統合（pos_id、無ければ ペア+建値+時刻 で一意化）
+  var cur=_elLoad(), seen={}, out=[];
+  cur.concat(got).forEach(function(x){
+    if(!x) return;
+    var k=x.pos_id||[x.symbol,x.entry,x.logged_at].join('|');
+    if(seen[k]) return; seen[k]=1; out.push(x);
+  });
+  _elSave(out);
+  return out.length-cur.length;
+}
+
+/* 記録簿を既存トレードへ紐付ける。ペア＋建値が一致し、まだ判断材料が無いものだけ埋める。 */
+function entryLogAttach(){
+  var log=_elLoad(); if(!log.length) return {filled:0,total:0,noLog:true};
+  var idx={};
+  log.forEach(function(e){
+    if(!e||e.symbol==null||e.entry==null) return;
+    var k=String(e.symbol).replace('_','/')+'@'+(+e.entry).toFixed(3);
+    // 同じ建値が複数ある場合は新しい方を優先
+    if(!idx[k]||String(e.logged_at||'')>String(idx[k].logged_at||'')) idx[k]=e;
+  });
+  var t=loadTrades(), filled=0;
+  t.forEach(function(x){
+    if(x.entry==null||x.entry==='') return;
+    if(x.elSrc) return;                                  // 既に紐付け済み
+    var e=idx[String(x.pair||'')+'@'+(+x.entry).toFixed(3)];
+    if(!e) return;
+    if(x.tp_pips==null&&e.tp_pips!=null) x.tp_pips=e.tp_pips;
+    if(x.sl_pips==null&&e.sl_pips!=null) x.sl_pips=e.sl_pips;
+    if(x.rawScore==null&&e.score!=null) x.rawScore=e.score;     // -1〜+1 の総合スコア
+    if(!x.strength&&e.strength) x.strength=e.strength;          // 強／標準／弱
+    if(!x.mtf&&e.mtf_vs_entry) x.mtf=e.mtf_vs_entry;            // 順張り／逆行／レンジ
+    if(x.adx==null&&e.adx!=null) x.adx=e.adx;
+    if(x.newsNear==null&&e.news_near!=null) x.newsNear=e.news_near;
+    if(!x.opened_at&&e.logged_at) x.opened_at=e.logged_at.slice(0,16)+' JST';
+    x.elSrc='entrylog'; filled++;
+  });
+  if(filled) saveTrades(t);
+  return {filled:filled,total:t.length};
+}
+
+async function entryLogSync(){
+  var added=await entryLogFetch(false);
+  var r=entryLogAttach();
+  try{
+    var c=_ghCfg();
+    if(c.owner&&c.repo){
+      var sr=await fetch('https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'
+        +(c.branch||'main')+'/status.json?t='+Date.now(),{cache:'no-store'});
+      if(sr.ok) renderExitPolicies(await sr.json());
+    }
+  }catch(e){ console.warn('status.json の取得に失敗', e); }
+  var el=document.getElementById('impmsg');
+  if(el) el.innerHTML='<span class="good">記録簿を'+_elLoad().length+'件保持（新規'+added+'件）／ '
+    +r.filled+'件の取引に判断材料を紐付けました</span>'
+    +(r.filled?'':'<br><span class="warn">建値が一致する取引がありませんでした。CSVを「建単価つき」で取り込んでいるかご確認ください。</span>');
+  try{ renderJournal(); }catch(e){}
+}
+
+/* ===== 現状診断（このまま続けて勝てるのか） =====
+   KPIは出ていたが「で、続けてよいのか」を言っていなかった。
+   期待値と、プラスに転じるために必要な水準を数字で突きつける。 */
+var COVERED_PAIRS = ['USD/JPY','EUR/JPY','GBP/JPY','AUD/JPY'];   // fx_signal.py の SYMBOLS と対応
+
+function systemVerdict(){
+  var t=loadTrades(); if(t.length<20) return null;
+  var yen=function(x){ return (x.close_yen!=null)?+x.close_yen:(+x.yen||0); };
+  var win=t.filter(function(x){return yen(x)>0;}), lose=t.filter(function(x){return yen(x)<=0;});
+  var gp=win.reduce(function(a,x){return a+yen(x);},0), gl=-lose.reduce(function(a,x){return a+yen(x);},0);
+  var wr=win.length/t.length;
+  var payoff=(win.length&&lose.length)?((gp/win.length)/(gl/lose.length)):null;
+  var be=payoff?1/(1+payoff):null;                       // 損益分岐勝率
+  var expR=payoff?(wr*payoff-(1-wr)):null;               // 1トレードあたりの期待R
+  // 判定材料を持たないペア（アプリが計算していない通貨）は別枠にする
+  var off=t.filter(function(x){ return x.pair && COVERED_PAIRS.indexOf(x.pair)<0; });
+  return {n:t.length, wr:wr, payoff:payoff, be:be, expR:expR,
+          net:gp-gl, pf:gl?gp/gl:null,
+          needWr:be, needPayoff:wr?((1-wr)/wr):null,
+          off:{n:off.length, yen:off.reduce(function(a,x){return a+yen(x);},0),
+               pairs:Array.from(new Set(off.map(function(x){return x.pair;})))}};
+}
+
+function renderVerdict(){
+  var el=document.getElementById('verdict'); if(!el) return;
+  var v=systemVerdict();
+  if(!v||v.payoff==null){ el.innerHTML=''; return; }
+  var ok=v.expR>0;
+  var head=ok
+    ? '✅ 現在の実績はプラス期待値です（' + v.expR.toFixed(3) + 'R/回）'
+    : '⛔ このまま同じ入り方・降り方を続けると負けます（期待値 ' + v.expR.toFixed(3) + 'R/回）';
+  var lines=[];
+  lines.push('実績: '+v.n+'件 ／ 勝率 <b>'+(v.wr*100).toFixed(1)+'%</b> ／ ペイオフ <b>'+v.payoff.toFixed(2)+'</b>');
+  lines.push('いまのペイオフ '+v.payoff.toFixed(2)+' でプラスにするには勝率 <b>'
+    +(v.needWr*100).toFixed(1)+'% 以上</b> が必要（現在 '+(v.wr*100).toFixed(1)+'%）');
+  lines.push('いまの勝率 '+(v.wr*100).toFixed(1)+'% でプラスにするにはペイオフ <b>'
+    +v.needPayoff.toFixed(2)+' 以上</b> が必要（現在 '+v.payoff.toFixed(2)+'）');
+  lines.push('→ 勝率とペイオフは片方だけ直せばよく、<b>どちらが動かしやすいかは上の「決済品質」で判断</b>してください。');
+  if(v.off.n) lines.push('⚠️ 判定材料が無いペアでの取引: <b>'+v.off.n+'件 / '
+    +(v.off.yen>=0?'+':'')+Math.round(v.off.yen).toLocaleString()+'円</b>（'+v.off.pairs.join('・')
+    +'）。アプリは '+COVERED_PAIRS.join('・')+' しか計算しておらず、これらはシグナルにも統計にも一切含まれません。');
+  el.innerHTML='<div style="padding:11px 13px;border:1px solid '+(ok?'var(--up)':'var(--down)')
+    +';border-radius:10px;background:rgba(255,255,255,.03);line-height:1.85;font-size:12.5px">'
+    +'<div style="font-weight:800;margin-bottom:6px">'+head+'</div>'+lines.join('<br>')+'</div>';
+}
+
+/* ===== 決済ポリシーの比較（サーバー側バックテスト結果の表示） =====
+   fx_signal.py が status.json に載せた policies を読む。
+   同じシグナルに対し「TPまで持つ／推奨で降りる／利確検討でも降りる」の期待Rを並べる。 */
+function renderExitPolicies(status){
+  var el=document.getElementById('policies'); if(!el) return;
+  var pairs=(status&&status.pairs)||[];
+  var lab={tp_sl:'TPまで持つ（設計どおり）', advice:'🎯利確推奨/🛑損切り推奨で降りる', advice_watch:'🟡利確検討でも降りる'};
+  var agg={};
+  pairs.forEach(function(p){
+    var pol=p.policies||{};
+    Object.keys(lab).forEach(function(k){
+      var d=pol[k]; if(!d||!d.n) return;
+      var a=agg[k]||(agg[k]={n:0,sum:0,win:0});
+      a.n+=d.n; a.sum+=d.avg_r*d.n; a.win+=(d.winrate/100)*d.n;
+    });
+  });
+  var keys=Object.keys(lab).filter(function(k){return agg[k];});
+  if(!keys.length){ el.innerHTML='<div class="note">サーバー側の統計がまだありません（次回の統計更新後に出ます）。</div>'; return; }
+  var best=keys.reduce(function(a,b){ return (agg[a].sum/agg[a].n)>=(agg[b].sum/agg[b].n)?a:b; });
+  el.innerHTML='<table><thead><tr><th>決済のしかた</th><th>件数</th><th>勝率</th><th>期待R/回</th></tr></thead><tbody>'
+    +keys.map(function(k){
+      var a=agg[k], e=a.sum/a.n;
+      return '<tr'+(k===best?' style="font-weight:800"':'')+'><td>'+(k===best?'★ ':'')+lab[k]+'</td><td>'
+        +a.n+'</td><td>'+Math.round(a.win/a.n*100)+'%</td>'
+        +'<td class="'+(e>=0?'good':'bad')+'">'+(e>=0?'+':'')+e.toFixed(3)+'</td></tr>';
+    }).join('')+'</tbody></table>'
+    +'<div class="note">直近の実データで、同じシグナルに対して<b>出口だけ</b>変えた場合の比較です。'
+    +'★が最も期待Rが高い降り方。実際の成績がこれより悪い場合、原因は判定ではなく決済のしかたにあります。</div>';
+}
+
+/* ===== 決済品質（設計どおりに決済できているか） =====
+   実測(406件)で 設計ペイオフ1.6 → 実現1.19 と2割以上目減りしていた。
+   勝ちを途中で切っているのか、負けが設計より深いのか、単に届いていないのかを分解する。 */
+function exitQuality(){
+  var t=loadTrades().filter(function(x){
+    return x.sl_pips>0 && x.tp_pips>0 && (x.close_pips!=null||x.pips!=null);
+  });
+  if(!t.length) return null;
+  var g={tp:{n:0,r:0,yen:0}, early_win:{n:0,r:0,yen:0}, early_loss:{n:0,r:0,yen:0}, sl:{n:0,r:0,yen:0}};
+  var lostR=0;                       // 途中利確で取り逃したR（設計TPまで持てていたらの差）
+  t.forEach(function(x){
+    var p=(x.close_pips!=null)?+x.close_pips:+x.pips;
+    var r=p/x.sl_pips, designR=x.tp_pips/x.sl_pips, y=(x.close_yen!=null)?+x.close_yen:(+x.yen||0);
+    var k;
+    if(p>=x.tp_pips*0.95) k='tp';
+    else if(p<=-x.sl_pips*0.95) k='sl';
+    else if(p>0){ k='early_win'; lostR+=(designR-r); }
+    else k='early_loss';
+    g[k].n++; g[k].r+=r; g[k].yen+=y;
+  });
+  var n=t.length, sumR=0; Object.keys(g).forEach(function(k){ sumR+=g[k].r; });
+  return {n:n, groups:g, avgR:sumR/n, lostR:lostR,
+          designR:t.reduce(function(a,x){return a+x.tp_pips/x.sl_pips;},0)/n};
+}
+
+function renderExitQuality(){
+  var el=document.getElementById('exitq'); if(!el) return;
+  var q=exitQuality();
+  if(!q){
+    el.innerHTML='<div class="note">設計TP/SL幅が分かる取引がまだありません。'
+      +'「🧠 記録簿を取込」を押すと、Actions側に残っている判断材料を建値で突合して埋めます。</div>';
+    return;
+  }
+  var lab={tp:'✅ TP到達（設計どおり）', early_win:'⚠️ 途中で利確', early_loss:'⚠️ 途中で損切り', sl:'🛑 SL到達'};
+  var rows=Object.keys(lab).map(function(k){
+    var d=q.groups[k]; if(!d.n) return '';
+    return '<tr><td>'+lab[k]+'</td><td>'+d.n+'</td><td>'+Math.round(d.n/q.n*100)+'%</td>'
+      +'<td>'+(d.r/d.n>=0?'+':'')+(d.r/d.n).toFixed(2)+'R</td>'
+      +'<td class="'+(d.yen>=0?'good':'bad')+'">'+(d.yen>=0?'+':'')+Math.round(d.yen).toLocaleString()+'円</td></tr>';
+  }).join('');
+  var gap=q.designR? (q.avgR/q.designR):0;
+  el.innerHTML='<table><thead><tr><th>決済のされ方</th><th>回数</th><th>割合</th><th>平均R</th><th>純損益</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table>'
+    +'<div class="note">対象 '+q.n+'件 ／ 設計の平均RR <b>'+q.designR.toFixed(2)+'</b> に対し、実現の平均R は <b>'
+    +(q.avgR>=0?'+':'')+q.avgR.toFixed(2)+'</b>。<br>'
+    +'途中利確で取り逃したRの合計は <b>'+q.lostR.toFixed(1)+'R</b>'
+    +'（1Rあたりの平均損失額を掛けるとおおよその機会損失になります）。<br>'
+    +'「途中で利確」の割合が高いほど、勝ちだけ小さく切って負けは満額払っている状態です。</div>';
+}
+
 /* ===== 段階3: 成績から学習する補正プロファイル（統計的に健全化 v7） =====
    旧版の問題と対策：
    (1) 10件/8件から補正が出ていた → 全体n≥100・各バケットn≥30でのみ算出（EDGE_TOTAL_MIN/EDGE_MIN）
