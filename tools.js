@@ -754,8 +754,9 @@ function renderExitPolicies(status, backtest){
     var pol=p.policies||{};
     Object.keys(lab).forEach(function(k){
       var d=pol[k]; if(!d||!d.n) return;
-      var a=agg[k]||(agg[k]={n:0,sum:0,win:0});
+      var a=agg[k]||(agg[k]={n:0,sum:0,win:0,lo:0,hi:0});
       a.n+=d.n; a.sum+=d.avg_r*d.n; a.win+=(d.winrate/100)*d.n;
+      if(d.ci_lo!=null){ a.lo+=d.ci_lo*d.n; a.hi+=d.ci_hi*d.n; }
     });
   });
   var keys=Object.keys(lab).filter(function(k){return agg[k];});
@@ -790,16 +791,26 @@ function renderExitPolicies(status, backtest){
   var blocked=pairs.reduce(function(a,p){return a+(p.mtf_blocked||0);},0);
   var allNeg=keys.every(function(k){ return agg[k].sum/agg[k].n < 0; });
 
-  el.innerHTML='<table><thead><tr><th>決済のしかた</th><th>件数</th><th>勝率</th><th>期待R/回</th></tr></thead><tbody>'
+  el.innerHTML='<table><thead><tr><th>決済のしかた</th><th>件数</th><th>勝率</th>'
+    +'<th>期待R/回<br><span style="font-weight:400;font-size:10px">（コスト後・95%区間）</span></th></tr></thead><tbody>'
     +keys.map(function(k){
       var a=agg[k], e=a.sum/a.n;
+      // 信頼区間が0をまたぐ間は「まだ分からない」。小さなプラスを優位性と読み違えないため。
+      var lo=a.lo?a.lo/a.n:null, hi=a.hi?a.hi/a.n:null;
+      var undecided=(lo!=null&&hi!=null&&lo<0&&hi>0);
       return '<tr'+(k===best?' style="font-weight:800"':'')+'><td>'+(k===best?'★ ':'')+lab[k]+'</td><td>'
         +a.n+'</td><td>'+Math.round(a.win/a.n*100)+'%</td>'
-        +'<td class="'+(e>=0?'good':'bad')+'">'+(e>=0?'+':'')+e.toFixed(3)+'</td></tr>';
+        +'<td class="'+(undecided?'':(e>=0?'good':'bad'))+'">'+(e>=0?'+':'')+e.toFixed(3)
+        +(lo!=null?'<br><span style="font-size:10px;opacity:.75">'
+            +(lo>=0?'+':'')+lo.toFixed(3)+'〜'+(hi>=0?'+':'')+hi.toFixed(3)
+            +(undecided?' <b>判定不能</b>':'')+'</span>':'')
+        +'</td></tr>';
     }).join('')+'</tbody></table>'
     +'<div class="note">出典: <b>'+escHtml(src.label)+'</b>。同じシグナルに対して<b>出口だけ</b>変えた場合の比較です。'
     +'★が最も期待Rが高い降り方。'
     +(blocked?'上位足と逆行する'+blocked+'件は本番と同じく見送ったうえでの集計です。':'')
+    +'<br>期待Rは<b>往復スプレッド控除後</b>です（1Rが狭いほどコストが重く効きます）。'
+    +'95%区間が0をまたぐ間は、プラスに見えても優位性があるとは言えません。'
     +(deep?'':'<br>※母数が少ないため参考値です。1日1回の長期検証(backtest.json)が生成されると自動でそちらに切り替わります。')
     +'</div>'
     +(allNeg

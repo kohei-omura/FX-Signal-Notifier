@@ -98,6 +98,11 @@ MTF_EMA = (12, 26)             # 上位足のトレンド判定EMA
 HOUR_FILTER_ON = False
 BAD_HOURS = set()   # JSTの時台。HOUR_FILTER_ON=True にする場合のみ使う
 
+# 往復コスト(pips)。index.html の SPREAD と同じ値。バックテストで引かないと
+# 「1Rが数pips」のスキャルほど結果が実態より良く出てしまう。
+SPREAD_PIPS = {"USD_JPY": 0.2, "EUR_JPY": 0.4, "GBP_JPY": 0.9, "AUD_JPY": 0.5}
+DEFAULT_SPREAD_PIPS = 0.5
+
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
 POSITIONS_FILE = "positions.json"
@@ -698,9 +703,11 @@ def compute_signal_stats(symbol):
         sim = _simulate_exit_policies(
             symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
             ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th)
+        # 往復スプレッドは1Rに対する比率で効く。SLが狭いほど重い。
+        cost = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS) / sl_pips if sl_pips else 0.0
         for name, r in sim.items():
-            policy_r.setdefault(name, []).append(r)
-        band_r.setdefault(_score_band(abs(total), th), []).append(sim)
+            policy_r.setdefault(name, []).append((r, cost))
+        band_r.setdefault(_score_band(abs(total), th), []).append((sim, cost))
         i = xj + 1
     nn = len(wins) + len(losses)
     if nn < 8:
@@ -716,12 +723,12 @@ def compute_signal_stats(symbol):
     if blocked:
         out["mtf_blocked"] = blocked          # 上位足フィルタで見送った数
     bands = {}
-    for band, sims in band_r.items():
-        bands[band] = {"n": len(sims)}
+    for band, rows in band_r.items():
+        bands[band] = {"n": len(rows)}
         for name in EXIT_POLICIES:
-            rs = [x[name] for x in sims if name in x]
-            if rs:
-                bands[band][name] = round(sum(rs)/len(rs), 3)
+            nets = [x[name] - c for x, c in rows if name in x]
+            if nets:
+                bands[band][name] = round(sum(nets)/len(nets), 3)   # スプレッド控除後
     if bands:
         out["bands"] = bands
     return out
@@ -803,16 +810,32 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
     return out
 
 
-def _r_summary(rs):
-    """R倍率の並びを 勝率 / 平均R / 期待値 / PF にまとめる。"""
-    n = len(rs)
+def _r_summary(rows):
+    """[(グロスR, 往復コストR)] を 勝率 / 期待R / PF にまとめる。
+
+       avg_r はスプレッド控除後の値。ここを控除しないと、1Rが数pipsのスキャルで
+       実態よりずっと良い数字が出てしまう。
+       ci_lo/ci_hi は期待Rの95%信頼区間。件数が少ないうちに小さなプラスを
+       「優位性あり」と読み違えないための歯止め。"""
+    n = len(rows)
+    if not n:
+        return {"n": 0}
+    rs = [r for r, _ in rows]
+    nets = [r - c for r, c in rows]
     win = [r for r in rs if r > 0]; lose = [r for r in rs if r <= 0]
     gp = sum(win); gl = -sum(lose)
     avg_win = (gp/len(win)) if win else 0.0
     avg_lose = (gl/len(lose)) if lose else 0.0
+    mean = sum(nets)/n
+    var = sum((x-mean)**2 for x in nets)/(n-1) if n > 1 else 0.0
+    se = (var/n) ** 0.5
     return {"n": n,
-            "winrate": round(len(win)/n*100) if n else None,
-            "avg_r": round(sum(rs)/n, 3) if n else None,       # = 1トレードあたり期待R
+            "winrate": round(len(win)/n*100),
+            "avg_r": round(mean, 3),                 # スプレッド控除後の期待R
+            "avg_r_gross": round(sum(rs)/n, 3),      # 控除前
+            "cost_r": round(sum(c for _, c in rows)/n, 3),
+            "ci_lo": round(mean - 1.96*se, 3),
+            "ci_hi": round(mean + 1.96*se, 3),
             "payoff": round(avg_win/avg_lose, 2) if avg_lose else None,
             "pf": round(gp/gl, 2) if gl else None}
 
