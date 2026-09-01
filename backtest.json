@@ -1,0 +1,678 @@
+{
+  "generated_at": "2026-09-02 01:11 JST",
+  "note": "1日1回の長期検証。status.json の統計（直近8日）より母数が多い。",
+  "modes": {
+    "scalp": {
+      "days": 14,
+      "n": 4539,
+      "mtf_blocked": 2384,
+      "policies": {
+        "tp_sl": {
+          "n": 4539,
+          "winrate": 38,
+          "avg_r": -0.055
+        },
+        "advice": {
+          "n": 4539,
+          "winrate": 38,
+          "avg_r": -0.056
+        },
+        "advice_watch": {
+          "n": 4539,
+          "winrate": 61,
+          "avg_r": -0.012
+        }
+      },
+      "bands": {
+        "中(1.2〜1.5倍)": {
+          "n": 1311,
+          "tp_sl": -0.091,
+          "advice": -0.089,
+          "advice_watch": -0.053
+        },
+        "強(1.5倍〜)": {
+          "n": 1014,
+          "tp_sl": -0.034,
+          "advice": -0.035,
+          "advice_watch": 0.015
+        },
+        "弱(1.0〜1.2倍)": {
+          "n": 2214,
+          "tp_sl": -0.045,
+          "advice": -0.045,
+          "advice_watch": 0.0
+        }
+      },
+      "symbols": {
+        "USD_JPY": {
+          "n": 1273,
+          "policies": {
+            "tp_sl": {
+              "n": 1273,
+              "winrate": 41,
+              "avg_r": 0.025,
+              "payoff": 1.5,
+              "pf": 1.04
+            },
+            "advice": {
+              "n": 1273,
+              "winrate": 41,
+              "avg_r": 0.025,
+              "payoff": 1.5,
+              "pf": 1.04
+            },
+            "advice_watch": {
+              "n": 1273,
+              "winrate": 62,
+              "avg_r": 0.04,
+              "payoff": 0.68,
+              "pf": 1.1
+            }
+          },
+          "bands": {
+            "中(1.2〜1.5倍)": {
+              "n": 392,
+              "tp_sl": -0.037,
+              "advice": -0.037,
+              "advice_watch": -0.03
+            },
+            "強(1.5倍〜)": {
+              "n": 331,
+              "tp_sl": -0.011,
+              "advice": -0.013,
+              "advice_watch": 0.058
+            },
+            "弱(1.0〜1.2倍)": {
+              "n": 550,
+              "tp_sl": 0.091,
+              "advice": 0.092,
+              "advice_watch": 0.079
+            }
+          },
+          "mtf_blocked": 594
+        },
+        "EUR_JPY": {
+          "n": 1091,
+          "policies": {
+            "tp_sl": {
+              "n": 1091,
+              "winrate": 36,
+              "avg_r": -0.104,
+              "payoff": 1.5,
+              "pf": 0.84
+            },
+            "advice": {
+              "n": 1091,
+              "winrate": 36,
+              "avg_r": -0.104,
+              "payoff": 1.5,
+              "pf": 0.84
+            },
+            "advice_watch": {
+              "n": 1091,
+              "winrate": 58,
+              "avg_r": -0.057,
+              "payoff": 0.63,
+              "pf": 0.87
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 554,
+              "tp_sl": -0.143,
+              "advice": -0.142,
+              "advice_watch": -0.063
+            },
+            "強(1.5倍〜)": {
+              "n": 229,
+              "tp_sl": -0.083,
+              "advice": -0.081,
+              "advice_watch": -0.048
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 308,
+              "tp_sl": -0.05,
+              "advice": -0.05,
+              "advice_watch": -0.051
+            }
+          },
+          "mtf_blocked": 564
+        },
+        "GBP_JPY": {
+          "n": 1068,
+          "policies": {
+            "tp_sl": {
+              "n": 1068,
+              "winrate": 36,
+              "avg_r": -0.106,
+              "payoff": 1.5,
+              "pf": 0.84
+            },
+            "advice": {
+              "n": 1068,
+              "winrate": 36,
+              "avg_r": -0.107,
+              "payoff": 1.5,
+              "pf": 0.83
+            },
+            "advice_watch": {
+              "n": 1068,
+              "winrate": 60,
+              "avg_r": -0.041,
+              "payoff": 0.61,
+              "pf": 0.9
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 547,
+              "tp_sl": -0.118,
+              "advice": -0.121,
+              "advice_watch": -0.044
+            },
+            "強(1.5倍〜)": {
+              "n": 209,
+              "tp_sl": -0.031,
+              "advice": -0.035,
+              "advice_watch": 0.04
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 312,
+              "tp_sl": -0.135,
+              "advice": -0.129,
+              "advice_watch": -0.089
+            }
+          },
+          "mtf_blocked": 645
+        },
+        "AUD_JPY": {
+          "n": 1107,
+          "policies": {
+            "tp_sl": {
+              "n": 1107,
+              "winrate": 38,
+              "avg_r": -0.051,
+              "payoff": 1.5,
+              "pf": 0.92
+            },
+            "advice": {
+              "n": 1107,
+              "winrate": 38,
+              "avg_r": -0.051,
+              "payoff": 1.5,
+              "pf": 0.92
+            },
+            "advice_watch": {
+              "n": 1107,
+              "winrate": 62,
+              "avg_r": 0.001,
+              "payoff": 0.62,
+              "pf": 1.0
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 563,
+              "tp_sl": -0.01,
+              "advice": -0.01,
+              "advice_watch": 0.029
+            },
+            "強(1.5倍〜)": {
+              "n": 245,
+              "tp_sl": -0.02,
+              "advice": -0.02,
+              "advice_watch": -0.007
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 299,
+              "tp_sl": -0.156,
+              "advice": -0.155,
+              "advice_watch": -0.046
+            }
+          },
+          "mtf_blocked": 581
+        }
+      }
+    },
+    "day": {
+      "days": 60,
+      "n": 647,
+      "mtf_blocked": 68,
+      "policies": {
+        "tp_sl": {
+          "n": 647,
+          "winrate": 36,
+          "avg_r": -0.052
+        },
+        "advice": {
+          "n": 647,
+          "winrate": 38,
+          "avg_r": -0.038
+        },
+        "advice_watch": {
+          "n": 647,
+          "winrate": 63,
+          "avg_r": -0.037
+        }
+      },
+      "bands": {
+        "弱(1.0〜1.2倍)": {
+          "n": 400,
+          "tp_sl": -0.097,
+          "advice": -0.089,
+          "advice_watch": -0.052
+        },
+        "中(1.2〜1.5倍)": {
+          "n": 123,
+          "tp_sl": -0.049,
+          "advice": -0.033,
+          "advice_watch": -0.069
+        },
+        "強(1.5倍〜)": {
+          "n": 124,
+          "tp_sl": 0.091,
+          "advice": 0.123,
+          "advice_watch": 0.045
+        }
+      },
+      "symbols": {
+        "USD_JPY": {
+          "n": 176,
+          "policies": {
+            "tp_sl": {
+              "n": 176,
+              "winrate": 37,
+              "avg_r": -0.04,
+              "payoff": 1.6,
+              "pf": 0.94
+            },
+            "advice": {
+              "n": 176,
+              "winrate": 39,
+              "avg_r": -0.008,
+              "payoff": 1.57,
+              "pf": 0.99
+            },
+            "advice_watch": {
+              "n": 176,
+              "winrate": 63,
+              "avg_r": -0.035,
+              "payoff": 0.53,
+              "pf": 0.91
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 101,
+              "tp_sl": -0.048,
+              "advice": -0.0,
+              "advice_watch": -0.046
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 38,
+              "tp_sl": 0.026,
+              "advice": 0.037,
+              "advice_watch": -0.182
+            },
+            "強(1.5倍〜)": {
+              "n": 37,
+              "tp_sl": -0.086,
+              "advice": -0.075,
+              "advice_watch": 0.146
+            }
+          },
+          "mtf_blocked": 31
+        },
+        "EUR_JPY": {
+          "n": 143,
+          "policies": {
+            "tp_sl": {
+              "n": 143,
+              "winrate": 38,
+              "avg_r": -0.018,
+              "payoff": 1.6,
+              "pf": 0.97
+            },
+            "advice": {
+              "n": 143,
+              "winrate": 39,
+              "avg_r": -0.01,
+              "payoff": 1.53,
+              "pf": 0.98
+            },
+            "advice_watch": {
+              "n": 143,
+              "winrate": 62,
+              "avg_r": -0.043,
+              "payoff": 0.55,
+              "pf": 0.89
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 87,
+              "tp_sl": -0.044,
+              "advice": -0.054,
+              "advice_watch": -0.007
+            },
+            "強(1.5倍〜)": {
+              "n": 29,
+              "tp_sl": 0.255,
+              "advice": 0.259,
+              "advice_watch": -0.041
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 27,
+              "tp_sl": -0.23,
+              "advice": -0.156,
+              "advice_watch": -0.163
+            }
+          },
+          "mtf_blocked": 13
+        },
+        "GBP_JPY": {
+          "n": 164,
+          "policies": {
+            "tp_sl": {
+              "n": 164,
+              "winrate": 36,
+              "avg_r": -0.065,
+              "payoff": 1.6,
+              "pf": 0.9
+            },
+            "advice": {
+              "n": 164,
+              "winrate": 37,
+              "avg_r": -0.055,
+              "payoff": 1.54,
+              "pf": 0.91
+            },
+            "advice_watch": {
+              "n": 164,
+              "winrate": 62,
+              "avg_r": -0.062,
+              "payoff": 0.52,
+              "pf": 0.84
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 106,
+              "tp_sl": -0.117,
+              "advice": -0.126,
+              "advice_watch": -0.121
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 34,
+              "tp_sl": -0.082,
+              "advice": -0.108,
+              "advice_watch": -0.005
+            },
+            "強(1.5倍〜)": {
+              "n": 24,
+              "tp_sl": 0.192,
+              "advice": 0.336,
+              "advice_watch": 0.119
+            }
+          },
+          "mtf_blocked": 13
+        },
+        "AUD_JPY": {
+          "n": 164,
+          "policies": {
+            "tp_sl": {
+              "n": 164,
+              "winrate": 35,
+              "avg_r": -0.08,
+              "payoff": 1.6,
+              "pf": 0.88
+            },
+            "advice": {
+              "n": 164,
+              "winrate": 36,
+              "avg_r": -0.078,
+              "payoff": 1.56,
+              "pf": 0.88
+            },
+            "advice_watch": {
+              "n": 164,
+              "winrate": 65,
+              "avg_r": -0.008,
+              "payoff": 0.53,
+              "pf": 0.98
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 106,
+              "tp_sl": -0.166,
+              "advice": -0.167,
+              "advice_watch": -0.027
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 24,
+              "tp_sl": 0.083,
+              "advice": 0.1,
+              "advice_watch": 0.126
+            },
+            "強(1.5倍〜)": {
+              "n": 34,
+              "tp_sl": 0.071,
+              "advice": 0.071,
+              "advice_watch": -0.043
+            }
+          },
+          "mtf_blocked": 11
+        }
+      }
+    },
+    "swing": {
+      "days": 120,
+      "n": 125,
+      "mtf_blocked": 0,
+      "policies": {
+        "tp_sl": {
+          "n": 125,
+          "winrate": 30,
+          "avg_r": -0.171
+        },
+        "advice": {
+          "n": 125,
+          "winrate": 40,
+          "avg_r": -0.079
+        },
+        "advice_watch": {
+          "n": 125,
+          "winrate": 76,
+          "avg_r": 0.044
+        }
+      },
+      "bands": {
+        "弱(1.0〜1.2倍)": {
+          "n": 108,
+          "tp_sl": -0.144,
+          "advice": -0.057,
+          "advice_watch": 0.041
+        },
+        "中(1.2〜1.5倍)": {
+          "n": 15,
+          "tp_sl": -0.253,
+          "advice": -0.115,
+          "advice_watch": 0.119
+        },
+        "強(1.5倍〜)": {
+          "n": 2,
+          "tp_sl": -1.0,
+          "advice": -1.0,
+          "advice_watch": -0.372
+        }
+      },
+      "symbols": {
+        "USD_JPY": {
+          "n": 42,
+          "policies": {
+            "tp_sl": {
+              "n": 42,
+              "winrate": 29,
+              "avg_r": -0.2,
+              "payoff": 1.8,
+              "pf": 0.72
+            },
+            "advice": {
+              "n": 42,
+              "winrate": 40,
+              "avg_r": -0.15,
+              "payoff": 1.1,
+              "pf": 0.75
+            },
+            "advice_watch": {
+              "n": 42,
+              "winrate": 79,
+              "avg_r": 0.041,
+              "payoff": 0.33,
+              "pf": 1.19
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 36,
+              "tp_sl": -0.144,
+              "advice": -0.178,
+              "advice_watch": -0.008
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 6,
+              "tp_sl": -0.533,
+              "advice": 0.023,
+              "advice_watch": 0.339
+            }
+          },
+          "mtf_blocked": null
+        },
+        "EUR_JPY": {
+          "n": 23,
+          "policies": {
+            "tp_sl": {
+              "n": 23,
+              "winrate": 26,
+              "avg_r": -0.27,
+              "payoff": 1.8,
+              "pf": 0.64
+            },
+            "advice": {
+              "n": 23,
+              "winrate": 26,
+              "avg_r": -0.27,
+              "payoff": 1.8,
+              "pf": 0.64
+            },
+            "advice_watch": {
+              "n": 23,
+              "winrate": 61,
+              "avg_r": -0.162,
+              "payoff": 0.38,
+              "pf": 0.59
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 23,
+              "tp_sl": -0.27,
+              "advice": -0.27,
+              "advice_watch": -0.162
+            }
+          },
+          "mtf_blocked": null
+        },
+        "GBP_JPY": {
+          "n": 37,
+          "policies": {
+            "tp_sl": {
+              "n": 37,
+              "winrate": 30,
+              "avg_r": -0.168,
+              "payoff": 1.8,
+              "pf": 0.76
+            },
+            "advice": {
+              "n": 37,
+              "winrate": 49,
+              "avg_r": 0.102,
+              "payoff": 1.27,
+              "pf": 1.2
+            },
+            "advice_watch": {
+              "n": 37,
+              "winrate": 78,
+              "avg_r": 0.115,
+              "payoff": 0.42,
+              "pf": 1.53
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 28,
+              "tp_sl": -0.2,
+              "advice": 0.202,
+              "advice_watch": 0.169
+            },
+            "強(1.5倍〜)": {
+              "n": 2,
+              "tp_sl": -1.0,
+              "advice": -1.0,
+              "advice_watch": -0.372
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 7,
+              "tp_sl": 0.2,
+              "advice": 0.02,
+              "advice_watch": 0.042
+            }
+          },
+          "mtf_blocked": null
+        },
+        "AUD_JPY": {
+          "n": 23,
+          "policies": {
+            "tp_sl": {
+              "n": 23,
+              "winrate": 35,
+              "avg_r": -0.026,
+              "payoff": 1.8,
+              "pf": 0.96
+            },
+            "advice": {
+              "n": 23,
+              "winrate": 39,
+              "avg_r": -0.05,
+              "payoff": 1.43,
+              "pf": 0.92
+            },
+            "advice_watch": {
+              "n": 23,
+              "winrate": 83,
+              "avg_r": 0.139,
+              "payoff": 0.38,
+              "pf": 1.8
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 21,
+              "tp_sl": 0.067,
+              "advice": 0.04,
+              "advice_watch": 0.178
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 2,
+              "tp_sl": -1.0,
+              "advice": -1.0,
+              "advice_watch": -0.271
+            }
+          },
+          "mtf_blocked": null
+        }
+      }
+    }
+  }
+}
