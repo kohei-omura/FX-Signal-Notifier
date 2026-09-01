@@ -123,9 +123,15 @@ _kline_lock = threading.Lock()
 _kline_locks = {}
 
 
-def warn(msg, tag=None):
-    """警告を出しつつ記録する。status.json 経由で画面にも出す（黙って劣化させない）。"""
+def warn(msg, tag=None, surface=True):
+    """警告をログに出す。surface=True のものだけ status.json 経由で画面にも出す。
+
+       画面に出すのは「ユーザーが見ているものが実際に劣化した時」だけにする。
+       内部のリトライやフォールバックで自動的に埋め合わせが効く失敗まで出すと、
+       正常に動いているのにエラーが出ているように見えてしまう。"""
     print(f"[WARN] {msg}", file=sys.stderr)
+    if not surface:
+        return
     with _warn_lock:
         if tag and any(w.get("tag") == tag for w in _WARNINGS):
             return
@@ -175,7 +181,9 @@ def api_get(path, params=None, retries=3, timeout=API_TIMEOUT, quiet=False):
                 if j.get("status") == 0:
                     _fail_streak[0] = 0
                     return j
-                last = f"status={j.get('status')} {str(j.get('messages'))[:80]}"
+                # status も messages も無い想定外の応答は、中身そのものを残さないと後で追えない
+                detail = j.get("messages") if j.get("messages") is not None else j
+                last = f"status={j.get('status')} {str(detail)[:120]}"
         except Exception as e:
             last = f"{type(e).__name__}: {e}"
         if n < retries:
@@ -183,8 +191,7 @@ def api_get(path, params=None, retries=3, timeout=API_TIMEOUT, quiet=False):
     _fail_streak[0] += 1
     if _fail_streak[0] == API_BREAKER_AFTER:
         warn(f"API連続失敗{API_BREAKER_AFTER}回。以降は再試行を打ち切って早く抜ける", tag="breaker")
-    if not quiet:
-        warn(f"API失敗 {path} {params or ''}: {last}", tag=f"api:{path}")
+    warn(f"API失敗 {path} {params or ''}: {last}", tag=f"api:{path}", surface=not quiet)
     return None
 
 
@@ -203,8 +210,10 @@ def klines_day(symbol, datestr, interval=None):
         if hit is not None:
             return hit
         rows = {}
+        # 1日ぶんが取れなくても前日以前で埋まるので、ここでは画面に出さない（ログには残る）。
+        # 例: JSTの日付が変わった直後は当日ぶんがまだ無く、毎日必ず1回は空振りする。
         j = api_get("/klines", {"symbol": symbol, "priceType": PRICE_TYPE,
-                                "interval": interval, "date": datestr})
+                                "interval": interval, "date": datestr}, quiet=True)
         if j:
             for k in j.get("data", []):
                 rows[int(k["openTime"])] = (float(k["high"]), float(k["low"]), float(k["close"]))
@@ -796,6 +805,9 @@ def htf_trend(symbol, interval):
         rows.update(_htf_closes(symbol, interval, [{"date": str(today.year - 1)}]))
     closes = [rows[t] for t in sorted(rows)]
     if len(closes) < need:
+        # ここで0を返すと「レンジ」と区別が付かず、上位足フィルタが黙って効かなくなる
+        warn(f"{symbol} の{interval}足が{len(closes)}本しか取れず、上位足の判定ができません",
+             tag=f"mtf:{interval}")
         return 0
     ef = ema_series(closes, ef_p); es = ema_series(closes, es_p)
     if ef[-1] > es[-1] and ef[-1] > ef[-2]:

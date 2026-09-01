@@ -132,11 +132,13 @@ class PriceOutageTest(RunTestCase):
         self.assertEqual(len(before["open_positions"]), 1)
 
         self.reset_caches()
+        # del してしまうとモジュール本体の関数ごと消え、後続のテストが壊れる。必ず元に戻す。
+        original = F.fetch_ticker
         F.fetch_ticker = lambda *a, **k: (F.warn("ticker失敗", tag="ticker") or {})
         try:
             F.main()
         finally:
-            del F.fetch_ticker
+            F.fetch_ticker = original
         after = self.status()
         self.assertEqual([p["bid"] for p in after["pairs"]], [p["bid"] for p in before["pairs"]])
         self.assertEqual(after["open_positions"], before["open_positions"])
@@ -184,6 +186,69 @@ class ApiFailureTest(RunTestCase):
         # ブレーカー無しなら失敗1件につき2回眠るので、待ち時間の合計が数分になる
         self.assertLess(sum(self.slept), 30,
                         f"サーキットブレーカーが効いていない（合計{sum(self.slept)}秒待機）")
+
+
+class WarningSeverityTest(RunTestCase):
+    """画面に出す警告は『実際に表示が劣化した時』だけにする。
+       内部のフォールバックで埋め合わせが効く失敗まで出すと、正常なのにエラーに見える。"""
+
+    def setUp(self):
+        super().setUp()
+        import datetime
+        self._write_fresh_calendar()
+        self.today = datetime.datetime.now(F.JST).date().strftime("%Y%m%d")
+
+    def _write_fresh_calendar(self):
+        import datetime
+        self.write(F.NEWS_FILE, {
+            "generated_at": datetime.datetime.now(F.JST).strftime("%Y-%m-%d %H:%M JST"),
+            "events": [{"country": "USD", "time": "2030-01-01 00:00", "title": "x"}]})
+
+    def test_missing_current_day_does_not_alarm(self):
+        """JSTの日付が変わった直後は当日ぶんの足がまだ無く毎日必ず空振りする。
+        前日以前で埋まるので、これを画面のエラーとして出してはいけない。"""
+        def newday(url, params):
+            if url.endswith("/klines") and params.get("date") == self.today:
+                return mock_api.Resp({})        # status も messages も無い応答
+            return None
+        mock_api.fail_mode = newday
+        F.main()
+        st = self.status()
+        self.assertTrue(all(p["bid"] for p in st["pairs"]), "価格が欠けた")
+        self.assertTrue(all(p.get("closes") for p in st["pairs"]), "ローソク足が欠けた")
+        tags = [w["tag"] for w in st.get("warnings", [])]
+        self.assertNotIn("api:/klines", tags, "自動で埋まる失敗を画面に出している")
+
+    def test_total_kline_outage_does_alarm(self):
+        """逆に、本当に1本も取れない時はきちんと画面に出すこと。"""
+        def dead(url, params):
+            return mock_api.Resp({}) if url.endswith("/klines") else None
+        mock_api.fail_mode = dead
+        F.main()
+        tags = [w["tag"] for w in F._WARNINGS]
+        self.assertTrue(any(t.startswith("ohlc:") for t in tags), f"足の欠損が出ていない: {tags}")
+        self.assertTrue(any(t.startswith("mtf:") for t in tags), f"上位足の欠損が出ていない: {tags}")
+
+    def test_unexpected_body_is_logged_not_swallowed(self):
+        """status も messages も無い応答は、中身を残さないと後から原因を追えない。"""
+        seen = []
+        real_warn = F.warn
+        F.warn = lambda m, tag=None, surface=True: (seen.append(m), real_warn(m, tag, False))
+        try:
+            mock_api.fail_mode = lambda url, params: (
+                mock_api.Resp({"foo": "bar"}) if url.endswith("/klines") else None)
+            F.klines_day("USD_JPY", self.today)
+        finally:
+            F.warn = real_warn
+        self.assertTrue(any("foo" in m for m in seen),
+                        f"応答の中身がログに残っていない: {seen[:2]}")
+
+    def test_surface_false_keeps_it_off_the_dashboard(self):
+        F.warn("画面には出さない", tag="quiet-one", surface=False)
+        F.warn("画面に出す", tag="loud-one")
+        tags = [w["tag"] for w in F._WARNINGS]
+        self.assertNotIn("quiet-one", tags)
+        self.assertIn("loud-one", tags)
 
 
 class NewsCalendarTest(RunTestCase):
