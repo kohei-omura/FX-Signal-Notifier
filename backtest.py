@@ -20,6 +20,29 @@ MODES = [m.strip() for m in os.environ.get("BACKTEST_MODES", "scalp,day,swing").
 OUT = "backtest.json"
 
 
+def pool_summary(parts):
+    """通貨ごとの集計を1つにまとめる。
+
+       期待Rは件数で重み付けした平均でよいが、信頼区間は各通貨の区間を平均しても
+       正しくない。全体の分散＝群内分散＋群間分散（全分散の法則）で出し直す。"""
+    n = sum(p["n"] for p in parts)
+    if not n:
+        return {"n": 0}
+    mean = sum(p["avg_r"] * p["n"] for p in parts) / n
+    within = sum((p["n"] - 1) * (p.get("sd", 0.0) ** 2) for p in parts)
+    between = sum(p["n"] * (p["avg_r"] - mean) ** 2 for p in parts)
+    var = (within + between) / (n - 1) if n > 1 else 0.0
+    se = (var / n) ** 0.5
+    return {"n": n,
+            "winrate": round(sum((p.get("winrate") or 0) * p["n"] for p in parts) / n),
+            "avg_r": round(mean, 3),
+            "avg_r_gross": round(sum(p.get("avg_r_gross", p["avg_r"]) * p["n"] for p in parts) / n, 3),
+            "cost_r": round(sum(p.get("cost_r", 0.0) * p["n"] for p in parts) / n, 3),
+            "sd": round(var ** 0.5, 4),
+            "ci_lo": round(mean - 1.96 * se, 3),
+            "ci_hi": round(mean + 1.96 * se, 3)}
+
+
 def run_mode(mode):
     days, cap = WINDOWS.get(mode, (60, 6000))
     F.MODE = mode
@@ -45,8 +68,8 @@ def run_mode(mode):
         n_all += st["n"]
         blocked += st.get("mtf_blocked") or 0
         for k, v in (st.get("policies") or {}).items():
-            a = total_pol.setdefault(k, {"n": 0, "r": 0.0, "w": 0.0})
-            a["n"] += v["n"]; a["r"] += v["avg_r"] * v["n"]; a["w"] += (v["winrate"] or 0)/100 * v["n"]
+            a = total_pol.setdefault(k, {"parts": []})
+            a["parts"].append(v)
         for bn, b in (st.get("bands") or {}).items():
             t = total_band.setdefault(bn, {"n": 0})
             t["n"] += b["n"]
@@ -56,8 +79,7 @@ def run_mode(mode):
 
     if not symbols:
         return None
-    pol = {k: {"n": a["n"], "winrate": round(a["w"]/a["n"]*100),
-               "avg_r": round(a["r"]/a["n"], 3)} for k, a in total_pol.items() if a["n"]}
+    pol = {k: pool_summary(a["parts"]) for k, a in total_pol.items() if a["parts"]}
     band = {}
     for bn, t in total_band.items():
         band[bn] = {"n": t["n"]}

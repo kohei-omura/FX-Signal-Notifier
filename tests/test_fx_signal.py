@@ -507,6 +507,31 @@ class LongBacktestTest(RunTestCase):
         self.bt.run_mode("day")
         self.assertEqual((F.TECH_W, F.FUND_W), (0.85, 0.15))
 
+    def test_pooled_ci_matches_the_raw_data(self):
+        """通貨をまたいだ信頼区間が、生データから直接計算したものと一致すること
+        （各通貨の区間を平均するだけでは正しくない）。"""
+        import random
+        rnd = random.Random(5)
+        groups, allrows = [], []
+        for _ in range(4):
+            rows = [(rnd.choice([1.6, -1.0]), 0.05) for _ in range(120)]
+            groups.append(F._r_summary(rows)); allrows += rows
+        pooled = self.bt.pool_summary(groups)
+        direct = F._r_summary(allrows)
+        self.assertEqual(pooled["n"], direct["n"])
+        self.assertAlmostEqual(pooled["avg_r"], direct["avg_r"], places=3)
+        self.assertAlmostEqual(pooled["ci_lo"], direct["ci_lo"], places=2)
+        self.assertAlmostEqual(pooled["ci_hi"], direct["ci_hi"], places=2)
+
+    def test_report_carries_cost_and_ci(self):
+        self.bt.MODES = ["day"]
+        self.bt.main()
+        pol = self.read(self.out)["modes"]["day"]["policies"]["tp_sl"]
+        for k in ("cost_r", "ci_lo", "ci_hi", "avg_r_gross"):
+            self.assertIn(k, pol, f"{k} が集計で落ちている")
+        self.assertLessEqual(pol["ci_lo"], pol["avg_r"])
+        self.assertGreaterEqual(pol["ci_hi"], pol["avg_r"])
+
     def test_failure_keeps_previous_report(self):
         """集計できない時に既存のレポートを壊さないこと。"""
         self.write(self.out, {"keep": True})

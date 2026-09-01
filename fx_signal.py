@@ -834,6 +834,7 @@ def _r_summary(rows):
             "avg_r": round(mean, 3),                 # スプレッド控除後の期待R
             "avg_r_gross": round(sum(rs)/n, 3),      # 控除前
             "cost_r": round(sum(c for _, c in rows)/n, 3),
+            "sd": round(var ** 0.5, 4),              # 通貨をまたいで合算する時に要る
             "ci_lo": round(mean - 1.96*se, 3),
             "ci_hi": round(mean + 1.96*se, 3),
             "payoff": round(avg_win/avg_lose, 2) if avg_lose else None,
