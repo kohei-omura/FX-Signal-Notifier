@@ -458,6 +458,29 @@ class ExitPolicyTest(RunTestCase):
         self.assertLess(p["avg_r"], p["avg_r_gross"])
 
 
+class SpreadCostTest(RunTestCase):
+    """スプレッドが1R(SL幅)に占める割合。実測では scalp が0.347Rで、
+       勝率が10pt上がっても取り返せない水準だった。黙って通知を出し続けない。"""
+
+    def test_cost_ratio_is_published_per_pair(self):
+        F.main()
+        for p in self.status()["pairs"]:
+            self.assertIsNotNone(p.get("cost_r"), f"{p['symbol']} にコスト比率が無い")
+            self.assertGreater(p["cost_r"], 0)
+
+    def test_narrow_stop_mode_warns(self):
+        """SL幅が狭すぎるモードでは警告を出すこと。"""
+        self.write(F.MODE_FILE, {"mode": "scalp"})     # 1分足＝SLが最も狭い
+        F.main()
+        self.assertIn("cost", [w["tag"] for w in F._WARNINGS],
+                      "コスト過大なのに警告が出ていない")
+
+    def test_wide_stop_mode_is_quiet(self):
+        self.write(F.MODE_FILE, {"mode": "swing"})     # 1時間足＝SLが広い
+        F.main()
+        self.assertNotIn("cost", [w["tag"] for w in F._WARNINGS])
+
+
 class LongBacktestTest(RunTestCase):
     """長期バックテスト(backtest.py)。判定に優位性があるかを見るための母数を確保する。"""
 
