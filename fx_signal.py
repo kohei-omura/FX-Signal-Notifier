@@ -733,7 +733,8 @@ def load_prev_stats():
             if p.get("stats_ts"):
                 out[p["symbol"]] = {"n": p.get("stats_n"), "tp_winrate": p.get("tp_winrate"),
                                     "hold_tp_min": p.get("hold_tp_min"), "hold_sl_min": p.get("hold_sl_min"),
-                                    "stats_ts": p.get("stats_ts"), "stats_mode": p.get("stats_mode")}
+                                    "stats_ts": p.get("stats_ts"), "stats_mode": p.get("stats_mode"),
+                                    "policies": p.get("policies")}
     except Exception:
         pass
     return out
@@ -1240,6 +1241,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             pair.update({"hold_tp_min":st.get("hold_tp_min"), "hold_sl_min":st.get("hold_sl_min"),
                          "tp_winrate":st.get("tp_winrate"), "stats_n":st.get("n"),
                          "stats_ts":st.get("stats_ts"), "stats_mode":st.get("stats_mode")})
+            if st.get("policies"):
+                pair["policies"] = st["policies"]      # 決済ポリシー比較（画面が読む）
         pairs.append(pair)
 
         if market_open and sig and entry and sig != (prev_signals or {}).get(sym):

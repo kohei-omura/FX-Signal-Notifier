@@ -313,6 +313,22 @@ class ExitPolicyTest(RunTestCase):
         for k in ("n", "tp_winrate", "hold_tp_min", "hold_sl_min", "stats_ts", "stats_mode"):
             self.assertIn(k, st)
 
+    def test_policies_reach_status_json(self):
+        """画面が読むのは status.json なので、pairs に policies が載ること。"""
+        F.main()
+        st = self.status()
+        self.assertTrue(any("policies" in p for p in st["pairs"]),
+                        "status.json の pairs に policies が無い（画面に何も出ない）")
+
+    def test_policies_survive_the_stats_cache(self):
+        """統計キャッシュ経由でも policies が消えないこと（消えると1時間表示が空になる）。"""
+        F.main()
+        self.reset_caches()
+        F.main()                       # 2回目はキャッシュを使う経路
+        st = self.status()
+        self.assertTrue(any("policies" in p for p in st["pairs"]),
+                        "キャッシュ経由で policies が落ちている")
+
     def test_r_summary_math(self):
         s = F._r_summary([1.6, 1.6, -1.0, -1.0, -1.0])
         self.assertEqual(s["n"], 5)
