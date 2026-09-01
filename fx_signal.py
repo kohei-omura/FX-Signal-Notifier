@@ -4,7 +4,7 @@
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
 """
 
-import os, sys, json, math, time, smtplib, datetime, threading
+import os, sys, json, math, time, bisect, smtplib, datetime, threading
 from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from email.utils import formatdate
@@ -561,6 +561,11 @@ def _score_pair_uncached(symbol, ohlc):
 # ---------------- シグナル統計（想定保有時間・TP勝率） ----------------
 def get_ohlc_hist(symbol, days, cap):
     """統計用の長めの足。日次キャッシュ経由なので get_ohlc が取った日は取り直さない。"""
+    return get_ohlc_hist_timed(symbol, days, cap)[1]
+
+
+def get_ohlc_hist_timed(symbol, days, cap):
+    """(時刻リスト, 足リスト) を返す。上位足との突き合わせに時刻が要る。"""
     today = datetime.datetime.now(JST).date()
     rows = {}
     for back in range(0, days+2):
@@ -568,8 +573,56 @@ def get_ohlc_hist(symbol, days, cap):
         rows.update(klines_day(symbol, d.strftime("%Y%m%d")))
         if len(rows) >= cap:
             break
-    out = [rows[t] for t in sorted(rows)]
-    return out[-cap:] if len(out) > cap else out
+    ts = sorted(rows)
+    if len(ts) > cap:
+        ts = ts[-cap:]
+    return ts, [rows[t] for t in ts]
+
+
+def _htf_window_closes(symbol, interval, days):
+    """バックテスト期間ぶんの上位足終値。klines_day のキャッシュを共有する。"""
+    today = datetime.datetime.now(JST).date()
+    if interval in ("4hour", "8hour", "12hour", "1day"):
+        keys = [{"date": str(today.year)}, {"date": str(today.year - 1)}]
+    else:
+        keys = [{"date": (today - datetime.timedelta(days=b)).strftime("%Y%m%d")}
+                for b in range(0, days + 2)]
+    return _htf_closes(symbol, interval, keys)
+
+
+def htf_aligned_series(symbol, times, days):
+    """各時刻における上位足の一致方向(1/-1/0)。htf_trend と同じ判定を過去に当てる。
+
+       ただし『その時点で終値が確定しているバー』だけを使う。ライブは形成中のバーを
+       見ているが、過去に対して同じことをすると未来の終値を覗くことになるため。"""
+    if MTF_MODE == "off" or not times:
+        return [0] * len(times)
+    ef_p, es_p = MTF_EMA
+    per_tf = []
+    for tf in MTF_TFS:
+        rows = _htf_window_closes(symbol, tf, days)
+        ts = sorted(rows)
+        closes = [rows[t] for t in ts]
+        ef, es = ema_series(closes, ef_p), ema_series(closes, es_p)
+        tr = []
+        for i in range(len(ts)):
+            if i < 1 or ef[i] is None or es[i] is None or ef[i-1] is None:
+                tr.append(0)
+            elif ef[i] > es[i] and ef[i] > ef[i-1]:
+                tr.append(1)
+            elif ef[i] < es[i] and ef[i] < ef[i-1]:
+                tr.append(-1)
+            else:
+                tr.append(0)
+        per_tf.append((ts, tr, BARMIN.get(tf, 60) * 60000))
+    out = []
+    for t in times:
+        vals = []
+        for ts, tr, dur in per_tf:
+            i = bisect.bisect_right(ts, t - dur) - 1      # 終値が確定している最後のバー
+            vals.append(tr[i] if 0 <= i < len(tr) else 0)
+        out.append(vals[0] if (vals and all(v == vals[0] and v != 0 for v in vals)) else 0)
+    return out
 
 
 def _median(a):
@@ -584,10 +637,14 @@ def compute_signal_stats(symbol):
        指標はバーごとに作り直さず、全バーぶんを1回だけ計算して参照する（O(n^2)→O(n)）。
        判定式は _compose_score に一本化してあるのでライブ判定と必ず一致する。"""
     days = STATS_DAYS.get(MODE, 3); cap = STATS_MAX_BARS.get(MODE, 1000)
-    oh = get_ohlc_hist(symbol, days, cap)
+    times, oh = get_ohlc_hist_timed(symbol, days, cap)
     if len(oh) < 120:
         return None
     closes = [r[2] for r in oh]
+    # 本番は上位足と逆行するシグナルを通知しない。ここで同じ条件にしないと
+    # 「実際には届かないシグナル」まで混ざった数字になり、比較の意味が無くなる。
+    aligned_s = htf_aligned_series(symbol, times, days)
+    blocked = 0
     warm = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 5
     min_len = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2
     bar_min = BARMIN.get(P["interval"], 1)
@@ -597,7 +654,7 @@ def compute_signal_stats(symbol):
     bb_s = bb_series(closes, P["bb"][0], P["bb"][1])
     atr_s = atr_series(oh, P["atr"]); adx_s = adx_series(oh, P["adx"])
     wins, losses = [], []
-    policy_r = {}
+    policy_r = {}; band_r = {}
     n = len(oh); i = warm
     while i < n-1:
         side = None
@@ -610,6 +667,11 @@ def compute_signal_stats(symbol):
                 side = "買い" if total >= th else ("売り" if total <= -th else None)
         if not side:
             i += 1; continue
+        want = 1 if side == "買い" else -1
+        al = aligned_s[i] if i < len(aligned_s) else 0
+        if (MTF_MODE == "block_opposite" and al == -want) or \
+           (MTF_MODE == "filter" and al != want):
+            blocked += 1; i += 1; continue          # 本番と同じく見送る
         sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
         tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
         entry = closes[i]
@@ -633,10 +695,12 @@ def compute_signal_stats(symbol):
         (wins if res == "tp" else losses).append(xj - i)
         # 同じシグナルを別の決済ポリシーで回した場合のRも記録する（比較の公平性のため
         # エントリー地点は共通、出口だけ変える）
-        for name, r in _simulate_exit_policies(
-                symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
-                ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th).items():
+        sim = _simulate_exit_policies(
+            symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
+            ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th)
+        for name, r in sim.items():
             policy_r.setdefault(name, []).append(r)
+        band_r.setdefault(_score_band(abs(total), th), []).append(sim)
         i = xj + 1
     nn = len(wins) + len(losses)
     if nn < 8:
@@ -649,7 +713,29 @@ def compute_signal_stats(symbol):
     pol = {k: _r_summary(v) for k, v in policy_r.items() if v}
     if pol:
         out["policies"] = pol
+    if blocked:
+        out["mtf_blocked"] = blocked          # 上位足フィルタで見送った数
+    bands = {}
+    for band, sims in band_r.items():
+        bands[band] = {"n": len(sims)}
+        for name in EXIT_POLICIES:
+            rs = [x[name] for x in sims if name in x]
+            if rs:
+                bands[band][name] = round(sum(rs)/len(rs), 3)
+    if bands:
+        out["bands"] = bands
     return out
+
+
+# スコアの強さ別に分ける。しきい値の何倍かで見る（モードが変わっても意味が保てる）。
+SCORE_BANDS = ((1.5, "強(1.5倍〜)"), (1.2, "中(1.2〜1.5倍)"), (1.0, "弱(1.0〜1.2倍)"))
+
+
+def _score_band(abs_score, th):
+    for mult, label in SCORE_BANDS:
+        if abs_score >= th * mult:
+            return label
+    return SCORE_BANDS[-1][1]
 
 
 # ===== 決済ポリシーの比較 =====
@@ -743,7 +829,8 @@ def load_prev_stats():
                 out[p["symbol"]] = {"n": p.get("stats_n"), "tp_winrate": p.get("tp_winrate"),
                                     "hold_tp_min": p.get("hold_tp_min"), "hold_sl_min": p.get("hold_sl_min"),
                                     "stats_ts": p.get("stats_ts"), "stats_mode": p.get("stats_mode"),
-                                    "policies": p.get("policies")}
+                                    "policies": p.get("policies"), "bands": p.get("bands"),
+                                    "mtf_blocked": p.get("mtf_blocked")}
     except Exception:
         pass
     return out
@@ -1253,8 +1340,9 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             pair.update({"hold_tp_min":st.get("hold_tp_min"), "hold_sl_min":st.get("hold_sl_min"),
                          "tp_winrate":st.get("tp_winrate"), "stats_n":st.get("n"),
                          "stats_ts":st.get("stats_ts"), "stats_mode":st.get("stats_mode")})
-            if st.get("policies"):
-                pair["policies"] = st["policies"]      # 決済ポリシー比較（画面が読む）
+            for k in ("policies", "bands", "mtf_blocked"):
+                if st.get(k) is not None:
+                    pair[k] = st[k]                    # 決済ポリシー比較・スコア帯別（画面が読む）
         pairs.append(pair)
 
         if market_open and sig and entry and sig != (prev_signals or {}).get(sym):
