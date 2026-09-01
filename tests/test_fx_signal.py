@@ -433,12 +433,29 @@ class ExitPolicyTest(RunTestCase):
                     self.assertIsInstance(b[name], float)
 
     def test_r_summary_math(self):
-        s = F._r_summary([1.6, 1.6, -1.0, -1.0, -1.0])
+        rows = [(1.6, 0.0), (1.6, 0.0), (-1.0, 0.0), (-1.0, 0.0), (-1.0, 0.0)]
+        s = F._r_summary(rows)
         self.assertEqual(s["n"], 5)
         self.assertEqual(s["winrate"], 40)
         self.assertAlmostEqual(s["payoff"], 1.6, places=2)
         self.assertAlmostEqual(s["avg_r"], 0.04, places=3)
         self.assertAlmostEqual(s["pf"], 3.2/3.0, places=2)
+        self.assertLess(s["ci_lo"], s["avg_r"])
+        self.assertGreater(s["ci_hi"], s["avg_r"])
+
+    def test_spread_is_deducted(self):
+        """往復スプレッドを引くこと。引かないとSLが狭いほど数字が実態より良く出る。"""
+        s = F._r_summary([(1.6, 0.1), (-1.0, 0.1)])
+        self.assertAlmostEqual(s["avg_r_gross"], 0.3, places=3)
+        self.assertAlmostEqual(s["avg_r"], 0.2, places=3)      # 0.3 - 0.1
+        self.assertAlmostEqual(s["cost_r"], 0.1, places=3)
+
+    def test_narrow_stop_costs_more(self):
+        """実際の集計でもコストが計上され、控除前より必ず悪くなること。"""
+        st = F.compute_signal_stats("GBP_JPY")     # スプレッド0.9pipsで最も重い
+        p = st["policies"]["tp_sl"]
+        self.assertGreater(p["cost_r"], 0, "コストが計上されていない")
+        self.assertLess(p["avg_r"], p["avg_r_gross"])
 
 
 class LongBacktestTest(RunTestCase):
