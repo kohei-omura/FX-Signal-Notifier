@@ -102,6 +102,8 @@ BAD_HOURS = set()   # JSTの時台。HOUR_FILTER_ON=True にする場合のみ�
 # 「1Rが数pips」のスキャルほど結果が実態より良く出てしまう。
 SPREAD_PIPS = {"USD_JPY": 0.2, "EUR_JPY": 0.4, "GBP_JPY": 0.9, "AUD_JPY": 0.5}
 DEFAULT_SPREAD_PIPS = 0.5
+# 1Rに対するスプレッド比率がこれを超えたら警告する。実測でscalpは0.347だった。
+COST_R_WARN = 0.15
 
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
@@ -1354,6 +1356,10 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             "signal":sig, "bias":bias, "reasons":sc["reasons"],
             "closes":sc["closes"], "ema_f_series":sc["ef_series"], "ema_s_series":sc["es_series"],
             "blackout": blackout,
+            # スプレッドが1R(=SL幅)の何割を食うか。SLが狭いほど致命的になる。
+            # 実データでは scalp が平均0.347R（勝率が10pt上がっても取り返せない水準）。
+            "cost_r": round(SPREAD_PIPS.get(sym, DEFAULT_SPREAD_PIPS) / sc["sl_pips"], 3)
+                      if sc.get("sl_pips") else None,
             "mtf": mtf,
             "skip_reason": skip_reason,
             "next_news": ({"title": nw[2], "time": nw[1].strftime("%H:%M"),
@@ -1410,6 +1416,10 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             closed_pos.append({k:p.get(k) for k in
                 ("id","symbol","side","entry","close_price","close_pips","close_yen","close_reason","closed_at")})
 
+    costs = [p["cost_r"] for p in pairs if p.get("cost_r") is not None]
+    if costs and sum(costs)/len(costs) >= COST_R_WARN:
+        warn(f"スプレッドが1リスクの{sum(costs)/len(costs)*100:.0f}%を占めています"
+             f"（{MODE}モードはSL幅が狭すぎます）", tag="cost")
     status = {
         "generated_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "market_open": market_open, "mode": MODE, "blackout": any_blackout,
