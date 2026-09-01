@@ -394,6 +394,44 @@ class ExitPolicyTest(RunTestCase):
         self.assertTrue(any("policies" in p for p in st["pairs"]),
                         "キャッシュ経由で policies が落ちている")
 
+    def test_backtest_applies_the_live_mtf_filter(self):
+        """本番は上位足と逆行するシグナルを通知しない。
+        バックテストが同じ条件でないと、届かないシグナルまで混ざって比較の意味が無くなる。"""
+        st = F.compute_signal_stats("USD_JPY")
+        self.assertIsNotNone(st)
+        # 上位足が常に下降なら「買い」は全部見送られ、採用数が減るはず
+        real = F.htf_aligned_series
+        F.htf_aligned_series = lambda sym, times, days: [-1] * len(times)
+        try:
+            self.reset_caches()
+            blocked_st = F.compute_signal_stats("USD_JPY")
+        finally:
+            F.htf_aligned_series = real
+        self.assertIsNotNone(blocked_st)
+        self.assertGreater(blocked_st.get("mtf_blocked", 0), 0, "見送りが記録されていない")
+        self.assertLess(blocked_st["n"], st["n"], "フィルタが採用数に効いていない")
+
+    def test_mtf_series_uses_only_completed_bars(self):
+        """過去に当てる時は、終値が確定したバーだけを見ること（未来の終値を覗かない）。"""
+        times = [i * 900000 for i in range(200)]        # 15分足200本ぶんの時刻
+        got = F.htf_aligned_series("USD_JPY", times, 8)
+        self.assertEqual(len(got), len(times))
+        self.assertTrue(all(v in (-1, 0, 1) for v in got))
+        # 先頭は上位足の履歴が足りないので必ず0（判定不能）になる
+        self.assertEqual(got[0], 0)
+
+    def test_score_bands_are_reported(self):
+        """スコアの強さ別。ここが右肩上がりでなければ、しきい値を動かしても効かない。"""
+        st = F.compute_signal_stats("EUR_JPY")
+        self.assertIn("bands", st)
+        total = sum(b["n"] for b in st["bands"].values())
+        self.assertEqual(total, st["policies"]["tp_sl"]["n"],
+                         "スコア帯の合計が採用数と一致しない")
+        for b in st["bands"].values():
+            for name in F.EXIT_POLICIES:
+                if name in b:
+                    self.assertIsInstance(b[name], float)
+
     def test_r_summary_math(self):
         s = F._r_summary([1.6, 1.6, -1.0, -1.0, -1.0])
         self.assertEqual(s["n"], 5)

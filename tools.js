@@ -743,6 +743,35 @@ function renderExitPolicies(status){
   var keys=Object.keys(lab).filter(function(k){return agg[k];});
   if(!keys.length){ el.innerHTML='<div class="note">サーバー側の統計がまだありません（次回の統計更新後に出ます）。</div>'; return; }
   var best=keys.reduce(function(a,b){ return (agg[a].sum/agg[a].n)>=(agg[b].sum/agg[b].n)?a:b; });
+  // スコアの強さ別（しきい値の何倍か）。ここが右肩上がりならスコアに予測力がある＝
+  // しきい値を上げれば直る。横ばい・逆なら、出口をどういじっても直らない。
+  var bagg={};
+  pairs.forEach(function(p){
+    Object.keys(p.bands||{}).forEach(function(bn){
+      var d=p.bands[bn], a=bagg[bn]||(bagg[bn]={n:0});
+      a.n+=d.n;
+      Object.keys(lab).forEach(function(k){
+        if(d[k]==null) return;
+        a[k]=(a[k]||0)+d[k]*d.n;
+      });
+    });
+  });
+  // 弱→中→強 の順に並べる（右肩上がりかどうかを目で見て判断できるように）
+  var BAND_ORDER=['弱','中','強'];
+  var bandRows=Object.keys(bagg).sort(function(a,b){
+      return BAND_ORDER.indexOf(a.charAt(0))-BAND_ORDER.indexOf(b.charAt(0));
+    }).map(function(bn){
+    var a=bagg[bn];
+    return '<tr><td>'+bn+'</td><td>'+a.n+'</td>'
+      +keys.map(function(k){
+          var e=(a[k]==null)?null:a[k]/a.n;
+          return '<td class="'+(e==null?'':(e>=0?'good':'bad'))+'">'
+            +(e==null?'—':((e>=0?'+':'')+e.toFixed(3)))+'</td>';
+        }).join('')+'</tr>';
+  }).join('');
+  var blocked=pairs.reduce(function(a,p){return a+(p.mtf_blocked||0);},0);
+  var allNeg=keys.every(function(k){ return agg[k].sum/agg[k].n < 0; });
+
   el.innerHTML='<table><thead><tr><th>決済のしかた</th><th>件数</th><th>勝率</th><th>期待R/回</th></tr></thead><tbody>'
     +keys.map(function(k){
       var a=agg[k], e=a.sum/a.n;
@@ -751,7 +780,24 @@ function renderExitPolicies(status){
         +'<td class="'+(e>=0?'good':'bad')+'">'+(e>=0?'+':'')+e.toFixed(3)+'</td></tr>';
     }).join('')+'</tbody></table>'
     +'<div class="note">直近の実データで、同じシグナルに対して<b>出口だけ</b>変えた場合の比較です。'
-    +'★が最も期待Rが高い降り方。実際の成績がこれより悪い場合、原因は判定ではなく決済のしかたにあります。</div>';
+    +'★が最も期待Rが高い降り方。'
+    +(blocked?'上位足と逆行する'+blocked+'件は本番と同じく見送ったうえでの集計です。':'')
+    +'</div>'
+    +(allNeg
+      ? '<div class="note" style="border:1px solid var(--down);border-radius:8px;padding:8px 10px;margin-top:6px">'
+        +'⛔ <b>どの降り方でも期待値がマイナスです。</b>出口の調整では直りません。'
+        +'下のスコア帯別で、強いシグナルだけがプラスになっていないかを確認してください。'
+        +'そこも横ばい／マイナスなら、いまの判定そのものに優位性が無いということです。</div>'
+      : '')
+    +(bandRows
+      ? '<div class="sec" style="font-size:12px;margin:12px 2px 6px">スコアの強さ別（期待R/回）</div>'
+        +'<table><thead><tr><th>スコア帯</th><th>件数</th>'
+        +keys.map(function(k){return '<th>'+({tp_sl:'TPまで',advice:'推奨で',advice_watch:'検討でも'}[k]||k)+'</th>';}).join('')
+        +'</tr></thead><tbody>'+bandRows+'</tbody></table>'
+        +'<div class="note">しきい値の何倍のスコアで入ったかで分けています。'
+        +'強いほど成績が良い（右肩上がり）ならスコアに予測力があり、しきい値を上げれば改善します。'
+        +'横ばい・逆なら、しきい値を動かしても効きません。</div>'
+      : '');
 }
 
 /* ===== 決済品質（設計どおりに決済できているか） =====
