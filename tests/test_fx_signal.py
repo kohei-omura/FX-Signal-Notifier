@@ -665,6 +665,19 @@ class StrategyCompareTest(RunTestCase):
         self.assertLessEqual(agg["ci_lo"], -cost)
         self.assertGreaterEqual(agg["ci_hi"], -cost)
 
+    def test_noise_floor_brackets_the_control(self):
+        """ノイズの範囲が、単発の対照群の結果を含むこと。
+        候補は0を超えたかではなく、この範囲の上端を超えたかで判断する。"""
+        nf = self.S.noise_floor("day", 0.05, seeds=6)
+        if nf is None:
+            self.skipTest("母数不足")
+        self.assertGreaterEqual(nf["max"], nf["median"])
+        self.assertGreaterEqual(nf["median"], nf["min"])
+        one = self.S.evaluate(self.S.make_random_rule(0.05, 1000), "day")
+        if one:
+            self.assertGreaterEqual(nf["max"], one["avg_r"])
+            self.assertLessEqual(nf["min"], one["avg_r"])
+
     def test_all_rules_run_without_error(self):
         for key, (rule, label) in self.S.RULES.items():
             with self.subTest(rule=key):

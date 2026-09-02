@@ -148,6 +148,28 @@ def evaluate(rule, mode, entry_range=None):
     return pool_summary(parts) if parts else None
 
 
+def noise_floor(mode, rate, seeds=24):
+    """無作為エントリーを何通りも回して「ただのブレの範囲」を測る。
+
+       1回の乱数だけでは、たまたま良く出た結果を優位性と勘違いする。
+       候補ロジックは、この分布の上端を超えて初めて『情報を持っている』と言える。
+       0を超えたかどうかではなく、ノイズの上端を超えたかどうかで判断する。"""
+    vals = []
+    for sd in range(seeds):
+        r = evaluate(make_random_rule(rate, 1000 + sd), mode)
+        if r:
+            vals.append(r["avg_r"])
+    if not vals:
+        return None
+    vals.sort()
+    def pct(q):
+        k = min(len(vals)-1, max(0, int(round(q * (len(vals)-1)))))
+        return vals[k]
+    return {"seeds": len(vals), "min": round(vals[0], 3), "p05": round(pct(0.05), 3),
+            "median": round(pct(0.5), 3), "p95": round(pct(0.95), 3),
+            "max": round(vals[-1], 3)}
+
+
 def run_mode(mode):
     days, cap = WINDOWS.get(mode, (90, 9000))
     F.MODE = mode; F.P = F.PARAMS[mode]
@@ -159,11 +181,13 @@ def run_mode(mode):
 
     rules = dict(RULES)
     base = evaluate(rules["current"][0], mode)
+    floor = None
     # 対照群は現行と同じくらいの頻度に合わせる
     if base:
         bars = F.STATS_MAX_BARS[mode]
-        rules["random"] = (make_random_rule(min(1.0, base["n"] / max(1, bars * len(F.SYMBOLS)) * 4), 7),
-                           "★対照群：無作為エントリー")
+        rate = min(1.0, base["n"] / max(1, bars * len(F.SYMBOLS)) * 4)
+        rules["random"] = (make_random_rule(rate, 7), "★対照群：無作為エントリー")
+        floor = noise_floor(mode, rate)
 
     out = {}
     for key, (rule, label) in rules.items():
@@ -174,7 +198,7 @@ def run_mode(mode):
         second = evaluate(rule, mode, (0.5, 1.0))
         out[key] = {"label": label, "all": whole,
                     "first_half": first, "second_half": second}
-    return {"days": days, "rules": out}
+    return {"days": days, "rules": out, "noise_floor": floor}
 
 
 def main():
@@ -187,14 +211,20 @@ def main():
         r = run_mode(mode)
         report["modes"][mode] = r
         print(f"\n■ {mode}モード（{r['days']}日）")
+        nf = r.get("noise_floor")
+        if nf:
+            print(f"  ノイズの範囲（無作為エントリー{nf['seeds']}通り）: "
+                  f"{nf['min']:+.3f} 〜 {nf['max']:+.3f}（中央値{nf['median']:+.3f} / 上位5%は{nf['p95']:+.3f}）")
+            print(f"  → 候補は {nf['p95']:+.3f} を超えて初めて『ただのブレではない』と言える")
         print(f"  {'候補':22} {'件数':>6} {'期待R':>8} {'95%区間':>20}  {'前半→後半':>18}")
         for key, v in sorted(r["rules"].items(), key=lambda kv: -(kv[1]["all"]["avg_r"])):
             a = v["all"]
             j = "判定不能" if a["ci_lo"] < 0 < a["ci_hi"] else ("★プラス" if a["ci_lo"] > 0 else "✗マイナス")
             f_, s_ = v.get("first_half"), v.get("second_half")
             oos = (f"{f_['avg_r']:+.3f}→{s_['avg_r']:+.3f}" if f_ and s_ else "—")
+            beat = "  ← ノイズ超え" if (nf and a["avg_r"] > nf["p95"]) else ""
             print(f"  {v['label']:22} {a['n']:6} {a['avg_r']:+8.3f} "
-                  f"[{a['ci_lo']:+.3f}〜{a['ci_hi']:+.3f}] {j:8} {oos:>18}")
+                  f"[{a['ci_lo']:+.3f}〜{a['ci_hi']:+.3f}] {j:8} {oos:>18}{beat}")
     F.write_json(OUT, report)
     print(f"\n[OK] {OUT} に保存")
 
