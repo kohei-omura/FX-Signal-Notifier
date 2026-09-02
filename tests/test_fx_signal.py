@@ -613,6 +613,64 @@ class LongBacktestTest(RunTestCase):
         self.assertTrue(self.read(self.out).get("keep"), "既存レポートが壊された")
 
 
+class StrategyCompareTest(RunTestCase):
+    """判定ロジック候補の比較。指標の調整ではなく構造の違う仮説を同じ手順で比べる。"""
+
+    def setUp(self):
+        super().setUp()
+        import strategies
+        self.S = strategies
+        self.S.WINDOWS = {"day": (3, 800), "swing": (3, 800)}
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+
+    def test_rule_hook_changes_the_entry_set(self):
+        """差し替えたルールが実際にエントリーを決めていること。"""
+        never = F.compute_signal_stats("USD_JPY", rule=lambda ctx, i: None)
+        self.assertIsNone(never, "エントリーしないルールなのに結果が出た")
+        always = F.compute_signal_stats("USD_JPY", rule=lambda ctx, i: "買い")
+        base = F.compute_signal_stats("USD_JPY")
+        self.assertIsNotNone(always)
+        self.assertGreater(always["n"], (base or {}).get("n", 0),
+                           "毎バー買うルールが現行より少ないのはおかしい")
+
+    def test_inverse_rule_flips_every_side(self):
+        seen = []
+        def spy(ctx, i):
+            s = self.S.rule_current(ctx, i)
+            inv = self.S.rule_inverse(ctx, i)
+            if s:
+                seen.append((s, inv))
+            return None
+        F.compute_signal_stats("USD_JPY", rule=spy)
+        self.assertTrue(seen, "現行ルールが1度も成立していない")
+        for a, b in seen:
+            self.assertNotEqual(a, b)
+            self.assertIn(b, ("買い", "売り"))
+
+    def test_random_control_lands_near_minus_cost(self):
+        """対照群（無作為エントリー）が『-スプレッド』付近に出ること。
+        ここがズレると検証装置そのものが信用できない。"""
+        rule = self.S.make_random_rule(0.05, seed=3)
+        parts = []
+        for sym in F.SYMBOLS:
+            st = F.compute_signal_stats(sym, rule=rule)
+            if st and st.get("policies", {}).get("advice"):
+                parts.append(st["policies"]["advice"])
+        if not parts:
+            self.skipTest("母数不足")
+        from backtest import pool_summary
+        agg = pool_summary(parts)
+        cost = sum(p["cost_r"] * p["n"] for p in parts) / sum(p["n"] for p in parts)
+        # 無作為なら期待Rは -コスト。信頼区間がそこを含んでいれば装置は妥当。
+        self.assertLessEqual(agg["ci_lo"], -cost)
+        self.assertGreaterEqual(agg["ci_hi"], -cost)
+
+    def test_all_rules_run_without_error(self):
+        for key, (rule, label) in self.S.RULES.items():
+            with self.subTest(rule=key):
+                F.compute_signal_stats("USD_JPY", rule=rule)   # 例外が出ないこと
+
+
 class MfeTest(RunTestCase):
     def test_peak_includes_current_price_on_first_evaluation(self):
         """初回評価でも現在値を最高益に取り込む（トレール利確の押し戻し量がズレる）。"""
