@@ -640,11 +640,14 @@ def _median(a):
     return s[m] if len(s) % 2 else (s[m-1]+s[m])/2
 
 
-def compute_signal_stats(symbol, th_override=None, entry_range=None):
+def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
     """過去バーを歩いて『シグナル→TP/SLのどちらに先に当たったか』を数える。
 
        th_override: しきい値を差し替えて検証する（「0.60で運用したら」を実際に回すため。
                     事後にスコア帯で切り分けるのとは別物で、エントリー地点も変わる）。
+       rule: エントリー判定を差し替える。rule(ctx, i) -> "買い"/"売り"/None。
+             別の仮説を、同じ検証手順（コスト控除・信頼区間・アウトオブサンプル）で
+             比べるための差し替え口。None なら現行ロジック。
        entry_range: (下限, 上限) を0〜1の割合で指定し、エントリーする区間を限定する。
                     前半で決めたルールを後半で試す（アウトオブサンプル検証）ために使う。
                     指標は常に全期間で計算するので、区切りによる境界の歪みは出ない。
@@ -682,15 +685,22 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None):
         lo, hi = entry_range
         i = max(i, int(n * lo))
         i_end = min(i_end, int(n * hi))
+    ctx = {"symbol": symbol, "oh": oh, "closes": closes, "times": times, "th": th,
+           "ef": ef_s, "es": es_s, "rsi": rsi_s, "macd": md_s, "bb": bb_s,
+           "atr": atr_s, "adx": adx_s, "aligned": aligned_s, "min_len": min_len}
     while i < i_end:
-        side = None
-        if i+1 >= min_len:
-            ef, es, rv = ef_s[i], es_s[i], rsi_s[i]
-            md, bb, a, ax = md_s[i], bb_s[i], atr_s[i], adx_s[i]
-            if None not in (ef, es, rv, a) and None not in (md, bb, ax):
-                total = _compose_score(symbol, closes[i], ef, es, rv,
-                                       md[0], md[1], bb[0], bb[1], a, ax[0])["total"]
-                side = "買い" if total >= th else ("売り" if total <= -th else None)
+        side = None; total = 0.0
+        a = atr_s[i]
+        if a is not None and i+1 >= min_len:
+            if rule is not None:
+                side = rule(ctx, i)
+            else:
+                ef, es, rv = ef_s[i], es_s[i], rsi_s[i]
+                md, bb, ax = md_s[i], bb_s[i], adx_s[i]
+                if None not in (ef, es, rv) and None not in (md, bb, ax):
+                    total = _compose_score(symbol, closes[i], ef, es, rv,
+                                           md[0], md[1], bb[0], bb[1], a, ax[0])["total"]
+                    side = "買い" if total >= th else ("売り" if total <= -th else None)
         if not side:
             i += 1; continue
         want = 1 if side == "買い" else -1

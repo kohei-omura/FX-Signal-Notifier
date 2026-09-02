@@ -40,11 +40,16 @@ jobs:
           # 1日1回とはいえ瞬間的な密度は上げたくないので同時接続を絞る。
           API_WORKERS: "2"
         run: python backtest.py
-      - name: Commit backtest.json
+      - name: Compare candidate logics
+        env:
+          STRAT_MODES: "day,swing"
+          API_WORKERS: "2"
+        run: python strategies.py
+      - name: Commit results
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add backtest.json
+          git add backtest.json strategies.json
           if git diff --staged --quiet; then echo "no changes"; exit 0; fi
           git commit -m "auto: update backtest [skip ci]"
           for i in 1 2 3; do
