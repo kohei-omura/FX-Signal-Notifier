@@ -36,6 +36,9 @@ jobs:
       - name: Run long backtest
         env:
           BACKTEST_MODES: ${{ inputs.modes || 'scalp,day,swing' }}
+          # swingを1年に延ばしたぶん1回あたり約2,300リクエストになる。
+          # 1日1回とはいえ瞬間的な密度は上げたくないので同時接続を絞る。
+          API_WORKERS: "2"
         run: python backtest.py
       - name: Commit backtest.json
         run: |

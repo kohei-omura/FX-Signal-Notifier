@@ -123,6 +123,7 @@ _OHLC_CACHE = {}
 _KLINE_DAY_CACHE = {}     # (symbol, interval, date) -> {openTime: (high,low,close)}
 _MTF_CACHE = {}           # symbol -> mtf_view の結果
 _SCORE_CACHE = {}         # symbol -> score_pair の結果
+_SERIES_CACHE = {}        # (symbol, 足, 本数) -> 指標の系列（しきい値スイープで使い回す）
 _WARNINGS = []            # 実行中に起きた異常。status.json に載せて画面から見えるようにする
 _tls = threading.local()
 _warn_lock = threading.Lock()
@@ -639,8 +640,14 @@ def _median(a):
     return s[m] if len(s) % 2 else (s[m-1]+s[m])/2
 
 
-def compute_signal_stats(symbol):
+def compute_signal_stats(symbol, th_override=None, entry_range=None):
     """過去バーを歩いて『シグナル→TP/SLのどちらに先に当たったか』を数える。
+
+       th_override: しきい値を差し替えて検証する（「0.60で運用したら」を実際に回すため。
+                    事後にスコア帯で切り分けるのとは別物で、エントリー地点も変わる）。
+       entry_range: (下限, 上限) を0〜1の割合で指定し、エントリーする区間を限定する。
+                    前半で決めたルールを後半で試す（アウトオブサンプル検証）ために使う。
+                    指標は常に全期間で計算するので、区切りによる境界の歪みは出ない。
        指標はバーごとに作り直さず、全バーぶんを1回だけ計算して参照する（O(n^2)→O(n)）。
        判定式は _compose_score に一本化してあるのでライブ判定と必ず一致する。"""
     days = STATS_DAYS.get(MODE, 3); cap = STATS_MAX_BARS.get(MODE, 1000)
@@ -650,20 +657,32 @@ def compute_signal_stats(symbol):
     closes = [r[2] for r in oh]
     # 本番は上位足と逆行するシグナルを通知しない。ここで同じ条件にしないと
     # 「実際には届かないシグナル」まで混ざった数字になり、比較の意味が無くなる。
-    aligned_s = htf_aligned_series(symbol, times, days)
     blocked = 0
     warm = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 5
     min_len = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 2
     bar_min = BARMIN.get(P["interval"], 1)
-    th = P["th"]
-    ef_s = ema_series(closes, P["ema_f"]); es_s = ema_series(closes, P["ema_s"])
-    rsi_s = rsi_series(closes, P["rsi"]); md_s = macd_hist_series(closes, *P["macd"])
-    bb_s = bb_series(closes, P["bb"][0], P["bb"][1])
-    atr_s = atr_series(oh, P["atr"]); adx_s = adx_series(oh, P["adx"])
+    th = P["th"] if th_override is None else th_override
+    # しきい値スイープでは同じ足に対して何度も呼ばれる。指標はしきい値に依存しないので
+    # 1回だけ作って使い回す（スイープ18通りぶんの作り直しをやめる）。
+    ck = (symbol, P["interval"], len(oh), days)
+    cached = _SERIES_CACHE.get(ck)
+    if cached is None:
+        cached = (ema_series(closes, P["ema_f"]), ema_series(closes, P["ema_s"]),
+                  rsi_series(closes, P["rsi"]), macd_hist_series(closes, *P["macd"]),
+                  bb_series(closes, P["bb"][0], P["bb"][1]),
+                  atr_series(oh, P["atr"]), adx_series(oh, P["adx"]),
+                  htf_aligned_series(symbol, times, days))
+        _SERIES_CACHE[ck] = cached
+    ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s = cached
     wins, losses = [], []
     policy_r = {}; band_r = {}
     n = len(oh); i = warm
-    while i < n-1:
+    i_end = n - 1
+    if entry_range:
+        lo, hi = entry_range
+        i = max(i, int(n * lo))
+        i_end = min(i_end, int(n * hi))
+    while i < i_end:
         side = None
         if i+1 >= min_len:
             ef, es, rv = ef_s[i], es_s[i], rsi_s[i]
@@ -715,7 +734,7 @@ def compute_signal_stats(symbol):
     if nn < 8:
         return None
     tm = _median(wins); sm = _median(losses)
-    out = {"n": nn, "tp_winrate": round(len(wins)/nn*100),
+    out = {"n": nn, "th": round(th, 3), "tp_winrate": round(len(wins)/nn*100),
            "hold_tp_min": round(tm*bar_min) if tm is not None else None,
            "hold_sl_min": round(sm*bar_min) if sm is not None else None,
            "stats_ts": int(datetime.datetime.now(JST).timestamp()), "stats_mode": MODE}
