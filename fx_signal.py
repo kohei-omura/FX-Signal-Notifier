@@ -1555,10 +1555,18 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             if st and st.get("n"):
                 stat_txt = (f"\n  ⏱想定保有: 利確まで約{st.get('hold_tp_min','?')}分 / 損切りまで約{st.get('hold_sl_min','?')}分"
                             f"\n  📊TP勝率 {st.get('tp_winrate')}%（直近{st.get('n')}回）")
+            # 通知価格でそのまま建てた場合のOCO価格。pips幅だけだと受け手が毎回暗算する必要があり、
+            # その間に相場が動く＝発注レベルがずれる。絶対価格を先に出して取り違えを防ぐ。
+            _ref = float(entry["entry_ref"])
+            _d = 1 if sig == "買い" else -1
+            _tp_ref = _ref + _d * sc["tp_pips"] * PIP_SIZE
+            _sl_ref = _ref - _d * sc["sl_pips"] * PIP_SIZE
             notify.append(f"{'🟢' if sig=='買い' else '🔴'} {sym} {sig}"
                           f"（{MODE_LABEL.get(MODE, MODE)}）\n"
                           f"  スコア{sc['score']:+.2f}（テク{sc['tech']:+.2f}/ファンダ{sc['fund']:+.2f}） {s_mark}\n"
                           f"  {rtxt}\n  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
+                          f"  📍{entry['entry_ref']}で建てた場合のOCO → TP {_tp_ref:.3f} / SL {_sl_ref:.3f}\n"
+                          f"  ※建値が変われば発注価格も変わります。確定値は登録後の保有カード「発注レベル」を参照\n"
                           f"  ▶エントリー目安: 通知価格 {entry['entry_ref']}\n"
                           f"   ・{valid_min}分以内（{entry['valid_until']}まで）\n"
                           f"   ・現在値が {entry['entry_limit']} {arrow}なら可"

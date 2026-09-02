@@ -854,7 +854,10 @@ async function addPos(){const c=needCfg();if(!c)return;
     if(lp&&lp.tp_pips!=null&&lp.sl_pips!=null){
       pos.tp_pips=lp.tp_pips;pos.sl_pips=lp.sl_pips;if(lp.atr!=null)pos.atr_used=lp.atr;
       pos.auto=true;pos.auto_set=true;pos.mode=S.mode;
-      autoNote=`（${MODE_LABEL[S.mode]||S.mode}: TP+${lp.tp_pips}/SL-${lp.sl_pips}pips）`;
+      const _e=+pos.entry,_lg=(pos.side||'long')==='long';
+      const _tpP=(_lg?_e+lp.tp_pips*PS:_e-lp.tp_pips*PS).toFixed(3);
+      const _slP=(_lg?_e-lp.sl_pips*PS:_e+lp.sl_pips*PS).toFixed(3);
+      autoNote=`（${MODE_LABEL[S.mode]||S.mode} 発注レベル固定: TP ${_tpP} / SL ${_slP}）`;
     }else{pos.auto=true;autoNote='（TP/SLは次回サーバー更新時に自動設定）';}
   }
   POS_BUSY=true;
@@ -1399,7 +1402,8 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   return`<div class="card ${_open?'':'simple'}" data-sym="${p.symbol}" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     ${meter}
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
-    <div class="chips"><span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span>${_costR!=null?`<span class="chip" title="この1往復で必ず払うスプレッド。1リスクに占める割合も併記">コスト <b>${_costYen!=null?Math.round(_costYen).toLocaleString()+'円':''}</b>${_costYen!=null?` <span style="opacity:.7">(${Math.round(_costR*100)}%)</span>`:`${Math.round(_costR*100)}%`}</span>`:''}</div>${_costBadge}
+    <div class="chips"><span class="chip tp" title="ATRから毎回計算し直す推奨値。相場が動けばこの数字も動きます。登録した時点の値がその建玉に固定されます">TP目安 <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl" title="ATRから毎回計算し直す推奨値。相場が動けばこの数字も動きます。登録した時点の値がその建玉に固定されます">SL目安 <b>-${fmt(p.sl_pips)}p</b></span>${_costR!=null?`<span class="chip" title="この1往復で必ず払うスプレッド。1リスクに占める割合も併記">コスト <b>${_costYen!=null?Math.round(_costYen).toLocaleString()+'円':''}</b>${_costYen!=null?` <span style="opacity:.7">(${Math.round(_costR*100)}%)</span>`:`${Math.round(_costR*100)}%`}</span>`:''}</div>${_costBadge}
+    <div class="reasons" style="opacity:.75;font-size:11px">📌 TP/SLは<b>変動する目安</b>（ATR連動・更新のたび再計算）。実際に発注する価格は登録後の保有カード「発注レベル」を見てください</div>
     ${lotBox}
     <button class="dettog" onclick="toggleDetail('${p.symbol}',this)">${_open?'▲ 詳細を閉じる':'▼ 詳細'}</button>
     <div class="pdetail">
@@ -1558,6 +1562,19 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
     bar=`<div class="range"><div class="track"></div><div class="mark" style="left:calc(${pos}% - 1.5px);background:${p.pips>=0?'var(--up)':'var(--down)'}"></div>
       <span class="rlabel" style="left:0">${L}</span><span class="rlabel" style="right:0">${R}</span></div>`;}
   else if(p.current!=null){bar=`<div class="reasons">TP/SL未設定（autoは次回Action実行で自動設定）</div>`;}
+  // 発注レベル（固定）。ペアのカードのTP/SLはATR連動で毎回動く「目安」だが、
+  // 建玉のTP/SLは登録時点のpips幅で確定している。この2つを取り違えると
+  // GMO側のOCOを無意味に入れ替えることになるので、固定であることを明示する。
+  let ocoBox='';
+  if(p.tp_price!=null&&p.sl_price!=null){
+    const _sideJ=p.side==='long'?'買い':'売り';
+    const _ocoTxt=`${p.symbol.replace('_','/')} ${_sideJ} 建値${p.entry} / 指値TP ${p.tp_price} / 逆指値SL ${p.sl_price}`;
+    const _w=(p.tp_pips!=null&&p.sl_pips!=null)?`<span style="opacity:.7">（建値${p.entry} から +${fmt(p.tp_pips)}p / -${fmt(p.sl_pips)}p で確定）</span>`:'';
+    ocoBox=`<div class="entry"><div class="ev">🔒 発注レベル（固定）</div>
+      <div class="er" style="font-size:14px">指値TP <b>${p.tp_price}</b> ／ 逆指値SL <b>${p.sl_price}</b> ${_w}</div>
+      <div class="er" style="opacity:.7">建てた時点で確定した値です。シグナル一覧のTP/SL目安が動いてもGMOの注文を入れ直す必要はありません</div>
+      <button class="qabtn" data-oco="${escHtml(_ocoTxt)}" onclick="copyTxt(this.dataset.oco)">📋 OCO価格をコピー</button></div>`;
+  }
   const adv=posAdvice(p);
   const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}</div></div>`:'';
   // 機能7: タイムストップ注意（想定保有中央値の2倍超で膠着警告・表示のみ）
@@ -1567,7 +1584,7 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
       if(_el>2*_st7.tpMin)_tsBox=`<div class="entry down"><div class="er">⏱ 想定の2倍膠着中（想定${holdTxt(_st7.tpMin)}／経過${holdTxt(Math.round(_el))}）。統計の前提から外れています＝手仕舞いサインに特に注意</div></div>`;}}
   return`<div class="card" data-posid="${p.id}" style="animation-delay:${i*60}ms"><div class="pcard-winflash" id="pwf_${p.id}"></div><div class="row"><span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span><span class="tag">建値 ${p.entry}</span></div>
     <div class="row" style="margin-top:10px"><span class="pnl ${cls}">${yen(p.yen)}</span><span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span></div>
-    ${pp.html}${bar}${advBox}${_tsBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
+    ${pp.html}${bar}${ocoBox}${advBox}${_tsBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
     <div class="pact"><button class="btn sm" onclick="toggleClose('${p.id}')">決済</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
 function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
@@ -1608,6 +1625,12 @@ function parseGenAt(s){if(!s)return null;const m=String(s).match(/(\d{4})-(\d{2}
   if(!m)return null;return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`).getTime();}
 function ageTxt(ms){const s=Math.round(ms/1000);if(s<90)return s+'秒前';const mi=Math.round(s/60);if(mi<90)return mi+'分前';const h=mi/60;if(h<48)return Math.round(h)+'時間前';return Math.round(h/24)+'日前';}
 // サーバー側の警告文はAPIのエラーメッセージを含むので、HTMLとして解釈させない
+function copyTxt(t){t=String(t||'');
+  try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(()=>toast('コピーしました'),()=>copyFallback(t));return;}}catch(e){}
+  copyFallback(t);}
+function copyFallback(t){try{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';
+  document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);toast('コピーしました');}
+  catch(e){toast('コピーできませんでした');}}
 function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 // 併用すると件数が増えるぶん、合計リスクが効いてくる。常に見えるようにする。
 function renderRiskBar(){
@@ -2460,6 +2483,7 @@ async function liveSignals(){
             +(_mtfTxt?`🔭上位足 ${_mtfTxt}\n`:'')
             +`▶${pair.entry_ref} / ${arrow} ${pair.entry_limit} / ${pair.valid_until}まで\n`
             +`TP+${sc.tp_pips}p / SL-${sc.sl_pips}p`
+            +(pair.entry_ref!=null?`\n📍${pair.entry_ref}で建てた場合 → TP ${r3(sig==='買い'?pair.entry_ref+sc.tp_pips*PS_:pair.entry_ref-sc.tp_pips*PS_)} / SL ${r3(sig==='買い'?pair.entry_ref-sc.sl_pips*PS_:pair.entry_ref+sc.sl_pips*PS_)}`:'')
             +(st?` / TP勝率${st.winRate}%`:'');
           if(cf.cls==='ok'&&pair.signal)fwdRecord(pair); // 機能6: 🟢OKで仮想エントリー記録
           const _lossStop=lossStopOn()&&modeStreak(S.mode)>=4; // 機能4: 連敗時は新規通知停止
