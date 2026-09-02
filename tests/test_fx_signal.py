@@ -843,6 +843,41 @@ class MtfModeTest(RunTestCase):
         self.assertEqual(len(st["pairs"]), len(F.SYMBOLS))
 
 
+class HoldAlignmentTest(RunTestCase):
+    """保有中の判定は『入った根拠』で見ること。
+       mtfは押し目/戻り（RSIが低い/高い）で入るので短期スコアは構造的に低い。
+       スコアで判定すると、実測1,688件の100%が入った瞬間に『弱化』、
+       79%が『逆シグナル』扱いになっていた。"""
+
+    def test_mtf_uses_upper_timeframe_not_score(self):
+        with F.use_mode("mtf"):
+            # スコアがどれだけ低くても、上位足が順方向なら「継続」
+            self.assertEqual(F.hold_alignment("USD_JPY", {"score": -0.9}, 1, aligned=1), 1)
+            # 上位足が逆行したら「逆シグナル」
+            self.assertEqual(F.hold_alignment("USD_JPY", {"score": 0.9}, 1, aligned=-1), -1)
+            # レンジは中立
+            self.assertEqual(F.hold_alignment("USD_JPY", {"score": 0.9}, 1, aligned=0), 0)
+
+    def test_other_modes_still_use_score(self):
+        with F.use_mode("day"):
+            self.assertAlmostEqual(F.hold_alignment("USD_JPY", {"score": 0.6}, 1), 0.6)
+            self.assertAlmostEqual(F.hold_alignment("USD_JPY", {"score": 0.6}, -1), -0.6)
+
+    def test_mtf_entry_is_not_flagged_as_weak(self):
+        """mtfのエントリー条件を満たす場面が、そのまま弱化扱いにならないこと。"""
+        with F.use_mode("mtf"):
+            th = F.P["th"]
+            # 上位足が上昇＝入った根拠が生きている
+            a = F.hold_alignment("USD_JPY", {"score": -0.4}, 1, aligned=1)
+            self.assertGreaterEqual(a, th, "入った直後なのに弱化扱いになっている")
+            self.assertGreater(a, -F.ADV_OPP, "入った直後なのに逆シグナル扱いになっている")
+
+    def test_short_side_is_symmetric(self):
+        with F.use_mode("mtf"):
+            self.assertEqual(F.hold_alignment("USD_JPY", {"score": 0}, -1, aligned=-1), 1)
+            self.assertEqual(F.hold_alignment("USD_JPY", {"score": 0}, -1, aligned=1), -1)
+
+
 class RiskGuardTest(RunTestCase):
     """併用は件数が増えるぶんリスクが積み上がる。重ね持ちと総量を止める。"""
 

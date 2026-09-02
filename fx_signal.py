@@ -795,7 +795,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
         # エントリー地点は共通、出口だけ変える）
         sim = _simulate_exit_policies(
             symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
-            ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th)
+            ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th, aligned_s=aligned_s)
         # 往復スプレッドは1Rに対する比率で効く。SLが狭いほど重い。
         cost = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS) / sl_pips if sl_pips else 0.0
         for name, r in sim.items():
@@ -849,7 +849,8 @@ EXIT_POLICIES = ("tp_sl", "advice", "advice_watch")
 
 
 def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
-                            ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th):
+                            ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, th,
+                            aligned_s=None):
     """1つのシグナルを各決済ポリシーで最後まで回し、R倍率を返す。
        position_advice() と同じ順序・同じ閾値で判定する（指標接近だけは過去再現できないので除外）。"""
     n = len(oh)
@@ -882,7 +883,8 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
                                    bb[0], bb[1], a, ax[0])["total"]
             adx_v = ax[0]
             profit = (c - entry) * d
-            aligned = score * d
+            aligned = hold_alignment(symbol, {"score": score}, d,
+                                     aligned=aligned_s[j] if aligned_s else None)
             mfe = max(mfe, c) if side == "買い" else min(mfe, c)
             retrace = (mfe - c) if side == "買い" else (c - mfe)
             hit = None
@@ -1262,6 +1264,21 @@ def position_pl(p, ticker):
             "tp_price":round(tp_pr,3) if tp_pr else None, "sl_price":round(sl_pr,3) if sl_pr else None}
 
 
+def hold_alignment(symbol, sc, d, aligned=None):
+    """保有中に『入った根拠がまだ生きているか』を -1〜+1 で返す。
+
+       モードによって根拠が違うので、判定もそれに合わせる。
+       mtf は押し目/戻り（RSIが低い/高い）で入る設計なので、短期スコアは
+       構造的に低い。実測では1,688件すべてがエントリー時点で『弱化』扱い、
+       79%が『逆シグナル』扱いになっていた。入った瞬間に降りる判定が出るのは
+       根拠と判定がズレているため。mtf では入った根拠そのもの（上位足の方向）で見る。
+       aligned は過去検証用。省略時は現在の上位足を使う。"""
+    if P.get("rule") == "mtf_pullback":
+        al = aligned if aligned is not None else (mtf_view(symbol) or {}).get("aligned")
+        return (al or 0) * d
+    return sc.get("score", 0.0) * d
+
+
 def position_advice(p, ticker, sc, prev_mfe=None):
     """保有中の利確/損切り判定。最高益(MFE)は前回status.json由来の値から更新して返す
        （positions.jsonは書き換えない＝アプリとのコミット競合を避ける）。
@@ -1277,7 +1294,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     th = P.get("th", 0.40)   # 新規エントリー閾値。保有中スコアがこれを割る=シグナル弱化
     profit = (cur - entry) * d
     profit_atr = (profit / a) if a else 0.0
-    aligned = score * d
+    aligned = hold_alignment(sym, sc, d)
     # 最高益(MFE)を更新（保存先はstatus.json側）。
     # 初回は建値だけで初期化すると、その回すでに乗っていた含み益のピークを取りこぼす
     # （＝トレール利確の押し戻し量を過小評価する）ので、現在値も必ず取り込む。
