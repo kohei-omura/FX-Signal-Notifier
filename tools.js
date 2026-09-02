@@ -468,6 +468,7 @@ function renderJournal(){
   try{renderEdgeProfile();}catch(e){}
   try{renderExitQuality();}catch(e){}
   try{renderVerdict();}catch(e){}
+  try{renderCostPanel();}catch(e){}
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
     const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
     const dts=x.ts?new Date(x.ts).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'日時なし';
@@ -683,6 +684,75 @@ async function entryLogSync(){
     +r.filled+'件の取引に判断材料を紐付けました</span>'
     +(r.filled?'':'<br><span class="warn">建値が一致する取引がありませんでした。CSVを「建単価つき」で取り込んでいるかご確認ください。</span>');
   try{ renderJournal(); }catch(e){}
+}
+
+/* ===== コスト最小化パネル =====
+   実績406件の内訳で、判定材料のある4通貨の損失(-8,654円)は
+   支払ったスプレッド(約8,770円)とほぼ同額だった。
+   期待値がゼロ近辺である以上、損益を動かせるのはコストだけなので、
+   どの設定なら1件あたりいくら払うのかを円で並べる。 */
+var SPREAD_PIPS_T = {USD_JPY:0.2, EUR_JPY:0.4, GBP_JPY:0.9, AUD_JPY:0.5};
+var MODE_SL_PIPS  = {scalp:1.5, day:9.0, swing:36.0};   // 1R(=SL幅)の目安
+var MODE_LABEL_T  = {scalp:'スキャル(1分)', day:'デイ(15分)', swing:'スイング(1時間)'};
+// 1通貨あたり月あたりのシグナル数。backtest.json の実測から算出（営業日21日換算）。
+//   scalp 4550件/12日/4通貨 = 94.8件/日 → 約1,990件/月
+//   day   4033件/261日/4通貨 = 3.86件/日 → 約81件/月
+//   swing  396件/261日/4通貨 = 0.38件/日 → 約8件/月
+// コストは1回いくらより「月にいくら払うか」で効く。
+var MODE_TRADES_PER_MONTH = {scalp:1990, day:81, swing:8};
+
+function renderCostPanel(){
+  var el=document.getElementById('costpanel'); if(!el) return;
+  var t=loadTrades();
+  var yen=function(x){ return (x.close_yen!=null)?+x.close_yen:(+x.yen||0); };
+  // 実際に使っているロットを推定（記録に lot があるものの中央値）
+  var lots=t.map(function(x){return +x.lot;}).filter(function(v){return v>=1000;}).sort(function(a,b){return a-b;});
+  var lot=lots.length?lots[Math.floor(lots.length/2)]:10000;
+  var pipYen=lot*0.01;                       // 円ペアは1pips=0.01円
+
+  var rows='';
+  Object.keys(MODE_SL_PIPS).forEach(function(mode){
+    Object.keys(SPREAD_PIPS_T).forEach(function(sym){
+      var sp=SPREAD_PIPS_T[sym], sl=MODE_SL_PIPS[mode];
+      var per=sp*pipYen, mon=per*MODE_TRADES_PER_MONTH[mode];
+      rows+='<tr data-c="'+mon+'"><td>'+MODE_LABEL_T[mode]+'</td><td>'+sym.replace('_','/')+'</td>'
+        +'<td>'+Math.round(per).toLocaleString()+'円</td>'
+        +'<td class="'+(sp/sl>=0.15?'bad':'')+'">'+Math.round(sp/sl*100)+'%</td>'
+        +'<td class="'+(mon>=5000?'bad':(mon<500?'good':''))+'"><b>'+Math.round(mon).toLocaleString()+'円</b></td></tr>';
+    });
+  });
+  // 安い順に並べ替え
+  var tmp=document.createElement('tbody'); tmp.innerHTML=rows;
+  var sorted=Array.prototype.slice.call(tmp.children).sort(function(a,b){
+    return (+a.dataset.c)-(+b.dataset.c); });
+
+  // 対応外ペアの実績
+  var off=t.filter(function(x){ return x.pair && COVERED_PAIRS.indexOf(x.pair)<0; });
+  var offYen=off.reduce(function(a,x){return a+yen(x);},0);
+  var cov=t.filter(function(x){ return COVERED_PAIRS.indexOf(x.pair)>=0; });
+  var covYen=cov.reduce(function(a,x){return a+yen(x);},0);
+
+  var lead='';
+  if(off.length && cov.length){
+    lead='<div style="padding:9px 12px;border:1px solid var(--down);border-radius:9px;'
+      +'font-size:12.5px;line-height:1.8;margin-bottom:10px">'
+      +'⛔ <b>判定材料の無いペアが損失の'+Math.round(offYen/(offYen+covYen)*100)+'%を占めています。</b><br>'
+      +'該当 '+off.length+'件（'+Array.from(new Set(off.map(function(x){return x.pair;}))).join('・')+'）で '
+      +Math.round(offYen).toLocaleString()+'円。1件あたり '+Math.round(offYen/off.length).toLocaleString()+'円で、'
+      +'4通貨（1件あたり '+Math.round(covYen/cov.length).toLocaleString()+'円）の'
+      +Math.round((offYen/off.length)/(covYen/cov.length))+'倍の損失率です。<br>'
+      +'アプリはこれらを一切計算していません。<b>やめるだけで確実に損失が減ります。</b></div>';
+  }
+
+  el.innerHTML=lead
+    +'<table><thead><tr><th>スタイル</th><th>ペア</th><th>1往復</th><th>1リスク比</th>'
+    +'<th>月あたり</th></tr></thead>'
+    +'<tbody>'+sorted.map(function(tr){return tr.outerHTML;}).join('')+'</tbody></table>'
+    +'<div class="note">記録から推定したロット <b>'+lot.toLocaleString()+'通貨</b> での金額です。'
+    +'これは勝っても負けても<b>必ず払う</b>ぶん。<br>'
+    +'「月あたり」は、アプリのシグナルに全部乗った場合の支払額（実測したシグナル頻度で計算）。'
+    +'1回のコストは同じでも、回数が違うので月額は大きく変わります。<br>'
+    +'期待値がゼロ近辺である以上、動かせるのはここだけです。上ほど安い設定です。</div>';
 }
 
 /* ===== しきい値スイープ と アウトオブサンプル検証 =====

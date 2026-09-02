@@ -1371,6 +1371,12 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   // 機能1: コスト比率チップ（スプレッド÷TP幅）
   // 1R(=SL幅)に対するスプレッド比率。サーバー計算値を優先し、無ければ手元で出す。
   var _costR=(p.cost_r!=null)?p.cost_r:((SPREAD[p.symbol]&&p.sl_pips)?SPREAD[p.symbol]/p.sl_pips:null);
+  // 実額で出す。比率より行動が変わる。
+  // 実績406件では「4通貨での損失8,654円 ≒ 支払スプレッド8,770円」で、
+  // 損失のほぼ全部がコストだった。だからコストは常に金額で見えている必要がある。
+  var _lotForCost=(function(){ var L=(p.sl_pips!=null)?recLot(p.sl_pips,p.bid):null;
+    return (L&&L.units>=1000)?L.units:10000; })();
+  var _costYen=(SPREAD[p.symbol]!=null)?SPREAD[p.symbol]*PS_*_lotForCost:null;
   var _costBadge=(_costR!=null&&_costR>=0.15)
     ? '<div class="entry"><div class="er">⚠️ スプレッドが1リスクの<b>'+Math.round(_costR*100)+'%</b>'
       +'（この幅では勝率が上がってもコストで削られます。足の長いスタイルを検討してください）</div></div>'
@@ -1392,7 +1398,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   return`<div class="card ${_open?'':'simple'}" data-sym="${p.symbol}" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     ${meter}
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
-    <div class="chips"><span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span>${_costR!=null?`<span class="chip" title="スプレッドが1リスクに占める割合">コスト <b>${Math.round(_costR*100)}%</b></span>`:''}</div>${_costBadge}
+    <div class="chips"><span class="chip tp">TP <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl">SL <b>-${fmt(p.sl_pips)}p</b></span>${_costR!=null?`<span class="chip" title="この1往復で必ず払うスプレッド。1リスクに占める割合も併記">コスト <b>${_costYen!=null?Math.round(_costYen).toLocaleString()+'円':''}</b>${_costYen!=null?` <span style="opacity:.7">(${Math.round(_costR*100)}%)</span>`:`${Math.round(_costR*100)}%`}</span>`:''}</div>${_costBadge}
     ${lotBox}
     <button class="dettog" onclick="toggleDetail('${p.symbol}',this)">${_open?'▲ 詳細を閉じる':'▼ 詳細'}</button>
     <div class="pdetail">
