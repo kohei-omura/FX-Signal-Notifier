@@ -321,6 +321,32 @@ class NotificationTest(RunTestCase):
             self.assertNotIn("エントリー目安", body, "同じシグナルが再通知されている")
 
 
+    def test_entry_notification_carries_absolute_oco_prices(self):
+        """エントリー通知にpips幅だけでなく絶対価格を載せること。
+        pipsだけだと受け手が建値から暗算する必要があり、その間に相場が動いて
+        発注レベルがずれる（＝画面の目安値と建玉の確定値を取り違える原因）。"""
+        F.main()
+        bodies = [b for _, b in self.sent["mail"]]
+        entry_bodies = [b for b in bodies if "エントリー目安" in b]
+        self.assertTrue(entry_bodies, "エントリー通知が出ていない（前提が崩れている）")
+        st = self.status()
+        checked = 0
+        for pair in st["pairs"]:
+            if not pair.get("signal") or pair.get("entry_ref") is None:
+                continue
+            body = next((b for b in entry_bodies if pair["symbol"] in b), None)
+            if body is None:
+                continue
+            d = 1 if pair["signal"] == "買い" else -1
+            ref = float(pair["entry_ref"])
+            tp = ref + d * pair["tp_pips"] * F.PIP_SIZE
+            sl = ref - d * pair["sl_pips"] * F.PIP_SIZE
+            self.assertIn(f"TP {tp:.3f} / SL {sl:.3f}", body,
+                          f"{pair['symbol']} の通知に絶対価格が無い")
+            checked += 1
+        self.assertGreater(checked, 0, "シグナル付きのペアが1つも無い")
+
+
 class MtfTest(RunTestCase):
     def test_year_indexed_timeframe_falls_back_to_previous_year(self):
         """年明け直後、当年のバーが足りない時に前年も取りに行くこと。
