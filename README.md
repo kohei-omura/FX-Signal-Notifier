@@ -12,19 +12,37 @@ GMOコイン外国為替FX Public API を使い、GitHub Actionsだけで動く�
 
 ---
 
-## ファイル
+## ディレクトリ構成
+
+```
+engine/     判定エンジン（Python）
+  fx_signal.py    シグナル判定／ポジション監視／data/status.json 書き出し
+  backtest.py     長期バックテスト（日次）
+  strategies.py   候補ロジックの比較（日次）
+  fetch_news.py   経済指標カレンダーの取得
+data/       エンジンが読み書きする状態・生成物（すべてJSON）
+  status.json     最新状態（画面が読み込む／5分ごとに自動更新）
+  positions.json  保有ポジション（アプリから読み書き）
+  mode.json       通知モードの唯一の指示元（画面のスタイルボタンが書き込む）
+  entry_log.json  エントリー記録簿（追記専用）
+  backtest.json / strategies.json / news_blackout.json  日次ジョブの生成物
+assets/     PWAアイコン（icon-180/192/512.png）
+tests/      オフラインのテスト一式（ネットワーク不要／GMO APIはモック）
+.github/workflows/
+  fx-signal.yml      シグナル判定の実行（外部から5分おきに起動）
+  news-calendar.yml  経済指標カレンダーの日次取得
+  backtest.yml       長期バックテストの日次実行
+  test.yml           リグレッションテスト（コード変更時のみ）
+```
+
+ルート直下はGitHub Pagesが配信する画面ファイルのみ。
+
 | ファイル | 役割 |
 |---|---|
-| `fx_signal.py` | シグナル判定／ポジション監視／status.json書き出し |
-| `index.html` | ダッシュボード画面（GitHub Pages） |
-| `manifest.webmanifest` / `sw.js` / `icon-*.png` | PWA（ホーム画面アプリ化）用 |
+| `index.html` | ダッシュボード画面 |
+| `tools.html` / `tools.js` | 分析ツール画面 |
+| `manifest.webmanifest` / `sw.js` | PWA（ホーム画面アプリ化）用 |
 | `worker.js` | （任意）リアルタイム価格用のCloudflare Worker |
-| `status.json` | 最新状態（アプリが毎回自動更新。画面が読み込む） |
-| `positions.json` | 保有ポジション登録（あなたが編集） |
-| `.github/workflows/fx-signal.yml` | シグナル判定の実行（外部から5分おきに起動） |
-| `.github/workflows/news-calendar.yml` | 経済指標カレンダーの日次取得 |
-| `.github/workflows/test.yml` | リグレッションテスト（コード変更時のみ） |
-| `tests/` | オフラインのテスト一式（ネットワーク不要） |
 | `requirements.txt` | 依存（requests） |
 
 ---
@@ -42,7 +60,7 @@ GMOコイン外国為替FX Public API を使い、GitHub Actionsだけで動く�
 ### 3. ダッシュボードを公開（GitHub Pages）
 Settings → **Pages** → Source を「Deploy from a branch」、Branch を `main` / `/ (root)` で保存。
 数十秒後、`https://<ユーザー名>.github.io/<リポジトリ名>/` で画面が開きます。
-（画面は `status.json` を30秒ごとに読み込み、Actionの更新を反映）
+（画面は `data/status.json` を30秒ごとに読み込み、Actionの更新を反映）
 
 ### 4. ホーム画面アプリ化（iPhone）
 Pages公開後、iPhoneの **Safari** で `https://<ユーザー名>.github.io/<リポジトリ名>/` を開き、
@@ -55,7 +73,7 @@ Actions → Run workflow（疎通確認はテストにチェック）。以降5�
 
 ---
 
-## ポジション登録（`positions.json`）
+## ポジション登録（`data/positions.json`）
 ### 例1: 自分でpips指定
 ```json
 { "positions": [
@@ -82,8 +100,8 @@ Actions → Run workflow（疎通確認はテストにチェック）。以降5�
 
 到達で通知＋`closed`記録され再通知なし。新規は新しい`id`で追記。
 
-**反映について（改良済み）**：画面は `positions.json` を直接読むため、登録をcommitすれば（Action完了を待たず）**すぐ画面に反映**されます。さらに `positions.json` を編集すると**自動でGitHub Actionが起動**し、ATR推奨レベルの確定とLINE/メール通知を行います。
-※画面の損益に使う価格は、Worker未設定時は `status.json`（約5分間隔）基準です。秒単位にしたい場合は下記のリアルタイム設定を行ってください。
+**反映について（改良済み）**：画面は `data/positions.json` を直接読むため、登録をcommitすれば（Action完了を待たず）**すぐ画面に反映**されます。さらに `data/positions.json` を編集すると**自動でGitHub Actionが起動**し、ATR推奨レベルの確定とLINE/メール通知を行います。
+※画面の損益に使う価格は、Worker未設定時は `data/status.json`（約5分間隔）基準です。秒単位にしたい場合は下記のリアルタイム設定を行ってください。
 ※LINE/メール通知・ATR自動設定はGitHub Action側で動くため、Actionが動いていることが前提です（止まる場合はActionsタブでエラー確認）。
 
 ---
@@ -110,7 +128,7 @@ day 365日 / 4,033件（往復スプレッド控除後・95%信頼区間）
 つまりテクニカル判定は何も足しておらず、**負けはほぼスプレッドそのもの**です。
 
 ### 2. 構造の違う候補6種を試したが、いずれも優位性なし
-`strategies.py` で、現行の逆／ドンチャンブレイク／BB逆張り／セッションブレイク／
+`engine/strategies.py` で、現行の逆／ドンチャンブレイク／BB逆張り／セッションブレイク／
 上位足方向への押し目 を同じ手順で比較しました。ノイズ帯を安定して超えたものはありません。
 
 ### 3. 唯一の候補も、コストと同じ大きさで打ち消される
@@ -152,7 +170,7 @@ mtf の過学習チェック（前半で選び後半で検証）は **前半-0.0
 デイとスイングを2系統並行させる形は推奨しません。デイ単独がマイナス確定なので、
 その確定マイナスがそのまま乗ります（1R=450円で月-12,101円 vs mtf単独 +540円）。
 
-新しい判定ロジックを思いついた場合は、`strategies.py` に追加して同じ手順で
+新しい判定ロジックを思いついた場合は、`engine/strategies.py` に追加して同じ手順で
 検証してください。**対照群（無作為エントリー）を上回らないものは採用しないでください。**
 
 ## 優位性の検証（重要）
@@ -161,8 +179,8 @@ mtf の過学習チェック（前半で選び後半で検証）は **前半-0.0
 検証用の仕組みが入っています。
 
 ### 1日1回の長期バックテスト
-`.github/workflows/backtest.yml` が毎日05:30 JSTに `backtest.py` を実行し、
-`backtest.json` を更新します。手動実行も可能（Actions → Long Backtest → Run workflow）。
+`.github/workflows/backtest.yml` が毎日05:30 JSTに `engine/backtest.py` を実行し、
+`data/backtest.json` を更新します。手動実行も可能（Actions → Long Backtest → Run workflow）。
 
 | モード | 検証期間 |
 |---|---|
@@ -193,7 +211,7 @@ SL幅が狭いほどコストが重く、**scalpは勝率が何ポイント上�
 
 ### 手元で回す
 ```bash
-BACKTEST_MODES=day python3 backtest.py
+BACKTEST_MODES=day python3 engine/backtest.py
 ```
 
 ## 開発・運用メモ
@@ -206,14 +224,14 @@ python3 -m unittest discover -s tests -v
 
 指標の系列計算がバーごとの逐次計算と一致すること、価格取得に失敗しても画面の
 表示を壊さないこと、API障害で落ちないこと等を検証します。
-`.github/workflows/test.yml` が `fx_signal.py` / `fetch_news.py` / `tests/` の
+`.github/workflows/test.yml` が `engine/` / `tests/` の
 変更時に自動実行します（5分ごとの通知ワークフローとは分離）。
 
 ### 実行時の環境変数
 | 変数 | 既定 | 用途 |
 |---|---|---|
-| `API_WORKERS` | 4 | GMO APIへの同時接続数。`status.json` に「レート制限」警告が出たら下げる |
-| `MODE` | scalp | `mode.json` が無い/壊れている時のフォールバック |
+| `API_WORKERS` | 4 | GMO APIへの同時接続数。`data/status.json` に「レート制限」警告が出たら下げる |
+| `MODE` | scalp | `data/mode.json` が無い/壊れている時のフォールバック |
 | `TEST_NOTIFY` | - | `true` でLINE/メールの疎通確認だけ行う |
 
 ### 動かなくなった時
@@ -221,18 +239,18 @@ python3 -m unittest discover -s tests -v
 - 「サーバー更新が停止中」＋ Actions確認の案内 … GitHub Actions 側が止まっている
 - 「アプリは動いているが取得元(GMO API)がエラー」 … API側の問題。復旧で自動再開
   （このとき価格・保有ポジションの表示は前回値を保持し、消えません）
-- 具体的な失敗内容は `status.json` の `warnings` にも残ります
+- 具体的な失敗内容は `data/status.json` の `warnings` にも残ります
 
 ## 注意
 - 実行間隔は5分・遅延あり（真のリアルタイム不可）。LINE無料枠は月200通。
-- `positions.json`と`status.json`はアプリが自動コミット（`contents: write`・設定済み）。
+- `data/positions.json`と`data/status.json`はアプリが自動コミット（`contents: write`・設定済み）。
 - 価格取得元: GMOコイン外国為替FX Public API。
 
 
 ---
 
 ## リアルタイム表示について（重要）
-- 標準では画面は `status.json`（GitHub Actionsが**約5分間隔**で更新）を30秒ごとに読み込みます。
+- 標準では画面は `data/status.json`（GitHub Actionsが**約5分間隔**で更新）を30秒ごとに読み込みます。
   つまり**金額は約5分ごとに変化**し、ティック単位の完全リアルタイムではありません。
 - もし「更新が止まる」場合：Actionsタブで失敗(赤)ランを確認。本ワークフローはpushを
   rebase＆3回リトライする堅牢版にしてあります。`*/5`のcronはGitHub高負荷時に遅延/間引きされる仕様です。
@@ -252,7 +270,7 @@ GMOのAPIは画面から直接呼べない（CORS不可）ため、無料の**Cl
 ---
 
 ## アプリ内ポジション管理（JSON手打ち不要）
-ダッシュボードの「保有ポジション」見出しの **＋追加 / ⚙** から操作できます。GitHubトークン経由で `positions.json` に直接読み書きします。
+ダッシュボードの「保有ポジション」見出しの **＋追加 / ⚙** から操作できます。GitHubトークン経由で `data/positions.json` に直接読み書きします。
 
 ### 初回設定（⚙）
 1. GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate new token
@@ -287,14 +305,14 @@ EMAクロス(0.35) ＋ MACDヒスト(0.25) ＋ RSI(0.20) ＋ ボリンジャー�
 
 ### ファンダ側
 金利差キャリーの方向バイアス（円ペアは円が低金利→買い寄り）。
-`fx_signal.py` の `FUND_BIAS` で各ペアを調整可（現在の政策金利差に合わせる）。
+`engine/fx_signal.py` の `FUND_BIAS` で各ペアを調整可（現在の政策金利差に合わせる）。
 重要指標の前後を避けたい場合は `NEWS_BLACKOUT`（JST日時）に追加するとその前後はシグナル抑制。
 
 ### TP/SLの決め方（Pattern 1：ATR基準）
 - **SL（損切り）= エントリー時のATR × 倍率**（倍率はモード別。上の表を参照）
 - **TP（利確）= SL × 比率**（同じくモード別。day なら 1:1.6）
 - 例：day で ATRが2.0pipsなら → SL=2.6pips / TP=4.2pips
-- 倍率は `fx_signal.py` の `PARAMS` 内 `slm`（SL倍率）/ `tsr`（TP比率）で調整可
+- 倍率は `engine/fx_signal.py` の `PARAMS` 内 `slm`（SL倍率）/ `tsr`（TP比率）で調整可
 - ATRは足に依存（scalp=1分足ATR→狭い、day=15分足ATR→広い、swing=1時間足ATR→最も広い）
 
 ### モード切替（scalp / day）
@@ -304,8 +322,8 @@ EMAクロス(0.35) ＋ MACDヒスト(0.25) ＋ RSI(0.20) ＋ ボリンジャー�
 | day | 15分 | 9/21 | 14 | ATR×1.3 | SL×1.6 | 0.40 | 85:15 | 45分 |
 | swing | 1時間 | 12/26 | 14 | ATR×1.8 | SL×1.8 | 0.45 | 45:55 | 180分 |
 
-切替方法：**ダッシュボードのスタイルボタン**から切り替えます（`mode.json` に書き込まれ、
-これがモードの唯一の指示元）。`mode.json` が無い/壊れている時だけ環境変数 `MODE`、
+切替方法：**ダッシュボードのスタイルボタン**から切り替えます（`data/mode.json` に書き込まれ、
+これがモードの唯一の指示元）。`data/mode.json` が無い/壊れている時だけ環境変数 `MODE`、
 それも無ければ既定の `scalp` にフォールバックします。
 
 ### 注意（スキャルの限界）
@@ -335,7 +353,7 @@ GitHub Actionsは最短5分間隔のため、**シグナルの再計算・通知
 Worker設定済みなら現在値が数秒ごとに更新され、判定もリアルタイムに切り替わります。
 
 ### 調整
-`fx_signal.py` 冒頭：`VALID_BARS`（有効足数）/ `MAX_CHASE_RATIO`（追いかけ許容＝SL比）。
+`engine/fx_signal.py` 冒頭：`VALID_BARS`（有効足数）/ `MAX_CHASE_RATIO`（追いかけ許容＝SL比）。
 厳しめにするなら `MAX_CHASE_RATIO=0.3` など。
 
 

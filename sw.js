@@ -1,7 +1,7 @@
 // FX Navi Service Worker
 // ネットワーク優先：常に最新の index.html 等を取得し、オフライン時のみキャッシュにフォールバック。
 // 更新時は VERSION を上げる（任意）。activate で旧キャッシュを全削除し、即座に新SWへ切替。
-const VERSION = 'fxnavi-v3';
+const VERSION = 'fxnavi-v4';
 const CORE = ['./', './index.html'];
 
 self.addEventListener('install', (e) => {

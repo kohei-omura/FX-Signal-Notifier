@@ -11,6 +11,14 @@ from email.utils import formatdate
 from zoneinfo import ZoneInfo
 import requests
 
+# 生成物・状態ファイルはすべて data/ にまとめる。実行ディレクトリに依存しないよう
+# リポジトリのルート（このファイルの1つ上）から解決する。
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+
+
+def data_path(name):
+    return os.path.join(DATA_DIR, name)
+
 JST = ZoneInfo("Asia/Tokyo")
 SYMBOLS = ["USD_JPY", "EUR_JPY", "GBP_JPY", "AUD_JPY"]
 PRICE_TYPE = "BID"
@@ -78,7 +86,7 @@ STATS_MAX_BARS = {"scalp": 1000, "day": 1000, "swing": 1000, "mtf": 4500}
 NEWS_BLACKOUT = []          # 手書きの予備リスト（"YYYY-MM-DD HH:MM"・全通貨一律）。通常は空でOK
 BLACKOUT_MIN = 15           # 発表前後この分数はエントリー見送り
 WARN_BEFORE_MIN = 60        # 保有ポジションは発表この分前から「まもなく発表」警告
-NEWS_FILE = "news_blackout.json"   # news-calendar.yml が毎日生成する自動取得カレンダー
+NEWS_FILE = data_path("news_blackout.json")   # news-calendar.yml が毎日生成する自動取得カレンダー
 NEWS_STALE_DAYS = 3         # カレンダーがこの日数より古かったら警告（回避が黙って無効化されるのを防ぐ）
 # 通貨ペア → 影響する国/通貨。クロス円なのでJPYは全ペア共通。AUDは最大輸出先の中国(CNY)も対象。
 PAIR_COUNTRIES = {
@@ -127,12 +135,12 @@ ACCOUNT_JPY = float(os.environ.get("ACCOUNT_JPY", "0"))     # 資金。0なら�
 
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
-POSITIONS_FILE = "positions.json"
-STATUS_FILE = "status.json"
+POSITIONS_FILE = data_path("positions.json")
+STATUS_FILE = data_path("status.json")
 # ===== エントリー記録簿 =====
 # ポジションを削除しても消えない追記専用ログ。GMOのCSV(銘柄名＋建単価)と後から突き合わせ、
 # 「上位足と逆行していたエントリーの成績」などを検証するために使う。
-ENTRY_LOG_FILE = "entry_log.json"
+ENTRY_LOG_FILE = data_path("entry_log.json")
 ENTRY_LOG_MAX = 2000            # 古いものから間引く上限
 STRONG_MULT = 1.5               # スコアが新規閾値のこの倍以上なら「強シグナル」扱い
 CHART_POINTS = 60
@@ -1683,7 +1691,7 @@ def notify_mail(subject, body):
         print(f"[WARN] メール送信失敗: {e}", file=sys.stderr)
 
 
-MODE_FILE = "mode.json"
+MODE_FILE = data_path("mode.json")
 def get_selected_mode():
     """モードの唯一の指示元は mode.json（ダッシュボードのスタイルボタンが書き込む）。
        mode.json が無い/壊れている時だけ env MODE、それも無ければ既定 scalp。

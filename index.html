@@ -10,8 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FX Navi">
-<link rel="apple-touch-icon" href="./icon-180.png">
-<link rel="icon" type="image/png" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./assets/icon-180.png">
+<link rel="icon" type="image/png" href="./assets/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -815,10 +815,10 @@ function saveSet(){const c={token:$('#s_token').value.trim(),owner:$('#s_owner')
 function needCfg(){const c=cfg();if(!c.token||!c.owner||!c.repo){toast('先に⚙でGitHub連携を設定してください');togglePanel('setPanel');return null;}return c;}
 const b64enc=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o,null,2))));
 const b64dec=s=>JSON.parse(decodeURIComponent(escape(atob(s.replace(/\n/g,'')))));
-async function ghGet(c){const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/positions.json?ref=${c.branch}&t=${Date.now()}`,
+async function ghGet(c){const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/data/positions.json?ref=${c.branch}&t=${Date.now()}`,
   {headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json'},cache:'no-store'});
   if(!r.ok)throw new Error('読込失敗 '+r.status);const j=await r.json();return{data:b64dec(j.content),sha:j.sha};}
-async function ghPut(c,data,sha,msg){const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/positions.json`,
+async function ghPut(c,data,sha,msg){const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/data/positions.json`,
   {method:'PUT',headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},
    body:JSON.stringify({message:msg,content:b64enc(data),sha,branch:c.branch})});
   if(!r.ok){const t=await r.text();throw new Error('保存失敗 '+r.status+' '+t.slice(0,80));}return r.json();}
@@ -939,7 +939,7 @@ function saveFwd(a){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(
    端末内(localStorage)だけだと、PWAの再インストールやSafariのデータ消去で消えてしまう。
    GitHub連携が設定済みなら forward_log.json としてリポジトリにも保存し、
    起動時に自動で取り込む（端末を作り直しても記録が続く）。 */
-var FWD_PATH='forward_log.json';
+var FWD_PATH='data/forward_log.json';
 var _fwdSaveTimer=null, _fwdCloudLoaded=false;
 function _fwdKey(x){ return [x.ts,x.sym,x.entry,x.side].join('|'); }
 function fwdMerge(list){
@@ -1595,7 +1595,7 @@ async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
   S.mode=m;render();liveSignals();refreshStats(true);
   const c=cfg();
   if(c&&c.token&&c.owner&&c.repo){
-    try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'auto: set mode '+m+' [skip ci]');
+    try{await ghPutFile(c,'data/mode.json',{mode:m,updated_at:new Date().toISOString()},'auto: set mode '+m+' [skip ci]');
       MODEJSON=m;renderModeWarn();
       toast('通知スタイルも'+MODE_LABEL[m]+'に切替（次回実行から反映）');}
     catch(e){toast('画面は切替。通知反映は保存失敗: '+e.message);}
@@ -1605,7 +1605,7 @@ async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
 async function syncModeJson(){
   const m=S.mode||'scalp',c=cfg();
   if(!(c&&c.token&&c.owner&&c.repo)){toast('⚙でGitHub設定をすると同期できます');togglePanel('setPanel');return;}
-  try{await ghPutFile(c,'mode.json',{mode:m,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
+  try{await ghPutFile(c,'data/mode.json',{mode:m,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
     MODEJSON=m;renderModeWarn();toast('通知モードを'+(MODE_LABEL[m]||m)+'に同期しました（次回実行から反映）');}
   catch(e){toast('同期失敗: '+e.message);}
 }
@@ -2602,7 +2602,7 @@ async function loadPositions(){
   if(c.token&&c.owner&&c.repo){
     try{const {data}=await ghGet(c); if(data&&Array.isArray(data.positions)) return data;}catch(e){}
   }
-  try{const pr=await fetch('./positions.json?t='+Date.now(),{cache:'no-store'}); if(pr.ok) return await pr.json();}catch(e){}
+  try{const pr=await fetch('./data/positions.json?t='+Date.now(),{cache:'no-store'}); if(pr.ok) return await pr.json();}catch(e){}
   return null; // 失敗時は現状維持（空で上書きしない）
 }
 function pruneLocal(){try{
@@ -2616,7 +2616,7 @@ async function load(){
   if(!load._booted){load._booted=true;try{var cch=loadCache();if(cch&&cch.S){S=cch.S;if(cch.POS)POS=cch.POS;setPriceFromStatus();render();_cacheShown=true;}}catch(e){}}
   setUpdating(true);
   try{
-  const sr=await fetch('./status.json?t='+Date.now(),{cache:'no-store'});
+  const sr=await fetch('./data/status.json?t='+Date.now(),{cache:'no-store'});
   if(sr.ok)S=await sr.json();
   // 2-C: サイレント失敗を残さない。取得できなかった時は画面にも出す。
   else{ console.warn('status.json取得失敗',sr.status); try{toast('⚠️ 最新データを取得できませんでした（'+sr.status+'）');}catch(e){} }
@@ -2628,7 +2628,7 @@ async function load(){
     S.pairs.forEach((p,i)=>{if(LIVE_PAIRS[p.symbol])S.pairs[i]=LIVE_PAIRS[p.symbol];});
     Object.keys(LIVE_PAIRS).forEach(sym=>{if(!S.pairs.some(p=>p.symbol===sym))S.pairs.push(LIVE_PAIRS[sym]);});
   }
-  try{const mr=await fetch('./mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();}}catch(e){}
+  try{const mr=await fetch('./data/mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();}}catch(e){}
   applyModeOverride();
   if(!POS_BUSY){const np=await loadPositions(); if(np){POS=np;pruneLocal();}}
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
