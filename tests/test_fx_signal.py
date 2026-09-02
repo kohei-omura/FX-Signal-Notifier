@@ -694,6 +694,73 @@ class StrategyCompareTest(RunTestCase):
                 F.compute_signal_stats("USD_JPY", rule=rule)   # 例外が出ないこと
 
 
+class MixedModeTest(RunTestCase):
+    """デイとスイングの併用。保有ポジションは『建てたときのモード』で評価すること。
+       ここを取り違えると、スイング建玉が15分足のATRで測られ、含み益の評価が
+       約2.9倍に膨らんでトレール利確が本来より早く発火する。"""
+
+    def _pos(self, mode, entry=158.0):
+        return {"id": "m1", "symbol": "USD_JPY", "side": "long", "entry": entry,
+                "lot": 10000, "tp_pips": 200, "sl_pips": 100, "status": "open",
+                "mode": mode}
+
+    def test_atr_used_matches_the_position_mode(self):
+        """同じ含み益でも、モードが違えば profit_atr が変わること。"""
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        tk = {"USD_JPY": {"bid": 159.0, "ask": 159.005}}
+        got = {}
+        for mode in ("day", "swing"):
+            self.reset_caches()
+            with F.use_mode(mode):
+                sc = F.score_pair("USD_JPY")
+                adv = F.position_advice(self._pos(mode), tk, sc, None)
+            self.assertIsNotNone(adv, f"{mode} で判定できない")
+            got[mode] = adv["profit_atr"]
+        self.assertNotEqual(got["day"], got["swing"],
+                            "モードが違うのに同じ物差しで測っている")
+        # 足が長いほどATRは大きく、同じ含み益なら profit_atr は小さくなる
+        self.assertLess(got["swing"], got["day"])
+
+    def test_check_positions_uses_each_position_mode(self):
+        self.write(F.POSITIONS_FILE, {"positions": [self._pos("swing")]})
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        F.main()
+        op = self.status()["open_positions"]
+        self.assertTrue(op, "保有ポジションが出ていない")
+        self.assertEqual(op[0].get("mode"), "swing",
+                         "評価に使われたモードが記録されていない/取り違えている")
+
+    def test_auto_levels_use_the_position_mode(self):
+        """auto指定の建玉は、そのモードの足のATRでTP/SLが決まること。"""
+        widths = {}
+        for mode in ("day", "swing"):
+            self.reset_caches()
+            data = {"positions": [{"id": "a1", "symbol": "USD_JPY", "side": "long",
+                                   "entry": 158.0, "lot": 10000, "auto": True,
+                                   "status": "open", "mode": mode}]}
+            F.MODE = "day"; F.P = F.PARAMS["day"]
+            msgs, changed = F.auto_set_levels(data)
+            self.assertTrue(changed, f"{mode} でレベルが設定されない")
+            widths[mode] = data["positions"][0]["sl_pips"]
+        self.assertGreater(widths["swing"], widths["day"],
+                           "スイングのSLがデイより広くない（足を取り違えている）")
+
+    def test_globals_are_restored_after_use_mode(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        with F.use_mode("swing"):
+            self.assertEqual(F.MODE, "swing")
+            self.assertEqual(F.P["interval"], "1hour")
+        self.assertEqual(F.MODE, "day")
+        self.assertEqual(F.P["interval"], "15min")
+
+    def test_unknown_mode_falls_back(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        with F.use_mode("nonexistent"):
+            self.assertEqual(F.MODE, "day")
+        self.assertEqual(F.pos_mode({"mode": "bogus"}), "day")
+        self.assertEqual(F.pos_mode({"entry_mode": "swing"}), "swing")
+
+
 class MfeTest(RunTestCase):
     def test_peak_includes_current_price_on_first_evaluation(self):
         """初回評価でも現在値を最高益に取り込む（トレール利確の押し戻し量がズレる）。"""

@@ -4,7 +4,7 @@
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
 """
 
-import os, sys, json, math, time, bisect, smtplib, datetime, threading
+import os, sys, json, math, time, bisect, smtplib, datetime, threading, contextlib
 from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from email.utils import formatdate
@@ -129,6 +129,31 @@ _tls = threading.local()
 _warn_lock = threading.Lock()
 _kline_lock = threading.Lock()
 _kline_locks = {}
+
+
+@contextlib.contextmanager
+def use_mode(mode):
+    """一時的に別モードの設定で計算する。
+
+       保有ポジションは『そのポジション自身のモード』の物差しで評価しないといけない。
+       例えばスイング建玉(SL=1時間ATR×1.8≒36pips)をデイの15分ATRで見ると、
+       含み益の評価が約2.9倍に膨らみ、トレール利確が本来より早く発火する。"""
+    global MODE, P, TECH_W, FUND_W
+    prev = (MODE, P, TECH_W, FUND_W)
+    if mode in PARAMS:
+        MODE = mode
+        P = PARAMS[mode]
+        TECH_W, FUND_W = (0.45, 0.55) if mode == "swing" else (0.85, 0.15)
+    try:
+        yield MODE
+    finally:
+        MODE, P, TECH_W, FUND_W = prev
+
+
+def pos_mode(p):
+    """ポジションが属するモード。無ければ現在のモード。"""
+    m = (p.get("mode") or p.get("entry_mode") or "").lower()
+    return m if m in PARAMS else MODE
 
 
 def warn(msg, tag=None, surface=True):
@@ -257,8 +282,10 @@ def warm_up(symbols):
 
 
 def get_ohlc(symbol):
-    if symbol in _OHLC_CACHE:
-        return _OHLC_CACHE[symbol]
+    # 足の種類ごとに分けて持つ。モードを切り替えたときに別の足を混ぜないため。
+    key = (symbol, P["interval"])
+    if key in _OHLC_CACHE:
+        return _OHLC_CACHE[key]
     need = max(P["ema_s"], P["macd"][1], P["adx"]*2, P["atr"]) + CHART_POINTS + 30
     today = datetime.datetime.now(JST).date()
     rows = {}
@@ -270,7 +297,7 @@ def get_ohlc(symbol):
     out = [rows[t] for t in sorted(rows)]
     if not out:
         warn(f"{symbol} のローソク足が取得できませんでした", tag=f"ohlc:{symbol}")
-    _OHLC_CACHE[symbol] = out
+    _OHLC_CACHE[key] = out
     return out
 
 
@@ -518,10 +545,11 @@ def suggest_tp_sl(a):
 
 def score_pair(symbol, ohlc=None):
     """1回の実行内では同じ足から同じスコアになるのでメモ化する（同一シンボルの再計算をやめる）。"""
-    if symbol in _SCORE_CACHE:
-        return _SCORE_CACHE[symbol]
+    key = (symbol, MODE)
+    if key in _SCORE_CACHE:
+        return _SCORE_CACHE[key]
     r = _score_pair_uncached(symbol, get_ohlc(symbol) if ohlc is None else ohlc)
-    _SCORE_CACHE[symbol] = r
+    _SCORE_CACHE[key] = r
     return r
 
 
@@ -1170,11 +1198,16 @@ def auto_set_levels(data):
     for p in data.get("positions", []):
         if p.get("status", "open") != "open" or not p.get("auto") or p.get("auto_set"):
             continue
-        a = atr(get_ohlc(p.get("symbol")), P["atr"]) if p.get("symbol") else None
-        if not a:
+        if not p.get("symbol"):
             continue
-        tp_pips, sl_pips = suggest_tp_sl(a)
+        # そのポジションのモードの足でATRを取る（デイの物差しでスイング建玉を測らない）
+        with use_mode(pos_mode(p)) as m:
+            a = atr(get_ohlc(p["symbol"]), P["atr"])
+            if not a:
+                continue
+            tp_pips, sl_pips = suggest_tp_sl(a)
         p["tp_pips"], p["sl_pips"], p["atr_used"], p["auto_set"] = tp_pips, sl_pips, round(a, 3), True
+        p["mode"] = m
         changed = True
         side = p.get("side", "long"); entry = float(p["entry"]); tp_pr, sl_pr = _tp_sl_prices(p)
         msgs.append(f"🧭 推奨レベル設定 {p['symbol']} ({'買い' if side=='long' else '売り'})\n"
@@ -1310,8 +1343,13 @@ def check_positions(data, ticker, prev_state=None):
             continue
         info = position_pl(p, ticker); side = info["side"]
         prev = prev_state.get(p.get("id"), {})
-        sc = score_pair(p["symbol"], get_ohlc(p["symbol"]))
-        adv = position_advice(p, ticker, sc, prev.get("mfe"))
+        # 建てたときのモードの物差しで見る。混在運用でここを取り違えると、
+        # スイング建玉が15分足のATRで測られて早々に利確推奨になる。
+        with use_mode(pos_mode(p)) as pmode:
+            sc = score_pair(p["symbol"])
+            adv = position_advice(p, ticker, sc, prev.get("mfe"))
+        if adv:
+            adv["mode"] = pmode
         print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} "
               f"{info['pips']:+}pips {info['yen']:+,}円" + (f" [{adv['label']} {adv['reason']}]" if adv else ""))
         if adv:
@@ -1322,7 +1360,8 @@ def check_positions(data, ticker, prev_state=None):
             # 「利確検討(watch)」のうち“利確検討”ラベルだけ拾う（“様子見/明確なサインなし”は除外＝ノイズ抑制）
             is_watch_actionable = adv["level"] == "watch" and "利確検討" in adv["label"]
             if changed and (adv["level"] in ("take", "cut") or is_watch_actionable):
-                body = (f"{adv['label']} {info['symbol']} ({'買い' if side=='long' else '売り'})\n"
+                mtag = f"[{adv.get('mode', MODE)}] "
+                body = (f"{adv['label']} {mtag}{info['symbol']} ({'買い' if side=='long' else '売り'})\n"
                         f"  {adv['reason']}\n"
                         f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円")
                 tail = ("\n  ※GMOで決済後、アプリに実際の結果を登録してください"
@@ -1439,7 +1478,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             adv = (advice_map or {}).get(p.get("id"))
             if adv:
                 op.update({"adv_level":adv["level"], "adv_label":adv["label"], "adv_reason":adv["reason"],
-                           "mfe":adv.get("mfe"), "profit_atr":adv.get("profit_atr")})
+                           "mfe":adv.get("mfe"), "profit_atr":adv.get("profit_atr"),
+                           "mode":adv.get("mode")})
             open_pos.append(op)
         elif p.get("status") == "closed":
             closed_pos.append({k:p.get(k) for k in
@@ -1571,9 +1611,13 @@ def main():
 
     data = load_positions()
     # 外部データは待ち時間が支配的。必要なぶんを最初にまとめて並列取得しておく。
-    market_open, ticker = warm_up(
-        list(SYMBOLS) + [p.get("symbol") for p in data.get("positions", [])
-                         if p.get("status", "open") == "open"])
+    open_pos_list = [p for p in data.get("positions", []) if p.get("status", "open") == "open"]
+    market_open, ticker = warm_up(list(SYMBOLS) + [p.get("symbol") for p in open_pos_list])
+    # 保有ポジションが別モードなら、その足も先に取っておく（監視で使うため）
+    other = {pos_mode(p) for p in open_pos_list} - {MODE}
+    for m in other:
+        with use_mode(m):
+            warm_up([p["symbol"] for p in open_pos_list if pos_mode(p) == m and p.get("symbol")])
     prev_stats = load_prev_stats()
     prev_state = load_prev_state()
     prev_signals = load_prev_signals()
