@@ -439,6 +439,7 @@
   <h2>ペア別シグナル <span id="viewtog" style="font-size:12px;font-weight:400;margin-left:8px"></span></h2>
   <div id="stalewarn"></div>
   <div id="modewarn"></div>
+  <div id="riskcap"></div>
   <div id="riskbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--mut)">
     <span>💴 資金</span><input id="r_cap" class="inp" inputmode="numeric" style="width:96px;padding:6px 8px" onchange="setRisk()">円
     <span>リスク</span><input id="r_risk" class="inp" inputmode="decimal" style="width:54px;padding:6px 8px" onchange="setRisk()">%
@@ -1608,6 +1609,26 @@ function parseGenAt(s){if(!s)return null;const m=String(s).match(/(\d{4})-(\d{2}
 function ageTxt(ms){const s=Math.round(ms/1000);if(s<90)return s+'秒前';const mi=Math.round(s/60);if(mi<90)return mi+'分前';const h=mi/60;if(h<48)return Math.round(h)+'時間前';return Math.round(h/24)+'日前';}
 // サーバー側の警告文はAPIのエラーメッセージを含むので、HTMLとして解釈させない
 function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// 併用すると件数が増えるぶん、合計リスクが効いてくる。常に見えるようにする。
+function renderRiskBar(){
+  var el=document.getElementById('riskcap'); if(!el) return;
+  var op=computeOpen();
+  var used=op.reduce(function(a,p){
+    var sl=+(p.sl_price!=null&&p.entry!=null?Math.abs(p.entry-p.sl_price)/PS:0);
+    return a + sl*PS*(+p.lot||0); },0);
+  var cap=RISK.cap*(RISK.riskCap||5)/100;
+  if(!cap){ el.innerHTML=''; return; }
+  var pct=used/cap*100;
+  var cls=pct>=100?'down':(pct>=70?'gold':'up');
+  el.innerHTML='<div style="margin:0 0 10px;padding:8px 12px;border:1px solid var(--line);'
+    +'border-radius:10px;font-size:12.5px">合計リスク <b class="'+cls+'">'
+    +Math.round(used).toLocaleString()+'円</b> / 上限 '+Math.round(cap).toLocaleString()+'円'
+    +'（資金の'+(RISK.riskCap||5)+'%）　'
+    +(pct>=100?'<b class="down">⛔ 上限到達。新規は見送りです</b>'
+      :(pct>=70?'<b style="color:var(--gold)">⚠️ 上限に近づいています</b>':''))
+    +'<div style="margin-top:5px;height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">'
+    +'<div style="height:100%;width:'+Math.min(100,pct)+'%;background:var(--'+(cls==='gold'?'gold':cls)+')"></div></div></div>';
+}
 function renderStale(){
   const el=$('#stalewarn');if(!el)return;const now=Date.now();const msgs=[];
   const gt=parseGenAt(S.generated_at);
@@ -1633,6 +1654,7 @@ function render(){
   renderModeSw();
   renderModeWarn();
   renderStale();
+  try{renderRiskBar();}catch(e){}
   $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
   renderViewToggle();
@@ -2237,17 +2259,20 @@ const SL_ATR_MULT=1.0,TP_SL_RATIO=1.5,VALID_BARS=3,MAX_CHASE_RATIO=0.5;
 const FUND_BIAS={USD_JPY:0.5,EUR_JPY:0.4,GBP_JPY:0.5,AUD_JPY:0.4};
 const SYMS=["USD_JPY","EUR_JPY","GBP_JPY","AUD_JPY"];
 const BARMIN={'1min':1,'5min':5,'10min':10,'15min':15,'30min':30,'1hour':60,'4hour':240,'1day':1440};
-const MODES=['scalp','day','swing'];
-const MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング'};
+const MODES=['scalp','day','swing','mtf'];
+const MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング',mtf:'上位足フォロー'};
 // slm=SL幅(ATR倍), tsr=TP:SL比, days/cap=統計の取得日数/上限本数。スタイルごとに足とTP/SL幅を変える
 const JS_PARAMS={
   scalp:{interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35,slm:1.0,tsr:1.5,days:3,cap:1500},
   day:{interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.3,tsr:1.6,days:8,cap:1000},
-  swing:{interval:'1hour',ema_f:12,ema_s:26,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000}};
+  swing:{interval:'1hour',ema_f:12,ema_s:26,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000},
+  // 上位足(1h/4h)で方向、15分足の押し目/戻りで入る。デイとスイングの併用形。
+  // SL幅はデイの1.5倍でスプレッド比率を下げている。
+  mtf:{interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.95,tsr:1.6,days:8,cap:1000,rule:'mtf_pullback'}};
 function holdTxt(min){if(min==null)return'—';if(min<120)return'約'+min+'分';const h=min/60;if(h<48)return'約'+(h>=10?Math.round(h):Math.round(h*10)/10)+'時間';return'約'+Math.round(h/24*10)/10+'日';}
 // リスク基準の数量計算（JPYペア: 1pip=0.01円/通貨）
-let RISK={cap:10000,risk:1,lev:25};
-function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk,lev:+(o.lev||25)};}catch(e){}}
+let RISK={cap:10000,risk:1,lev:25,riskCap:5};   // riskCap=合計リスクの上限(資金比%)
+function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk,lev:+(o.lev||25),riskCap:+(o.riskCap||5)};}catch(e){}}
 function setRisk(){const cap=Math.max(0,parseFloat(($('#r_cap')||{}).value)||0),risk=Math.max(0,parseFloat(($('#r_risk')||{}).value)||0),lev=Math.max(1,parseFloat(($('#r_lev')||{}).value)||25);RISK={cap,risk,lev};try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}render();}
 // 必要証拠金(1,000通貨)=価格×1000÷レバ。推奨=リスク上限と証拠金上限の小さい方・1,000通貨刻み
 function recLot(slPips,price){if(!slPips||slPips<=0||!RISK.cap||!price)return null;

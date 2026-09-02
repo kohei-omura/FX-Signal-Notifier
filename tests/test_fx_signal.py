@@ -761,6 +761,83 @@ class MixedModeTest(RunTestCase):
         self.assertEqual(F.pos_mode({"entry_mode": "swing"}), "swing")
 
 
+class MtfModeTest(RunTestCase):
+    """上位足で方向を決め、短期の押し目/戻りで入るモード。デイとスイングの併用形。"""
+
+    def setUp(self):
+        super().setUp()
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+
+    def test_entry_rule_follows_upper_timeframe(self):
+        lo, hi = F.MTF_PULLBACK_RSI
+        with F.use_mode("mtf"):
+            # 上位足が上昇なら、押し目(RSI低)だけ買う
+            self.assertEqual(F.entry_side("USD_JPY", 0.0, lo - 1, 0.4, aligned=1), "買い")
+            self.assertIsNone(F.entry_side("USD_JPY", 0.0, hi, 0.4, aligned=1))
+            # 上位足が下降なら、戻り(RSI高)だけ売る
+            self.assertEqual(F.entry_side("USD_JPY", 0.0, hi + 1, 0.4, aligned=-1), "売り")
+            self.assertIsNone(F.entry_side("USD_JPY", 0.0, lo, 0.4, aligned=-1))
+            # 上位足がレンジなら入らない
+            self.assertIsNone(F.entry_side("USD_JPY", 0.0, lo - 1, 0.4, aligned=0))
+
+    def test_score_rule_is_unchanged_for_other_modes(self):
+        with F.use_mode("day"):
+            self.assertEqual(F.entry_side("USD_JPY", 0.5, 50, 0.4), "買い")
+            self.assertEqual(F.entry_side("USD_JPY", -0.5, 50, 0.4), "売り")
+            self.assertIsNone(F.entry_side("USD_JPY", 0.1, 50, 0.4))
+
+    def test_stop_is_wider_than_day(self):
+        self.assertGreater(F.PARAMS["mtf"]["slm"], F.PARAMS["day"]["slm"],
+                           "SL幅がデイより広くない（コスト比率を下げる狙いが効かない）")
+
+    def test_runs_end_to_end(self):
+        F.main()
+        st = self.status()
+        self.assertEqual(st["mode"], "mtf")
+        self.assertEqual(len(st["pairs"]), len(F.SYMBOLS))
+
+
+class RiskGuardTest(RunTestCase):
+    """併用は件数が増えるぶんリスクが積み上がる。重ね持ちと総量を止める。"""
+
+    def _hold(self, sym, side="long"):
+        self.write(F.POSITIONS_FILE, {"positions": [
+            {"id": "h1", "symbol": sym, "side": side, "entry": 159.0, "lot": 10000,
+             "tp_pips": 20, "sl_pips": 10, "status": "open", "mode": "day"}]})
+
+    def test_duplicate_direction_is_blocked(self):
+        """同じ通貨・同じ方向を既に持っていたら、その向きのシグナルは出さない。"""
+        self._hold("USD_JPY", "long")
+        data = F.load_positions()
+        held = F.held_directions(data)
+        self.assertIn(("USD_JPY", "買い"), held)
+        self.assertNotIn(("USD_JPY", "売り"), held)
+
+    def test_open_risk_is_summed(self):
+        self._hold("USD_JPY")
+        # SL10pips × 10,000通貨 = 0.10円 × 10,000 = 1,000円
+        self.assertAlmostEqual(F.open_risk_yen(F.load_positions()), 1000.0, places=1)
+
+    def test_risk_cap_suppresses_new_signals(self):
+        self._hold("USD_JPY")
+        F.ACCOUNT_JPY = 10000; F.RISK_CAP_PCT = 5      # 上限500円 < 保有1,000円
+        try:
+            F.main()
+            st = self.status()
+            self.assertTrue(st["risk"]["full"], "上限到達が記録されていない")
+            self.assertTrue(all(p["signal"] is None for p in st["pairs"]),
+                            "上限到達なのに新規シグナルが出ている")
+            self.assertIn("risk-cap", [w["tag"] for w in F._WARNINGS])
+        finally:
+            F.ACCOUNT_JPY = 0
+
+    def test_no_cap_when_account_unset(self):
+        self._hold("USD_JPY")
+        F.ACCOUNT_JPY = 0
+        F.main()
+        self.assertFalse(self.status()["risk"]["full"])
+
+
 class MfeTest(RunTestCase):
     def test_peak_includes_current_price_on_first_evaluation(self):
         """初回評価でも現在値を最高益に取り込む（トレール利確の押し戻し量がズレる）。"""

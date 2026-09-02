@@ -21,7 +21,8 @@ from backtest import pool_summary
 
 OUT = "strategies.json"
 MODES = [m.strip() for m in os.environ.get("STRAT_MODES", "day,swing").split(",") if m.strip()]
-WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000)}
+WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000),
+           "mtf": (365, 40000)}
 
 
 # ---------------- 候補ロジック ----------------

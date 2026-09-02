@@ -13,7 +13,7 @@ on:
       modes:
         description: '集計するモード（例: day / scalp,day,swing）'
         type: string
-        default: 'scalp,day,swing'
+        default: 'scalp,day,swing,mtf'
 
 permissions:
   contents: write
@@ -35,7 +35,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run long backtest
         env:
-          BACKTEST_MODES: ${{ inputs.modes || 'scalp,day,swing' }}
+          BACKTEST_MODES: ${{ inputs.modes || 'scalp,day,swing,mtf' }}
           # swingを1年に延ばしたぶん1回あたり約2,300リクエストになる。
           # 1日1回とはいえ瞬間的な密度は上げたくないので同時接続を絞る。
           API_WORKERS: "2"
