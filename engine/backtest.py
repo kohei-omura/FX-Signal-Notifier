@@ -23,7 +23,7 @@ WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000),
 # エントリー地点そのものが変わる。
 SWEEP_TH = [0.40, 0.50, 0.55, 0.60, 0.65, 0.70]
 MODES = [m.strip() for m in os.environ.get("BACKTEST_MODES", "scalp,day,swing,mtf").split(",") if m.strip()]
-OUT = "backtest.json"
+OUT = F.data_path("backtest.json")
 
 
 def pool_summary(parts):

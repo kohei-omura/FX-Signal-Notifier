@@ -5,7 +5,7 @@
 通貨別ブラックアウト用の news_blackout.json を生成する。
 ※フィードは頻繁アクセス禁止。このスクリプトは「1日1回」だけ実行する想定（news-calendar.yml）。
 """
-import json, datetime, sys, time
+import json, datetime, os, sys, time
 from zoneinfo import ZoneInfo
 import requests
 
@@ -16,7 +16,8 @@ FEED = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 IMPACTS = {"High"}
 # 監視する国/通貨。クロス円なので JPY は常に対象。AUD は最大輸出先の中国(CNY)指標も効く。
 WATCH = {"USD", "EUR", "GBP", "AUD", "JPY", "CNY"}
-OUT = "news_blackout.json"
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                   "data", "news_blackout.json")
 
 
 RETRIES = 4          # 1日1回しか走らないので、ここで落ちると丸1日カレンダーが古いままになる

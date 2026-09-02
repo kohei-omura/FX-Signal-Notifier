@@ -3,7 +3,7 @@ name: FX Signal Notifier
 on:
   push:
     paths:
-      - 'positions.json'    # ポジションを編集したら即実行（自動利確レベル設定＆通知）
+      - 'data/positions.json'    # ポジションを編集したら即実行（自動利確レベル設定＆通知）
   workflow_dispatch:
     inputs:
       test:
@@ -38,14 +38,14 @@ jobs:
           GMAIL_ADDRESS:             ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
           MAIL_TO:                   ${{ secrets.MAIL_TO }}
-        run: python fx_signal.py
+        run: python engine/fx_signal.py
       - name: Commit dashboard state
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # 存在するファイルだけをaddする。entry_log.json（エントリー記録簿）は
           # 最初のポジション登録まで生成されないため、無条件addだと exit 128 で失敗する。
-          for f in status.json positions.json entry_log.json; do
+          for f in data/status.json data/positions.json data/entry_log.json; do
             if [ -f "$f" ]; then git add "$f"; fi
           done
           if git diff --staged --quiet; then echo "no changes"; exit 0; fi

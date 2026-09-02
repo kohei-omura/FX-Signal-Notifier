@@ -27,12 +27,12 @@ jobs:
           python-version: '3.12'
       - run: pip install requests
       - name: Fetch economic calendar
-        run: python fetch_news.py
+        run: python engine/fetch_news.py
       - name: Commit news_blackout.json
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add news_blackout.json
+          git add data/news_blackout.json
           if git diff --staged --quiet; then echo "no changes"; exit 0; fi
           git commit -m "auto: update news calendar [skip ci]"
           for i in 1 2 3; do

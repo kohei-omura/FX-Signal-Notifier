@@ -13,7 +13,7 @@
 import json, os, random, shutil, sys, tempfile, types, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "engine"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import mock_api                                   # noqa: E402

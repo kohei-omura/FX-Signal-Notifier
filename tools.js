@@ -323,7 +323,7 @@ function _syncSrcId(p){
 }
 async function _fetchAppClosed(){
   var cp=[];
-  for(const u of ['./status.json','./positions.json']){
+  for(const u of ['./data/status.json','./data/positions.json']){
     try{
       const r=await fetch(u+'?t='+Date.now(),{cache:'no-store'});
       if(!r.ok) continue;
@@ -371,7 +371,7 @@ async function appSync(){
   const msg=$('#impmsg');msg.textContent='アプリの決済履歴を取得中…';
   try{
     let cp=[];
-    for(const u of ['./status.json','./positions.json']){
+    for(const u of ['./data/status.json','./data/positions.json']){
       try{const r=await fetch(u+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)continue;const j=await r.json();
         if(Array.isArray(j.closed_positions))cp=cp.concat(j.closed_positions);
         if(Array.isArray(j.positions))cp=cp.concat(j.positions.filter(p=>p&&p.status==='closed'));
@@ -609,7 +609,7 @@ async function entryLogFetch(quiet){
     return 0;
   }
   var url='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')
-          +'/entry_log.json?t='+Date.now();
+          +'/data/entry_log.json?t='+Date.now();
   var got=[];
   try{
     var r=await fetch(url,{cache:'no-store'});
@@ -669,11 +669,11 @@ async function entryLogSync(){
     if(c.owner&&c.repo){
       var base='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')+'/';
       var st=null;
-      try{ var sr=await fetch(base+'status.json?t='+Date.now(),{cache:'no-store'});
+      try{ var sr=await fetch(base+'data/status.json?t='+Date.now(),{cache:'no-store'});
            if(sr.ok) st=await sr.json(); }catch(e){}
       // 長期検証(1日1回)があればそちらを使う。直近8日ぶんの status.json より母数が多い。
       var bt=null;
-      try{ var br=await fetch(base+'backtest.json?t='+Date.now(),{cache:'no-store'});
+      try{ var br=await fetch(base+'data/backtest.json?t='+Date.now(),{cache:'no-store'});
            if(br.ok) bt=await br.json(); }catch(e){}
       renderExitPolicies(st, bt);
       try{ renderSweep(bt, (st&&st.mode)||'day'); }catch(e){ console.warn(e); }

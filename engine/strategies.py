@@ -19,7 +19,7 @@ import datetime, json, os, random, sys
 import fx_signal as F
 from backtest import pool_summary
 
-OUT = "strategies.json"
+OUT = F.data_path("strategies.json")
 MODES = [m.strip() for m in os.environ.get("STRAT_MODES", "day,swing").split(",") if m.strip()]
 WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000),
            "mtf": (365, 40000)}

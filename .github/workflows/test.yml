@@ -7,14 +7,14 @@ name: Tests
 on:
   push:
     paths:
-      - 'fx_signal.py'
-      - 'fetch_news.py'
+      - 'engine/**'
+      - 'requirements.txt'
       - 'tests/**'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
-      - 'fx_signal.py'
-      - 'fetch_news.py'
+      - 'engine/**'
+      - 'requirements.txt'
       - 'tests/**'
   workflow_dispatch:
 
