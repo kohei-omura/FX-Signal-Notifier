@@ -23,7 +23,19 @@ PARAMS = {
               "bb":(20,2.0),"adx":14,"atr":14,"th":0.40,"slm":1.3,"tsr":1.6},
     "swing": {"interval":"1hour","ema_f":12,"ema_s":26,"rsi":14,"macd":(12,26,9),
               "bb":(20,2.0),"adx":14,"atr":14,"th":0.45,"slm":1.8,"tsr":1.8},
+    # 上位足(1h/4h)で方向を決め、15分足の押し目/戻りで入る。デイとスイングの併用形。
+    # 候補6種の検証で、唯一ノイズ帯を安定して超えた構造（1年781件・素の実力+0.052R）。
+    # SL幅はデイの1.5倍。素の実力を保ったままスプレッド比率を4.3%→2.8%に下げられる
+    # （4通りの中で最良だったが、統計的に有意な差ではない点は承知のうえで採る）。
+    # ※手取りの95%区間は0をまたぐ。プラス確定ではない。
+    "mtf":   {"interval":"15min","ema_f":9,"ema_s":21,"rsi":14,"macd":(12,26,9),
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.40,"slm":1.95,"tsr":1.6,
+              "rule":"mtf_pullback"},
 }
+MODE_LABEL = {"scalp": "スキャル", "day": "デイ", "swing": "スイング",
+              "mtf": "上位足フォロー"}
+# mtf_pullback の押し目/戻り判定。上位足が上昇ならRSIがこの下限以下、下降なら上限以上。
+MTF_PULLBACK_RSI = (40, 60)
 BARMIN = {"1min":1,"5min":5,"10min":10,"15min":15,"30min":30,"1hour":60,"4hour":240,"1day":1440}
 P = PARAMS.get(MODE, PARAMS["scalp"])
 
@@ -104,6 +116,10 @@ SPREAD_PIPS = {"USD_JPY": 0.2, "EUR_JPY": 0.4, "GBP_JPY": 0.9, "AUD_JPY": 0.5}
 DEFAULT_SPREAD_PIPS = 0.5
 # 1Rに対するスプレッド比率がこれを超えたら警告する。実測でscalpは0.347だった。
 COST_R_WARN = 0.15
+# 併用時のリスク管理
+BLOCK_DUPLICATE = True      # 同じ通貨・同じ方向を複数モードで同時に持たない
+RISK_CAP_PCT = float(os.environ.get("RISK_CAP_PCT", "5"))   # 合計リスクの上限（資金比%）
+ACCOUNT_JPY = float(os.environ.get("ACCOUNT_JPY", "0"))     # 資金。0なら上限判定しない
 
 PIP_SIZE = 0.01
 DEFAULT_LOT = 10000
@@ -537,6 +553,22 @@ def _compose_score(symbol, price, ef, es, rv, hist, hist_prev, bb_mid, bb_sd, a,
             "ema_sig": ema_sig, "macd_sig": macd_sig, "bb_sig": bb_sig}
 
 
+def entry_side(symbol, total, rv, th, aligned=None):
+    """そのモードのエントリー判定。ライブもバックテストもここを通す。
+
+       aligned は上位足の一致方向。バックテストは過去の値を渡し、
+       ライブは省略して mtf_view() の現在値を使う。"""
+    if P.get("rule") == "mtf_pullback":
+        al = aligned if aligned is not None else (mtf_view(symbol) or {}).get("aligned")
+        lo, hi = MTF_PULLBACK_RSI
+        if al == 1 and rv is not None and rv <= lo:
+            return "買い"
+        if al == -1 and rv is not None and rv >= hi:
+            return "売り"
+        return None
+    return "買い" if total >= th else ("売り" if total <= -th else None)
+
+
 def suggest_tp_sl(a):
     sl_pips = a * P.get("slm", SL_ATR_MULT) / PIP_SIZE
     tp_pips = sl_pips * P.get("tsr", TP_SL_RATIO)
@@ -583,7 +615,7 @@ def _score_pair_uncached(symbol, ohlc):
     reasons.insert(0, "手法:"+_method)
 
     th = P["th"]
-    side = "買い" if total >= th else ("売り" if total <= -th else None)
+    side = entry_side(symbol, total, rv, th)
     tp_pips, sl_pips = suggest_tp_sl(a)
     return {"price":price, "ef":ef, "es":es, "rsi":round(rv,1), "adx":round(adx_val,1),
             "atr":round(a,4), "tp_pips":tp_pips, "sl_pips":sl_pips,
@@ -728,7 +760,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
                 if None not in (ef, es, rv) and None not in (md, bb, ax):
                     total = _compose_score(symbol, closes[i], ef, es, rv,
                                            md[0], md[1], bb[0], bb[1], a, ax[0])["total"]
-                    side = "買い" if total >= th else ("売り" if total <= -th else None)
+                    side = entry_side(symbol, total, rv, th, aligned=aligned_s[i])
         if not side:
             i += 1; continue
         want = 1 if side == "買い" else -1
@@ -1375,9 +1407,40 @@ def check_positions(data, ticker, prev_state=None):
     return mail_msgs, line_msgs, advice_map, pos_events
 
 
+def open_risk_yen(data):
+    """保有中ポジションの合計リスク額（円）。SL幅×数量の合計。"""
+    total = 0.0
+    for p in data.get("positions", []):
+        if p.get("status", "open") != "open":
+            continue
+        try:
+            sl = float(p.get("sl_pips") or 0); lot = float(p.get("lot", DEFAULT_LOT))
+        except (TypeError, ValueError):
+            continue
+        total += sl * PIP_SIZE * lot
+    return total
+
+
+def held_directions(data):
+    """保有中の (通貨, 方向) の集合。併用時の重複エントリー防止に使う。"""
+    out = set()
+    for p in data.get("positions", []):
+        if p.get("status", "open") != "open" or not p.get("symbol"):
+            continue
+        out.add((p["symbol"], "買い" if p.get("side", "long") == "long" else "売り"))
+    return out
+
+
 def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_signals=None):
     """status.json を書き出し、(通知本文リスト, 通知したシグナルの一覧) を返す。"""
     pairs, notify, sig_events = [], [], []
+    held = held_directions(data) if BLOCK_DUPLICATE else set()
+    risk_now = open_risk_yen(data)
+    risk_cap = ACCOUNT_JPY * RISK_CAP_PCT / 100 if ACCOUNT_JPY > 0 else 0
+    risk_full = bool(risk_cap and risk_now >= risk_cap)
+    if risk_full:
+        warn(f"合計リスクが上限に達しています（{risk_now:,.0f}円 / 上限{risk_cap:,.0f}円）。"
+             f"新規シグナルは見送ります", tag="risk-cap")
     any_blackout = False
     now = datetime.datetime.now(JST)
     bar_min = BARMIN.get(P["interval"], 1)
@@ -1402,6 +1465,11 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                 sig = None; skip_reason = "上位足が順張りでない"
         if sig and HOUR_FILTER_ON and now.hour in BAD_HOURS:
             sig = None; skip_reason = f"{now.hour}時台は除外設定のため見送り"
+        # 併用時、同じ通貨・同じ方向を重ねると同じ値動きへのリスクが倍になる
+        if sig and (sym, sig) in held:
+            sig = None; skip_reason = "同じ方向を既に保有中（重複を回避）"
+        if sig and risk_full:
+            sig = None; skip_reason = "合計リスクが上限のため見送り"
         bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
 
         entry = {}
@@ -1461,7 +1529,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             if st and st.get("n"):
                 stat_txt = (f"\n  ⏱想定保有: 利確まで約{st.get('hold_tp_min','?')}分 / 損切りまで約{st.get('hold_sl_min','?')}分"
                             f"\n  📊TP勝率 {st.get('tp_winrate')}%（直近{st.get('n')}回）")
-            notify.append(f"{'🟢' if sig=='買い' else '🔴'} {sym} {sig}（{MODE}）\n"
+            notify.append(f"{'🟢' if sig=='買い' else '🔴'} {sym} {sig}"
+                          f"（{MODE_LABEL.get(MODE, MODE)}）\n"
                           f"  スコア{sc['score']:+.2f}（テク{sc['tech']:+.2f}/ファンダ{sc['fund']:+.2f}） {s_mark}\n"
                           f"  {rtxt}\n  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
                           f"  ▶エントリー目安: 通知価格 {entry['entry_ref']}\n"
@@ -1490,6 +1559,9 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         warn(f"スプレッドが1リスクの{sum(costs)/len(costs)*100:.0f}%を占めています"
              f"（{MODE}モードはSL幅が狭すぎます）", tag="cost")
     status = {
+        "risk": {"open_yen": round(risk_now), "cap_yen": round(risk_cap),
+                 "pct": round(risk_now/risk_cap*100) if risk_cap else None,
+                 "full": risk_full},
         "generated_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "market_open": market_open, "mode": MODE, "blackout": any_blackout,
         "weights": {"tech": TECH_W, "fund": FUND_W},

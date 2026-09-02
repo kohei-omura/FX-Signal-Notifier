@@ -17,11 +17,12 @@ import fx_signal as F
 # モード別の検証期間。1分足は本数が多いので短めにする。
 # swing は120日で125件しか出ず判定不能だったため1年に延ばした。
 # day も90日では有望候補(上位足押し目)が205件しか出ず判定できなかったため1年に延ばす。
-WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000)}
+WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000),
+           "mtf": (365, 40000)}
 # しきい値を実際の運用ルールとして振ってみる。事後にスコア帯で切り分けるのとは違い、
 # エントリー地点そのものが変わる。
 SWEEP_TH = [0.40, 0.50, 0.55, 0.60, 0.65, 0.70]
-MODES = [m.strip() for m in os.environ.get("BACKTEST_MODES", "scalp,day,swing").split(",") if m.strip()]
+MODES = [m.strip() for m in os.environ.get("BACKTEST_MODES", "scalp,day,swing,mtf").split(",") if m.strip()]
 OUT = "backtest.json"
 
 
