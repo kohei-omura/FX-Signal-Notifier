@@ -95,6 +95,11 @@ class RunTestCase(unittest.TestCase):
         self._real_time = F.time
         F.time = types.SimpleNamespace(sleep=self.slept.append)
         self.addCleanup(setattr, F, "time", self._real_time)
+        # backtest.run_mode などがモジュール全体の設定を書き換えるため、
+        # テストごとに必ず元へ戻す（前のテストの設定が次に漏れないように）
+        for name in ("STATS_DAYS", "STATS_MAX_BARS", "MODE", "P", "TECH_W", "FUND_W",
+                     "ACCOUNT_JPY", "RISK_CAP_PCT"):
+            self.addCleanup(setattr, F, name, getattr(F, name))
         self.sent = {"line": [], "mail": []}
         F.notify_line = lambda t: self.sent["line"].append(t)
         F.notify_mail = lambda s, b: self.sent["mail"].append((s, b))
@@ -841,6 +846,51 @@ class MtfModeTest(RunTestCase):
         st = self.status()
         self.assertEqual(st["mode"], "mtf")
         self.assertEqual(len(st["pairs"]), len(F.SYMBOLS))
+
+
+class StatsModeTest(RunTestCase):
+    """統計はモードごとに独立していること。
+       混ざると『想定保有4.5時間』のところに別モードの60分が表示される。"""
+
+    def test_every_mode_has_a_stats_window(self):
+        """全モードに統計期間の定義があること。無いと既定3日になり、
+        シグナル頻度の低いモードは最低件数に届かず統計が作れない。"""
+        for m in F.PARAMS:
+            self.assertIn(m, F.STATS_DAYS, f"{m} の統計期間が未定義")
+            self.assertIn(m, F.STATS_MAX_BARS, f"{m} の上限本数が未定義")
+
+    def test_mtf_window_is_long_enough(self):
+        """mtfは1通貨あたり1日0.7件程度。最低8件に届く期間があること。"""
+        self.assertGreaterEqual(F.STATS_DAYS["mtf"], 20,
+                                "mtfの統計期間が短すぎて統計が作れない")
+
+    def test_other_mode_stats_are_not_reused(self):
+        """前のモードの統計を引き継がないこと。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        prev = {"USD_JPY": {"n": 30, "tp_winrate": 20, "hold_tp_min": 60,
+                            "hold_sl_min": 82, "stats_ts": 10**12, "stats_mode": "day"}}
+        got = F.gather_stats(prev)
+        self.assertIsNot(got.get("USD_JPY"), prev["USD_JPY"],
+                         "別モード(day)の統計をそのまま使っている")
+        if got.get("USD_JPY"):
+            self.assertEqual(got["USD_JPY"]["stats_mode"], "mtf")
+
+    def test_same_mode_stats_are_reused(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        import datetime
+        now = int(datetime.datetime.now(F.JST).timestamp())
+        prev = {s: {"n": 30, "tp_winrate": 40, "hold_tp_min": 60, "hold_sl_min": 80,
+                    "stats_ts": now, "stats_mode": "day"} for s in F.SYMBOLS}
+        got = F.gather_stats(prev)
+        self.assertEqual(got["USD_JPY"], prev["USD_JPY"], "同じモードの新しい統計を捨てている")
+
+    def test_status_never_shows_foreign_mode_stats(self):
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        F.main()
+        for p in self.status()["pairs"]:
+            if p.get("stats_mode") is not None:
+                self.assertEqual(p["stats_mode"], "mtf",
+                                 f"{p['symbol']} に別モードの統計が出ている")
 
 
 class HoldAlignmentTest(RunTestCase):

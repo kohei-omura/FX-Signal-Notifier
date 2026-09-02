@@ -68,8 +68,12 @@ ADX_WEAK  = 20.0   # ADXがこの値未満で勢い喪失
 
 # ===== シグナル統計（想定保有時間・TP勝率）：重いので約60分キャッシュ =====
 STATS_TTL_SEC = 3600
-STATS_DAYS = {"scalp": 3, "day": 8, "swing": 20}
-STATS_MAX_BARS = {"scalp": 1000, "day": 1000, "swing": 1000}
+# モード別の統計期間。シグナル頻度が低いモードほど長く取らないと
+# 最低件数(8件)に届かず統計が作れない。
+# mtf は上位足と押し目が揃ったときだけ入るため 1通貨あたり1日0.7件しか出ない。
+# 3日(既定)では平均2件で毎回 None になり、前のモードの統計が残り続けていた。
+STATS_DAYS = {"scalp": 3, "day": 8, "swing": 20, "mtf": 45}
+STATS_MAX_BARS = {"scalp": 1000, "day": 1000, "swing": 1000, "mtf": 4500}
 
 NEWS_BLACKOUT = []          # 手書きの予備リスト（"YYYY-MM-DD HH:MM"・全通貨一律）。通常は空でOK
 BLACKOUT_MIN = 15           # 発表前後この分数はエントリー見送り
@@ -963,9 +967,12 @@ def gather_stats(prev):
     todo = []
     for sym in SYMBOLS:
         c = prev.get(sym)
-        stats[sym] = c        # 再計算できなかった時は前回値を残す
-        if not (c and c.get("stats_ts") and c.get("stats_mode") == MODE
-                and (now_ts - c["stats_ts"] < STATS_TTL_SEC)):
+        fresh = (c and c.get("stats_ts") and c.get("stats_mode") == MODE
+                 and (now_ts - c["stats_ts"] < STATS_TTL_SEC))
+        # 前回値を使うのは「同じモードの」統計だけ。別モードの数字を出すと、
+        # 想定保有時間や勝率が実態と何時間もズレて表示される。
+        stats[sym] = c if (c and c.get("stats_mode") == MODE) else None
+        if not fresh:
             todo.append(sym)
     if not todo:
         return stats
