@@ -113,7 +113,8 @@ class RunTestCase(unittest.TestCase):
             return json.load(f)
 
     def reset_caches(self):
-        for n in ("_OHLC_CACHE", "_KLINE_DAY_CACHE", "_MTF_CACHE", "_SCORE_CACHE", "_kline_locks"):
+        for n in ("_OHLC_CACHE", "_KLINE_DAY_CACHE", "_MTF_CACHE", "_SCORE_CACHE",
+                  "_SERIES_CACHE", "_kline_locks"):
             getattr(F, n).clear()
         F._WARNINGS.clear(); F._NEWS_CACHE = None; F._fail_streak[0] = 0
         mock_api.reset()
@@ -554,6 +555,53 @@ class LongBacktestTest(RunTestCase):
             self.assertIn(k, pol, f"{k} が集計で落ちている")
         self.assertLessEqual(pol["ci_lo"], pol["avg_r"])
         self.assertGreaterEqual(pol["ci_hi"], pol["avg_r"])
+
+    def test_threshold_sweep_changes_the_entry_set(self):
+        """しきい値を上げれば採用数は必ず減る（事後の切り分けではなく運用ルールとして効く）。"""
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        low = F.compute_signal_stats("USD_JPY", th_override=0.40)
+        self.reset_caches()
+        high = F.compute_signal_stats("USD_JPY", th_override=0.70)
+        self.assertIsNotNone(low, "基準のしきい値で採用が0だとこの検証が成立しない")
+        # 件数が下限(8件)を割ると None が返る。それも「減った」に含める。
+        high_n = high["n"] if high else 0
+        self.assertLess(high_n, low["n"], "しきい値を上げても採用数が減っていない")
+        if high:
+            self.assertEqual(high["th"], 0.7)
+
+    def test_entry_range_splits_without_overlap(self):
+        """前半・後半で分けた採用数の合計が、全体とおおむね一致すること。"""
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        whole = F.compute_signal_stats("EUR_JPY")
+        self.reset_caches()
+        a = F.compute_signal_stats("EUR_JPY", entry_range=(0.0, 0.5))
+        self.reset_caches()
+        b = F.compute_signal_stats("EUR_JPY", entry_range=(0.5, 1.0))
+        self.assertIsNotNone(whole)
+        got = (a["n"] if a else 0) + (b["n"] if b else 0)
+        # 境界をまたぐ1トレードぶんのズレは許容する
+        self.assertLessEqual(abs(got - whole["n"]), 3, f"分割の合計が合わない {got} vs {whole['n']}")
+
+    def test_holdout_reports_both_halves(self):
+        """前半で選んだしきい値を後半で検証した結果が両方載ること。"""
+        self.bt.MODES = ["day"]
+        h = self.bt.holdout("day")
+        if h is None:
+            self.skipTest("母数が足りずホールドアウトを作れない")
+        self.assertIn("best_th", h)
+        self.assertIn("first_half", h)
+        self.assertIn("second_half", h)
+        self.assertIn(h["best_th"], self.bt.SWEEP_TH)
+
+    def test_report_includes_sweep_and_coverage(self):
+        self.bt.MODES = ["day"]
+        self.bt.main()
+        m = self.read(self.out)["modes"]["day"]
+        self.assertIn("sweep", m)
+        self.assertIn("days_covered", m)
+        self.assertGreater(m["days_covered"], 0)
+        ths = [r["th"] for r in m["sweep"]]
+        self.assertEqual(ths, sorted(ths), "しきい値の並びが昇順でない")
 
     def test_failure_keeps_previous_report(self):
         """集計できない時に既存のレポートを壊さないこと。"""

@@ -675,6 +675,7 @@ async function entryLogSync(){
       try{ var br=await fetch(base+'backtest.json?t='+Date.now(),{cache:'no-store'});
            if(br.ok) bt=await br.json(); }catch(e){}
       renderExitPolicies(st, bt);
+      try{ renderSweep(bt, (st&&st.mode)||'day'); }catch(e){ console.warn(e); }
     }
   }catch(e){ console.warn('検証データの取得に失敗', e); }
   var el=document.getElementById('impmsg');
@@ -682,6 +683,55 @@ async function entryLogSync(){
     +r.filled+'件の取引に判断材料を紐付けました</span>'
     +(r.filled?'':'<br><span class="warn">建値が一致する取引がありませんでした。CSVを「建単価つき」で取り込んでいるかご確認ください。</span>');
   try{ renderJournal(); }catch(e){}
+}
+
+/* ===== しきい値スイープ と アウトオブサンプル検証 =====
+   「スコアが強い時だけ入れば勝てるのか」を、事後の切り分けではなく
+   運用ルールとして回した結果で見る。
+   ただし何通りも試せば偶然どれかは良く見えるので、前半だけで選んだしきい値を
+   後半（選定に使っていないデータ）で検証した結果を必ず並べて出す。 */
+function renderSweep(backtest, mode){
+  var el=document.getElementById('sweep'); if(!el) return;
+  var m=backtest&&backtest.modes&&backtest.modes[mode];
+  if(!m||!m.sweep||!m.sweep.length){
+    el.innerHTML='<div class="note">長期検証(backtest.json)がまだありません。毎日05:30に自動生成されます。</div>';
+    return;
+  }
+  var rows=m.sweep.map(function(r){
+    var v=r.advice||r.tp_sl; if(!v) return '';
+    var und=(v.ci_lo<0&&v.ci_hi>0);
+    var cur=(Math.abs(r.th-(m.current_th||0.40))<1e-9);
+    return '<tr'+(cur?' style="font-weight:800"':'')+'><td>'+r.th.toFixed(2)+(cur?'（現在）':'')+'</td>'
+      +'<td>'+v.n+'</td><td class="'+(und?'':(v.avg_r>=0?'good':'bad'))+'">'
+      +(v.avg_r>=0?'+':'')+v.avg_r.toFixed(3)+'</td>'
+      +'<td style="font-size:11px;opacity:.8">'+(v.ci_lo>=0?'+':'')+v.ci_lo.toFixed(3)
+      +'〜'+(v.ci_hi>=0?'+':'')+v.ci_hi.toFixed(3)+(und?'<br><b>判定不能</b>':'')+'</td></tr>';
+  }).join('');
+  var h=m.holdout, hb='';
+  if(h&&h.first_half&&h.second_half){
+    var f=h.first_half, sec=h.second_half;
+    var held=(sec.avg_r>0&&sec.ci_lo>0);
+    var kept=(sec.avg_r>0);
+    hb='<div style="margin-top:10px;padding:9px 12px;border:1px solid '
+      +(held?'var(--up)':'var(--down)')+';border-radius:9px;font-size:12.5px;line-height:1.8">'
+      +'<b>過学習チェック（前半で選び、後半で試す）</b><br>'
+      +'前半だけを見て最良だったしきい値: <b>'+h.best_th.toFixed(2)+'</b>'
+      +'（前半 '+(f.avg_r>=0?'+':'')+f.avg_r.toFixed(3)+'R / n='+f.n+'）<br>'
+      +'それを後半（選定に使っていないデータ）で試すと: <b class="'+(kept?'good':'bad')+'">'
+      +(sec.avg_r>=0?'+':'')+sec.avg_r.toFixed(3)+'R</b>'
+      +'（n='+sec.n+' / 95%区間 '+(sec.ci_lo>=0?'+':'')+sec.ci_lo.toFixed(3)
+      +'〜'+(sec.ci_hi>=0?'+':'')+sec.ci_hi.toFixed(3)+'）<br>'
+      +(held?'✅ 後半でもプラスを保っています。'
+            :(kept?'⚠️ 後半もプラスですが区間が0をまたぐため、まだ優位性があるとは言えません。'
+                  :'⛔ <b>後半では再現しませんでした。</b>前半の良さは過去に合わせただけの数字です。'))
+      +'</div>';
+  }
+  el.innerHTML='<table><thead><tr><th>しきい値</th><th>件数</th><th>期待R/回</th><th>95%区間</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table>'
+    +'<div class="note">しきい値を実際の運用ルールとして回した結果です（🎯推奨で降りる場合）。'
+    +'上げるほど件数が減るので、期待Rが上がっても区間は広がります。<br>'
+    +'<b>'+m.sweep.length+'通り試せば、優位性が無くても偶然どれかは良く見えます。</b>'
+    +'下の過学習チェックで再現するかを必ず確認してください。</div>'+hb;
 }
 
 /* ===== 現状診断（このまま続けて勝てるのか） =====
