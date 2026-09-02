@@ -170,6 +170,24 @@ def noise_floor(mode, rate, seeds=24):
             "max": round(vals[-1], 3)}
 
 
+def stop_width_sweep(mode, rule, mults=(1.0, 1.5, 2.0, 3.0)):
+    """SL幅を広げるとスプレッドが1Rに占める割合は下がる。
+
+       有望候補は素の優位性(+0.052R)とスプレッド(0.043R)がほぼ同じ大きさで、
+       手取りが0付近から動かなかった。SLを広げてコスト比率を下げたときに
+       素の優位性が残るなら手取りは改善するし、消えるならそれは幅に依存した
+       見かけの優位でしかなかったということ。"""
+    base = F.PARAMS[mode]
+    out = []
+    for m in mults:
+        F.P = dict(base); F.P["slm"] = round(base["slm"] * m, 3)
+        r = evaluate(rule, mode)
+        if r:
+            out.append({"slm_mult": m, "slm": F.P["slm"], **r})
+    F.P = base
+    return out
+
+
 def run_mode(mode):
     days, cap = WINDOWS.get(mode, (90, 9000))
     F.MODE = mode; F.P = F.PARAMS[mode]
@@ -198,7 +216,13 @@ def run_mode(mode):
         second = evaluate(rule, mode, (0.5, 1.0))
         out[key] = {"label": label, "all": whole,
                     "first_half": first, "second_half": second}
-    return {"days": days, "rules": out, "noise_floor": floor}
+    # 素の実力が最も高い候補について、SL幅を変えた場合も見る
+    best_key = max(out, key=lambda k: out[k]["all"].get("avg_r_gross", -9)) if out else None
+    widths = None
+    if best_key and best_key != "random":
+        widths = {"rule": best_key, "label": out[best_key]["label"],
+                  "rows": stop_width_sweep(mode, rules[best_key][0])}
+    return {"days": days, "rules": out, "noise_floor": floor, "stop_width": widths}
 
 
 def main():
@@ -225,6 +249,14 @@ def main():
             beat = "  ← ノイズ超え" if (nf and a["avg_r"] > nf["p95"]) else ""
             print(f"  {v['label']:22} {a['n']:6} {a['avg_r']:+8.3f} "
                   f"[{a['ci_lo']:+.3f}〜{a['ci_hi']:+.3f}] {j:8} {oos:>18}{beat}")
+        w = r.get("stop_width")
+        if w and w.get("rows"):
+            print(f"\n  SL幅を変えた場合（{w['label']}）")
+            print(f"    {'SL倍率':>8} {'件数':>6} {'控除前':>8} {'コスト':>7} {'手取り':>8} {'95%区間':>19}")
+            for row in w["rows"]:
+                print(f"    ×{row['slm_mult']:<7.1f} {row['n']:6} {row.get('avg_r_gross',0):+8.3f} "
+                      f"{-row['cost_r']:+7.3f} {row['avg_r']:+8.3f} "
+                      f"[{row['ci_lo']:+.3f}〜{row['ci_hi']:+.3f}]")
     F.write_json(OUT, report)
     print(f"\n[OK] {OUT} に保存")
 

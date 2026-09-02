@@ -678,6 +678,16 @@ class StrategyCompareTest(RunTestCase):
             self.assertGreaterEqual(nf["max"], one["avg_r"])
             self.assertLessEqual(nf["min"], one["avg_r"])
 
+    def test_stop_width_sweep_lowers_cost_ratio(self):
+        """SL幅を広げればスプレッドが1Rに占める割合は必ず下がること。
+        素の優位性がコストと同程度しかない時に、唯一動かせるのがここ。"""
+        rows = self.S.stop_width_sweep("day", self.S.rule_current, mults=(1.0, 3.0))
+        if len(rows) < 2:
+            self.skipTest("母数不足")
+        self.assertLess(rows[-1]["cost_r"], rows[0]["cost_r"],
+                        "SLを広げてもコスト比率が下がっていない")
+        self.assertEqual(F.P, F.PARAMS["day"], "設定が元に戻っていない")
+
     def test_all_rules_run_without_error(self):
         for key, (rule, label) in self.S.RULES.items():
             with self.subTest(rule=key):
