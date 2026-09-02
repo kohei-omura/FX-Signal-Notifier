@@ -603,6 +603,52 @@ class LongBacktestTest(RunTestCase):
         ths = [r["th"] for r in m["sweep"]]
         self.assertEqual(ths, sorted(ths), "しきい値の並びが昇順でない")
 
+    def test_same_interval_modes_reuse_klines(self):
+        """day と mtf は同じ15分足を使う。モードを変えても取り直さないこと。
+        取り直すと1回の実行が30分のタイムアウトを超える（実際に打ち切られた）。"""
+        self.bt.WINDOWS = {"day": (3, 800), "mtf": (3, 800)}
+        self.bt.run_mode("day")
+        after_day = mock_api.CALLS["klines"]
+        self.bt.run_mode("mtf")
+        after_mtf = mock_api.CALLS["klines"]
+        self.assertEqual(after_mtf, after_day,
+                         f"同じ足なのに取り直している（+{after_mtf-after_day}回）")
+
+    def test_unfetched_interval_is_fetched(self):
+        """まだ取っていない足のモードは、きちんと取りに行くこと。
+        （swingの1時間足は day が上位足フィルタ用に既に取っているため、
+        ここでは day が触らない1分足のscalpで確かめる）"""
+        self.bt.WINDOWS = {"day": (3, 800), "scalp": (3, 800)}
+        self.bt.run_mode("day")
+        after_day = mock_api.CALLS["klines"]
+        self.assertNotIn("1min", {k[1] for k in F._KLINE_DAY_CACHE},
+                         "dayが1分足を取っている（前提が崩れている）")
+        self.bt.run_mode("scalp")
+        self.assertGreater(mock_api.CALLS["klines"], after_day,
+                           "未取得の足なのに取得していない")
+
+    def test_cache_separates_intervals(self):
+        """足ごとに別のキーで持つこと（混ざると別の足のデータを使ってしまう）。"""
+        self.bt.WINDOWS = {"day": (3, 800)}
+        self.bt.run_mode("day")
+        got = {k[1] for k in F._KLINE_DAY_CACHE}
+        self.assertIn("15min", got)      # 本体
+        self.assertIn("1hour", got)      # 上位足フィルタ
+        self.assertIn("4hour", got)
+
+    def test_series_cache_is_keyed_by_mode(self):
+        """足が同じでも、モードが違えば別の系列として扱うこと。"""
+        self.reset_caches()
+        F.STATS_DAYS = {m: 3 for m in F.PARAMS}
+        F.STATS_MAX_BARS = {m: 800 for m in F.PARAMS}
+        with F.use_mode("day"):
+            F.compute_signal_stats("USD_JPY")
+        keys_day = set(F._SERIES_CACHE)
+        with F.use_mode("mtf"):
+            F.compute_signal_stats("USD_JPY")
+        added = set(F._SERIES_CACHE) - keys_day
+        self.assertTrue(added, "モードが違うのに同じ系列を使い回している")
+
     def test_failure_keeps_previous_report(self):
         """集計できない時に既存のレポートを壊さないこと。"""
         self.write(self.out, {"keep": True})

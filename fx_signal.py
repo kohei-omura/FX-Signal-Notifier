@@ -298,11 +298,12 @@ def warm_up(symbols):
 
 
 def get_ohlc(symbol):
-    # 足の種類ごとに分けて持つ。モードを切り替えたときに別の足を混ぜないため。
-    key = (symbol, P["interval"])
+    need = max(P["ema_s"], P["macd"][1], P["adx"]*2, P["atr"]) + CHART_POINTS + 30
+    # 足の種類と必要本数ごとに持つ。足が同じでもモードで必要本数が違うことがあり、
+    # 一緒にすると本数の足りないリストを使い回してしまう。
+    key = (symbol, P["interval"], need)
     if key in _OHLC_CACHE:
         return _OHLC_CACHE[key]
-    need = max(P["ema_s"], P["macd"][1], P["adx"]*2, P["atr"]) + CHART_POINTS + 30
     today = datetime.datetime.now(JST).date()
     rows = {}
     for back in range(0, 7):
@@ -727,7 +728,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
     th = P["th"] if th_override is None else th_override
     # しきい値スイープでは同じ足に対して何度も呼ばれる。指標はしきい値に依存しないので
     # 1回だけ作って使い回す（スイープ18通りぶんの作り直しをやめる）。
-    ck = (symbol, P["interval"], len(oh), days)
+    # モードを含める。足が同じでも指標の設定が違えば別の系列になるため。
+    ck = (symbol, MODE, P["interval"], len(oh), days)
     cached = _SERIES_CACHE.get(ck)
     if cached is None:
         cached = (ema_series(closes, P["ema_f"]), ema_series(closes, P["ema_s"]),

@@ -25,7 +25,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60   # モードを増やしたので余裕を持たせる
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

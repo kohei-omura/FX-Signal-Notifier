@@ -195,7 +195,8 @@ def run_mode(mode):
     F.TECH_W, F.FUND_W = (0.45, 0.55) if mode == "swing" else (0.85, 0.15)
     F.STATS_DAYS = {m: days for m in F.PARAMS}
     F.STATS_MAX_BARS = {m: cap for m in F.PARAMS}
-    for c in (F._OHLC_CACHE, F._KLINE_DAY_CACHE, F._MTF_CACHE, F._SCORE_CACHE, F._SERIES_CACHE):
+    # klinesの日次キャッシュはキーに足が入っているのでモードをまたいで使い回す
+    for c in (F._OHLC_CACHE, F._MTF_CACHE, F._SCORE_CACHE, F._SERIES_CACHE):
         c.clear()
 
     rules = dict(RULES)
