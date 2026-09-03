@@ -2279,6 +2279,23 @@ const W_EMA=0.35,W_MACD=0.25,W_RSI=0.20,W_BB=0.20,TECH_W=0.9,FUND_W=0.1;
 // スタイル別 テク:ファンダ 比率（短期=テク重視 0.85:0.15 / スイング=ファンダ重視 0.45:0.55）
 function tfw(){return (S&&S.mode==='swing')?{t:0.45,f:0.55}:{t:0.85,f:0.15};}
 const SL_ATR_MULT=1.0,TP_SL_RATIO=1.5,VALID_BARS=3,MAX_CHASE_RATIO=0.5;
+// mtfモードのエントリー条件（fx_signal.py の MTF_PULLBACK_RSI と同値）。
+// 上位足が揃っている方向に、RSIが押し目/戻りまで来た時だけ入る。
+const MTF_PULLBACK_RSI=[40,60];
+/* エントリー判定。fx_signal.py の entry_side() と1対1で対応させる。
+   ここを分岐させないと、mtfモードでは画面がスコア方式で判定してしまい、
+   サーバーの通知とライブ通知が別のルールで動くことになる。
+   aligned: 上位足の一致方向(1/-1/0)。null/undefined は「不明」でシグナルなし。 */
+function entrySide(total,rv,P,aligned){
+  if(P&&P.rule==='mtf_pullback'){
+    if(aligned==null||rv==null)return null;
+    const lo=MTF_PULLBACK_RSI[0],hi=MTF_PULLBACK_RSI[1];
+    if(aligned===1&&rv<=lo)return '買い';
+    if(aligned===-1&&rv>=hi)return '売り';
+    return null;
+  }
+  return total>=P.th?'買い':(total<=-P.th?'売り':null);
+}
 const FUND_BIAS={USD_JPY:0.5,EUR_JPY:0.4,GBP_JPY:0.5,AUD_JPY:0.4};
 const SYMS=["USD_JPY","EUR_JPY","GBP_JPY","AUD_JPY"];
 const BARMIN={'1min':1,'5min':5,'10min':10,'15min':15,'30min':30,'1hour':60,'4hour':240,'1day':1440};
@@ -2365,6 +2382,10 @@ function adxSeries(o,p){const n=o.length,out=Array(n).fill(null);if(n<2)return o
 // 全バーの売買判定をO(n)で一括計算（evalAtのslice地獄を置換。判定は完全一致・約100倍高速）
 function buildEvalSeries(sym,o,P){
   const c=o.map(r=>r[2]),n=c.length;
+  // 過去バーごとの上位足一致方向は画面側では再現できない（4時間足がGMO側で年指定のみ）。
+  // スコア方式で代用すると別ルールの成績を「このモードの成績」として出してしまうので、
+  // ここでは何も返さず、サーバーが計算した統計を使う（adoptServerStats）。
+  if(P&&P.rule==='mtf_pullback')return new Array(n).fill(null);
   const ef=emaSeries(c,P.ema_f),es=emaSeries(c,P.ema_s);
   const rsiS=rsiSeries(c,P.rsi);
   const {hist,prev}=macdHistSeries(c,P.macd[0],P.macd[1],P.macd[2]);
@@ -2400,7 +2421,17 @@ function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.ma
   const win=closes.slice(-1-P.adx,-1),hh=win.length?Math.max(...win):price,ll=win.length?Math.min(...win):price;
   const method=adxVal>=25?((price>hh||price<ll)?'ブレイク':'順張りMA'):(Math.abs(bbSig)>=0.8?'レンジ逆張り':'様子見');
   reasons.unshift('手法:'+method);
-  const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
+  const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO);
+  // 上位足の一致方向はサーバー(fx_signal.py)が status.json に書いた値を使う。
+  // 4時間足はGMO側が年指定でしか返さず画面から素直に取れないため、二重実装はしない。
+  const _al=(P.rule==='mtf_pullback')?((MTF_BY_SYM[sym]||{}).aligned):null;
+  const side=entrySide(total,rv,P,_al);
+  if(P.rule==='mtf_pullback'){
+    const _lo=MTF_PULLBACK_RSI[0],_hi=MTF_PULLBACK_RSI[1];
+    reasons.unshift(_al==null?'上位足の判定待ち'
+      :_al===0?'上位足が不一致（レンジ）'
+      :`上位足${_al===1?'↑':'↓'}揃い・${_al===1?`RSI${_lo}以下で押し目買い`:`RSI${_hi}以上で戻り売り`}`);
+  }
   return {price,ef,es,rsi:Math.round(rv*10)/10,adx:Math.round(adxVal*10)/10,atr:a,tp_pips:Math.round(tpp*10)/10,sl_pips:Math.round(slp*10)/10,
     tech:Math.round(tech*1000)/1000,fund:Math.round(fund*1000)/1000,score:Math.round(total*1000)/1000,side,reasons,
     ef_series:emaSeries(closes,P.ema_f).slice(-CHART_POINTS).map(r3),es_series:emaSeries(closes,P.ema_s).slice(-CHART_POINTS).map(r3),closes:closes.slice(-CHART_POINTS).map(r3)};}
@@ -2478,7 +2509,7 @@ async function liveSignals(){
           const cf=confluence(pair,STATS[S.mode+sym]);
           const _mtfTxt=mtfShort(pair);
           // ★ライブ通知は「厳選版」。判断に直結する項目だけに絞る（詳細は画面・メールで確認）
-          const txt2=`⚡ライブ ${sym} ${sg}（${S.mode}）\n`
+          const txt2=`⚡ライブ ${sym} ${sg}（${MODE_LABEL[S.mode]||S.mode}）\n`
             +`🎯総合判定 ${cf.mark}（${cf.pct}% ${cf.got}/${cf.total}）\n`
             +(_mtfTxt?`🔭上位足 ${_mtfTxt}\n`:'')
             +`▶${pair.entry_ref} / ${arrow} ${pair.entry_limit} / ${pair.valid_until}まで\n`
@@ -2579,9 +2610,28 @@ async function fetchHistStats(base,sym,interval,days){
   const parts=await Promise.all(offs.map(off=>fetchDay(base,sym,interval,off,0)));
   const rows={};parts.forEach(p=>Object.assign(rows,p));
   return Object.keys(rows).map(Number).sort((a,b)=>a-b).map(t=>rows[t]);}
+/* サーバー(fx_signal.py)が status.json に載せた統計を画面の STATS に取り込む。
+   画面側でシミュレーションできないモード（mtf）では、これが唯一の正しい母数になる。
+   サーバーは45日・4,500本まで遡って本来のルールで数えているので、画面の8日ぶんより信頼できる。 */
+function adoptServerStats(){
+  if(!S||!S.pairs||!S.mode)return false;
+  let got=false;
+  for(const p of S.pairs){
+    if(!p||!p.symbol||!p.stats_n||p.tp_winrate==null)continue;
+    if(p.stats_mode&&p.stats_mode!==S.mode)continue;   // 別モードの統計を混ぜない
+    const k=S.mode+p.symbol,cur=STATS[k];
+    if(cur&&!cur.server)continue;                      // 画面で計算できるモードは画面側を優先
+    STATS[k]={n:p.stats_n,winRate:p.tp_winrate,tpMin:p.hold_tp_min!=null?p.hold_tp_min:null,
+              slMin:p.hold_sl_min!=null?p.hold_sl_min:null,mode:S.mode,server:true,ts:Date.now()};
+    got=true;
+  }
+  return got;
+}
 async function refreshStats(force){
   if(!LIVE_PRICE_URL||!S||!S.mode||STATS_BUSY)return;
-  const mode=S.mode,fresh=SYMS.some(sym=>STATS[mode+sym]&&(Date.now()-STATS[mode+sym].ts<1800000));
+  const mode=S.mode;
+  if((JS_PARAMS[mode]||{}).rule==='mtf_pullback'){adoptServerStats();render();return;}
+  const fresh=SYMS.some(sym=>STATS[mode+sym]&&!STATS[mode+sym].server&&(Date.now()-STATS[mode+sym].ts<1800000));
   if(fresh&&!force)return;
   STATS_BUSY=true;
   try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
@@ -2623,6 +2673,8 @@ async function load(){
   // 上位足(MTF)はサーバー(fx_signal.py)が status.json に書き込む。
   // ライブ計算でpairを作り直しても失われないよう、銘柄別に退避しておく。
   if(S&&S.pairs){S.pairs.forEach(p=>{if(p&&p.mtf)MTF_BY_SYM[p.symbol]=p.mtf;});}
+  // サーバー統計もこの時点で取り込む（この後ライブ計算のpairで上書きされて消えるため）
+  try{adoptServerStats();}catch(e){}
   // ライブ計算済みの銘柄カードは古いstatus.jsonで上書きしない（値のチカチカ防止）
   if(Date.now()-LIVE_AT<180000&&S&&S.pairs){
     S.pairs.forEach((p,i)=>{if(LIVE_PAIRS[p.symbol])S.pairs[i]=LIVE_PAIRS[p.symbol];});

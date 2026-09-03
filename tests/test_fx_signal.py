@@ -10,7 +10,7 @@
   - 価格が取れない回に画面の表示内容を消さないこと
   - API障害でクラッシュしたり通知が二重に飛んだりしないこと
 """
-import json, os, random, shutil, sys, tempfile, types, unittest
+import json, os, random, shutil, subprocess, sys, tempfile, types, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
@@ -782,21 +782,26 @@ class MixedModeTest(RunTestCase):
                 "mode": mode}
 
     def test_atr_used_matches_the_position_mode(self):
-        """同じ含み益でも、モードが違えば profit_atr が変わること。"""
+        """含み益は『その建玉のモードのATR』で割られること。
+
+        どちらのATRが大きいかは相場次第なので大小関係は見ない。
+        profit_atr が profit / そのモードのATR に一致するかを直接確かめる。"""
         F.MODE = "day"; F.P = F.PARAMS["day"]
         tk = {"USD_JPY": {"bid": 159.0, "ask": 159.005}}
+        entry, cur = 158.0, 159.0
         got = {}
         for mode in ("day", "swing"):
             self.reset_caches()
             with F.use_mode(mode):
                 sc = F.score_pair("USD_JPY")
-                adv = F.position_advice(self._pos(mode), tk, sc, None)
+                adv = F.position_advice(self._pos(mode, entry), tk, sc, None)
             self.assertIsNotNone(adv, f"{mode} で判定できない")
+            self.assertAlmostEqual(
+                adv["profit_atr"], round((cur - entry) / sc["atr"], 2), places=2,
+                msg=f"{mode} の建玉が {mode} 以外のATRで測られている")
             got[mode] = adv["profit_atr"]
         self.assertNotEqual(got["day"], got["swing"],
                             "モードが違うのに同じ物差しで測っている")
-        # 足が長いほどATRは大きく、同じ含み益なら profit_atr は小さくなる
-        self.assertLess(got["swing"], got["day"])
 
     def test_check_positions_uses_each_position_mode(self):
         self.write(F.POSITIONS_FILE, {"positions": [self._pos("swing")]})
@@ -1005,6 +1010,53 @@ class MfeTest(RunTestCase):
             {"USD_JPY": {"bid": 159.0, "ask": 159.005}},
             {"atr": 0.5, "score": 0.05, "rsi": 55, "adx": 25}, None)
         self.assertAlmostEqual(adv["mfe"], 159.0, places=3)
+
+
+class EntryRuleParityTest(unittest.TestCase):
+    """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
+
+    ここがズレると、サーバーの通知と画面の「⚡ライブ」通知が別のルールで動く。
+    実際に mtf モードで画面側だけスコア方式のままになり、ライブ通知が出なくなった。
+    """
+
+    RULES = (None, "mtf_pullback")
+    ALIGNED = (-1, 0, 1)
+    RSI = (0, 20, 39.9, 40, 40.1, 50, 59.9, 60, 60.1, 80, 100)
+    TOTAL = (-0.9, -0.41, -0.4, -0.39, 0.0, 0.39, 0.4, 0.41, 0.9)
+
+    def test_same_verdict_for_every_input(self):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側の判定を実行できない")
+        html = os.path.join(ROOT, "index.html")
+        with open(html, encoding="utf-8") as f:
+            src = f.read()
+        start = src.index("const MTF_PULLBACK_RSI=")
+        end = src.index("return total>=P.th", start)
+        end = src.index("}\n", src.index("\n", end)) + 2
+        cases = [(r, a, v, t) for r in self.RULES for a in self.ALIGNED
+                 for v in self.RSI for t in self.TOTAL]
+        script = src[start:end] + (
+            "const cases=" + json.dumps(cases) + ";\n"
+            "console.log(JSON.stringify(cases.map(([rule,al,rv,total])=>"
+            "entrySide(total,rv,{th:0.40,rule},al))));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        js = json.loads(out.stdout)
+        self.assertEqual(len(js), len(cases))
+
+        self.addCleanup(setattr, F, "P", F.P)
+        for (rule, aligned, rv, total), got in zip(cases, js):
+            F.P = {"th": 0.40} if rule is None else {"th": 0.40, "rule": rule}
+            want = F.entry_side("USD_JPY", total, rv, 0.40, aligned=aligned)
+            self.assertEqual(
+                want, got,
+                f"rule={rule} aligned={aligned} rsi={rv} score={total}: "
+                f"python={want} / 画面={got}")
 
 
 if __name__ == "__main__":
