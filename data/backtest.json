@@ -1,43 +1,1351 @@
 {
-  "generated_at": "2026-09-04 01:43 JST",
+  "generated_at": "2026-09-04 07:45 JST",
   "note": "1日1回の長期検証。status.json の統計（直近8日）より母数が多い。",
   "modes": {
+    "scalp": {
+      "days": 14,
+      "days_covered": 12,
+      "n": 4457,
+      "mtf_blocked": 3609,
+      "current_th": 0.35,
+      "policies": {
+        "tp_sl": {
+          "n": 4457,
+          "winrate": 39,
+          "avg_r": -0.356,
+          "avg_r_gross": -0.026,
+          "cost_r": 0.33,
+          "sd": 1.2432,
+          "ci_lo": -0.392,
+          "ci_hi": -0.319
+        },
+        "advice": {
+          "n": 4457,
+          "winrate": 39,
+          "avg_r": -0.356,
+          "avg_r_gross": -0.026,
+          "cost_r": 0.33,
+          "sd": 1.242,
+          "ci_lo": -0.392,
+          "ci_hi": -0.32
+        },
+        "advice_watch": {
+          "n": 4457,
+          "winrate": 61,
+          "avg_r": -0.334,
+          "avg_r_gross": -0.005,
+          "cost_r": 0.33,
+          "sd": 0.9049,
+          "ci_lo": -0.361,
+          "ci_hi": -0.308
+        }
+      },
+      "bands": {
+        "弱(1.0〜1.2倍)": {
+          "n": 2143,
+          "tp_sl": -0.37,
+          "advice": -0.37,
+          "advice_watch": -0.344
+        },
+        "中(1.2〜1.5倍)": {
+          "n": 1294,
+          "tp_sl": -0.362,
+          "advice": -0.362,
+          "advice_watch": -0.355
+        },
+        "強(1.5倍〜)": {
+          "n": 1020,
+          "tp_sl": -0.317,
+          "advice": -0.317,
+          "advice_watch": -0.287
+        }
+      },
+      "atr_bands": {
+        "適正(20〜80%)": {
+          "tp_sl": {
+            "n": 1850,
+            "winrate": 39,
+            "avg_r": -0.361,
+            "avg_r_gross": -0.034,
+            "cost_r": 0.328,
+            "sd": 1.2423,
+            "ci_lo": -0.418,
+            "ci_hi": -0.304
+          },
+          "advice": {
+            "n": 1850,
+            "winrate": 39,
+            "avg_r": -0.36,
+            "avg_r_gross": -0.033,
+            "cost_r": 0.328,
+            "sd": 1.2419,
+            "ci_lo": -0.417,
+            "ci_hi": -0.304
+          },
+          "advice_watch": {
+            "n": 1850,
+            "winrate": 61,
+            "avg_r": -0.327,
+            "avg_r_gross": 0.001,
+            "cost_r": 0.328,
+            "sd": 0.9018,
+            "ci_lo": -0.368,
+            "ci_hi": -0.286
+          },
+          "n": 1850
+        },
+        "クライマックス(95%〜)": {
+          "tp_sl": {
+            "n": 752,
+            "winrate": 39,
+            "avg_r": -0.245,
+            "avg_r_gross": -0.033,
+            "cost_r": 0.213,
+            "sd": 1.2364,
+            "ci_lo": -0.334,
+            "ci_hi": -0.157
+          },
+          "advice": {
+            "n": 752,
+            "winrate": 38,
+            "avg_r": -0.247,
+            "avg_r_gross": -0.034,
+            "cost_r": 0.213,
+            "sd": 1.2341,
+            "ci_lo": -0.335,
+            "ci_hi": -0.159
+          },
+          "advice_watch": {
+            "n": 752,
+            "winrate": 60,
+            "avg_r": -0.213,
+            "avg_r_gross": 0.0,
+            "cost_r": 0.213,
+            "sd": 0.9081,
+            "ci_lo": -0.277,
+            "ci_hi": -0.148
+          },
+          "n": 752
+        },
+        "拡大(80〜95%)": {
+          "tp_sl": {
+            "n": 715,
+            "winrate": 40,
+            "avg_r": -0.261,
+            "avg_r_gross": -0.007,
+            "cost_r": 0.254,
+            "sd": 1.2435,
+            "ci_lo": -0.353,
+            "ci_hi": -0.17
+          },
+          "advice": {
+            "n": 715,
+            "winrate": 39,
+            "avg_r": -0.265,
+            "avg_r_gross": -0.01,
+            "cost_r": 0.254,
+            "sd": 1.2406,
+            "ci_lo": -0.356,
+            "ci_hi": -0.174
+          },
+          "advice_watch": {
+            "n": 715,
+            "winrate": 62,
+            "avg_r": -0.281,
+            "avg_r_gross": -0.027,
+            "cost_r": 0.254,
+            "sd": 0.8721,
+            "ci_lo": -0.345,
+            "ci_hi": -0.217
+          },
+          "n": 715
+        },
+        "閑散(〜20%)": {
+          "tp_sl": {
+            "n": 1138,
+            "winrate": 39,
+            "avg_r": -0.477,
+            "avg_r_gross": -0.02,
+            "cost_r": 0.457,
+            "sd": 1.2391,
+            "ci_lo": -0.549,
+            "ci_hi": -0.405
+          },
+          "advice": {
+            "n": 1138,
+            "winrate": 39,
+            "avg_r": -0.476,
+            "avg_r_gross": -0.02,
+            "cost_r": 0.457,
+            "sd": 1.239,
+            "ci_lo": -0.548,
+            "ci_hi": -0.404
+          },
+          "advice_watch": {
+            "n": 1138,
+            "winrate": 61,
+            "avg_r": -0.46,
+            "avg_r_gross": -0.003,
+            "cost_r": 0.457,
+            "sd": 0.914,
+            "ci_lo": -0.513,
+            "ci_hi": -0.407
+          },
+          "n": 1138
+        }
+      },
+      "atr_bands_warmup": 2,
+      "sweep": [
+        {
+          "th": 0.4,
+          "tp_sl": {
+            "n": 3516,
+            "winrate": 40,
+            "avg_r": -0.341,
+            "avg_r_gross": -0.014,
+            "cost_r": 0.328,
+            "sd": 1.2455,
+            "ci_lo": -0.383,
+            "ci_hi": -0.3
+          },
+          "advice": {
+            "n": 3516,
+            "winrate": 40,
+            "avg_r": -0.341,
+            "avg_r_gross": -0.013,
+            "cost_r": 0.328,
+            "sd": 1.2443,
+            "ci_lo": -0.382,
+            "ci_hi": -0.3
+          },
+          "advice_watch": {
+            "n": 3516,
+            "winrate": 63,
+            "avg_r": -0.322,
+            "avg_r_gross": 0.006,
+            "cost_r": 0.328,
+            "sd": 0.8905,
+            "ci_lo": -0.351,
+            "ci_hi": -0.292
+          }
+        },
+        {
+          "th": 0.5,
+          "tp_sl": {
+            "n": 1867,
+            "winrate": 40,
+            "avg_r": -0.32,
+            "avg_r_gross": 0.003,
+            "cost_r": 0.323,
+            "sd": 1.2456,
+            "ci_lo": -0.377,
+            "ci_hi": -0.264
+          },
+          "advice": {
+            "n": 1867,
+            "winrate": 40,
+            "avg_r": -0.321,
+            "avg_r_gross": 0.002,
+            "cost_r": 0.323,
+            "sd": 1.2438,
+            "ci_lo": -0.378,
+            "ci_hi": -0.265
+          },
+          "advice_watch": {
+            "n": 1867,
+            "winrate": 64,
+            "avg_r": -0.291,
+            "avg_r_gross": 0.032,
+            "cost_r": 0.323,
+            "sd": 0.8859,
+            "ci_lo": -0.331,
+            "ci_hi": -0.25
+          }
+        },
+        {
+          "th": 0.55,
+          "tp_sl": {
+            "n": 1284,
+            "winrate": 40,
+            "avg_r": -0.328,
+            "avg_r_gross": -0.003,
+            "cost_r": 0.325,
+            "sd": 1.2381,
+            "ci_lo": -0.395,
+            "ci_hi": -0.26
+          },
+          "advice": {
+            "n": 1284,
+            "winrate": 40,
+            "avg_r": -0.329,
+            "avg_r_gross": -0.005,
+            "cost_r": 0.325,
+            "sd": 1.2354,
+            "ci_lo": -0.397,
+            "ci_hi": -0.262
+          },
+          "advice_watch": {
+            "n": 1284,
+            "winrate": 64,
+            "avg_r": -0.3,
+            "avg_r_gross": 0.024,
+            "cost_r": 0.325,
+            "sd": 0.8846,
+            "ci_lo": -0.348,
+            "ci_hi": -0.252
+          }
+        },
+        {
+          "th": 0.6,
+          "tp_sl": {
+            "n": 801,
+            "winrate": 40,
+            "avg_r": -0.341,
+            "avg_r_gross": -0.008,
+            "cost_r": 0.334,
+            "sd": 1.2307,
+            "ci_lo": -0.426,
+            "ci_hi": -0.256
+          },
+          "advice": {
+            "n": 801,
+            "winrate": 40,
+            "avg_r": -0.343,
+            "avg_r_gross": -0.01,
+            "cost_r": 0.334,
+            "sd": 1.2289,
+            "ci_lo": -0.428,
+            "ci_hi": -0.258
+          },
+          "advice_watch": {
+            "n": 801,
+            "winrate": 61,
+            "avg_r": -0.351,
+            "avg_r_gross": -0.017,
+            "cost_r": 0.334,
+            "sd": 0.8957,
+            "ci_lo": -0.413,
+            "ci_hi": -0.289
+          }
+        },
+        {
+          "th": 0.65,
+          "tp_sl": {
+            "n": 427,
+            "winrate": 39,
+            "avg_r": -0.404,
+            "avg_r_gross": -0.04,
+            "cost_r": 0.365,
+            "sd": 1.2213,
+            "ci_lo": -0.52,
+            "ci_hi": -0.288
+          },
+          "advice": {
+            "n": 427,
+            "winrate": 39,
+            "avg_r": -0.404,
+            "avg_r_gross": -0.04,
+            "cost_r": 0.365,
+            "sd": 1.2212,
+            "ci_lo": -0.52,
+            "ci_hi": -0.288
+          },
+          "advice_watch": {
+            "n": 427,
+            "winrate": 61,
+            "avg_r": -0.354,
+            "avg_r_gross": 0.01,
+            "cost_r": 0.365,
+            "sd": 0.914,
+            "ci_lo": -0.441,
+            "ci_hi": -0.267
+          }
+        },
+        {
+          "th": 0.7,
+          "tp_sl": {
+            "n": 215,
+            "winrate": 33,
+            "avg_r": -0.528,
+            "avg_r_gross": -0.163,
+            "cost_r": 0.365,
+            "sd": 1.189,
+            "ci_lo": -0.687,
+            "ci_hi": -0.369
+          },
+          "advice": {
+            "n": 215,
+            "winrate": 33,
+            "avg_r": -0.528,
+            "avg_r_gross": -0.163,
+            "cost_r": 0.365,
+            "sd": 1.1889,
+            "ci_lo": -0.687,
+            "ci_hi": -0.369
+          },
+          "advice_watch": {
+            "n": 215,
+            "winrate": 55,
+            "avg_r": -0.46,
+            "avg_r_gross": -0.095,
+            "cost_r": 0.365,
+            "sd": 0.8758,
+            "ci_lo": -0.577,
+            "ci_hi": -0.343
+          }
+        }
+      ],
+      "holdout": {
+        "policy": "advice",
+        "best_th": 0.4,
+        "first_half": {
+          "n": 1895,
+          "winrate": 39,
+          "avg_r": -0.353,
+          "avg_r_gross": -0.019,
+          "cost_r": 0.334,
+          "sd": 1.2368,
+          "ci_lo": -0.408,
+          "ci_hi": -0.297
+        },
+        "second_half": {
+          "n": 1621,
+          "winrate": 40,
+          "avg_r": -0.327,
+          "avg_r_gross": -0.007,
+          "cost_r": 0.32,
+          "sd": 1.2534,
+          "ci_lo": -0.388,
+          "ci_hi": -0.266
+        },
+        "candidates": {
+          "0.4": -0.353,
+          "0.5": -0.381,
+          "0.55": -0.432,
+          "0.6": -0.473,
+          "0.65": -0.55,
+          "0.7": -0.611
+        }
+      },
+      "symbols": {
+        "USD_JPY": {
+          "n": 1285,
+          "policies": {
+            "tp_sl": {
+              "n": 1285,
+              "winrate": 42,
+              "avg_r": -0.116,
+              "avg_r_gross": 0.043,
+              "cost_r": 0.159,
+              "sd": 1.2378,
+              "ci_lo": -0.184,
+              "ci_hi": -0.048,
+              "payoff": 1.5,
+              "pf": 1.07
+            },
+            "advice": {
+              "n": 1285,
+              "winrate": 42,
+              "avg_r": -0.116,
+              "avg_r_gross": 0.043,
+              "cost_r": 0.159,
+              "sd": 1.2361,
+              "ci_lo": -0.183,
+              "ci_hi": -0.048,
+              "payoff": 1.51,
+              "pf": 1.07
+            },
+            "advice_watch": {
+              "n": 1285,
+              "winrate": 62,
+              "avg_r": -0.117,
+              "avg_r_gross": 0.041,
+              "cost_r": 0.159,
+              "sd": 0.9011,
+              "ci_lo": -0.167,
+              "ci_hi": -0.068,
+              "payoff": 0.67,
+              "pf": 1.11
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 553,
+              "tp_sl": -0.044,
+              "advice": -0.043,
+              "advice_watch": -0.069
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 406,
+              "tp_sl": -0.172,
+              "advice": -0.172,
+              "advice_watch": -0.198
+            },
+            "強(1.5倍〜)": {
+              "n": 326,
+              "tp_sl": -0.168,
+              "advice": -0.169,
+              "advice_watch": -0.098
+            }
+          },
+          "atr_bands": {
+            "適正(20〜80%)": {
+              "n": 538,
+              "tp_sl": {
+                "n": 538,
+                "winrate": 41,
+                "avg_r": -0.13,
+                "avg_r_gross": 0.032,
+                "cost_r": 0.162,
+                "sd": 1.2349,
+                "ci_lo": -0.235,
+                "ci_hi": -0.026,
+                "payoff": 1.5,
+                "pf": 1.05
+              },
+              "advice": {
+                "n": 538,
+                "winrate": 41,
+                "avg_r": -0.127,
+                "avg_r_gross": 0.035,
+                "cost_r": 0.162,
+                "sd": 1.2329,
+                "ci_lo": -0.231,
+                "ci_hi": -0.023,
+                "payoff": 1.51,
+                "pf": 1.06
+              },
+              "advice_watch": {
+                "n": 538,
+                "winrate": 63,
+                "avg_r": -0.106,
+                "avg_r_gross": 0.056,
+                "cost_r": 0.162,
+                "sd": 0.8963,
+                "ci_lo": -0.182,
+                "ci_hi": -0.03,
+                "payoff": 0.68,
+                "pf": 1.15
+              }
+            },
+            "クライマックス(95%〜)": {
+              "n": 220,
+              "tp_sl": {
+                "n": 220,
+                "winrate": 43,
+                "avg_r": -0.031,
+                "avg_r_gross": 0.068,
+                "cost_r": 0.099,
+                "sd": 1.2424,
+                "ci_lo": -0.195,
+                "ci_hi": 0.133,
+                "payoff": 1.5,
+                "pf": 1.12
+              },
+              "advice": {
+                "n": 220,
+                "winrate": 42,
+                "avg_r": -0.041,
+                "avg_r_gross": 0.058,
+                "cost_r": 0.099,
+                "sd": 1.2391,
+                "ci_lo": -0.204,
+                "ci_hi": 0.123,
+                "payoff": 1.5,
+                "pf": 1.1
+              },
+              "advice_watch": {
+                "n": 220,
+                "winrate": 60,
+                "avg_r": -0.085,
+                "avg_r_gross": 0.014,
+                "cost_r": 0.099,
+                "sd": 0.9154,
+                "ci_lo": -0.205,
+                "ci_hi": 0.036,
+                "payoff": 0.69,
+                "pf": 1.04
+              }
+            },
+            "拡大(80〜95%)": {
+              "n": 214,
+              "tp_sl": {
+                "n": 214,
+                "winrate": 42,
+                "avg_r": -0.074,
+                "avg_r_gross": 0.051,
+                "cost_r": 0.125,
+                "sd": 1.2401,
+                "ci_lo": -0.24,
+                "ci_hi": 0.093,
+                "payoff": 1.5,
+                "pf": 1.09
+              },
+              "advice": {
+                "n": 214,
+                "winrate": 42,
+                "avg_r": -0.074,
+                "avg_r_gross": 0.051,
+                "cost_r": 0.125,
+                "sd": 1.2401,
+                "ci_lo": -0.24,
+                "ci_hi": 0.093,
+                "payoff": 1.5,
+                "pf": 1.09
+              },
+              "advice_watch": {
+                "n": 214,
+                "winrate": 64,
+                "avg_r": -0.079,
+                "avg_r_gross": 0.046,
+                "cost_r": 0.125,
+                "sd": 0.8874,
+                "ci_lo": -0.198,
+                "ci_hi": 0.04,
+                "payoff": 0.65,
+                "pf": 1.13
+              }
+            },
+            "閑散(〜20%)": {
+              "n": 312,
+              "tp_sl": {
+                "n": 312,
+                "winrate": 42,
+                "avg_r": -0.175,
+                "avg_r_gross": 0.042,
+                "cost_r": 0.217,
+                "sd": 1.2392,
+                "ci_lo": -0.313,
+                "ci_hi": -0.038,
+                "payoff": 1.5,
+                "pf": 1.07
+              },
+              "advice": {
+                "n": 312,
+                "winrate": 42,
+                "avg_r": -0.174,
+                "avg_r_gross": 0.043,
+                "cost_r": 0.217,
+                "sd": 1.2384,
+                "ci_lo": -0.311,
+                "ci_hi": -0.037,
+                "payoff": 1.5,
+                "pf": 1.07
+              },
+              "advice_watch": {
+                "n": 312,
+                "winrate": 62,
+                "avg_r": -0.187,
+                "avg_r_gross": 0.03,
+                "cost_r": 0.217,
+                "sd": 0.9105,
+                "ci_lo": -0.288,
+                "ci_hi": -0.086,
+                "payoff": 0.67,
+                "pf": 1.08
+              }
+            }
+          },
+          "mtf_blocked": 733
+        },
+        "EUR_JPY": {
+          "n": 1069,
+          "policies": {
+            "tp_sl": {
+              "n": 1069,
+              "winrate": 37,
+              "avg_r": -0.37,
+              "avg_r_gross": -0.086,
+              "cost_r": 0.285,
+              "sd": 1.2212,
+              "ci_lo": -0.443,
+              "ci_hi": -0.297,
+              "payoff": 1.5,
+              "pf": 0.87
+            },
+            "advice": {
+              "n": 1069,
+              "winrate": 37,
+              "avg_r": -0.369,
+              "avg_r_gross": -0.084,
+              "cost_r": 0.285,
+              "sd": 1.2205,
+              "ci_lo": -0.442,
+              "ci_hi": -0.296,
+              "payoff": 1.5,
+              "pf": 0.87
+            },
+            "advice_watch": {
+              "n": 1069,
+              "winrate": 58,
+              "avg_r": -0.336,
+              "avg_r_gross": -0.051,
+              "cost_r": 0.285,
+              "sd": 0.9026,
+              "ci_lo": -0.39,
+              "ci_hi": -0.282,
+              "payoff": 0.64,
+              "pf": 0.88
+            }
+          },
+          "bands": {
+            "中(1.2〜1.5倍)": {
+              "n": 303,
+              "tp_sl": -0.259,
+              "advice": -0.259,
+              "advice_watch": -0.293
+            },
+            "強(1.5倍〜)": {
+              "n": 238,
+              "tp_sl": -0.309,
+              "advice": -0.307,
+              "advice_watch": -0.288
+            },
+            "弱(1.0〜1.2倍)": {
+              "n": 528,
+              "tp_sl": -0.461,
+              "advice": -0.459,
+              "advice_watch": -0.382
+            }
+          },
+          "atr_bands": {
+            "閑散(〜20%)": {
+              "n": 267,
+              "tp_sl": {
+                "n": 267,
+                "winrate": 33,
+                "avg_r": -0.571,
+                "avg_r_gross": -0.176,
+                "cost_r": 0.394,
+                "sd": 1.1887,
+                "ci_lo": -0.713,
+                "ci_hi": -0.428,
+                "payoff": 1.5,
+                "pf": 0.74
+              },
+              "advice": {
+                "n": 267,
+                "winrate": 33,
+                "avg_r": -0.571,
+                "avg_r_gross": -0.176,
+                "cost_r": 0.394,
+                "sd": 1.1887,
+                "ci_lo": -0.713,
+                "ci_hi": -0.428,
+                "payoff": 1.5,
+                "pf": 0.74
+              },
+              "advice_watch": {
+                "n": 267,
+                "winrate": 56,
+                "avg_r": -0.5,
+                "avg_r_gross": -0.105,
+                "cost_r": 0.394,
+                "sd": 0.8872,
+                "ci_lo": -0.606,
+                "ci_hi": -0.393,
+                "payoff": 0.6,
+                "pf": 0.76
+              }
+            },
+            "適正(20〜80%)": {
+              "n": 443,
+              "tp_sl": {
+                "n": 443,
+                "winrate": 39,
+                "avg_r": -0.318,
+                "avg_r_gross": -0.035,
+                "cost_r": 0.283,
+                "sd": 1.2311,
+                "ci_lo": -0.433,
+                "ci_hi": -0.204,
+                "payoff": 1.5,
+                "pf": 0.94
+              },
+              "advice": {
+                "n": 443,
+                "winrate": 39,
+                "avg_r": -0.318,
+                "avg_r_gross": -0.035,
+                "cost_r": 0.283,
+                "sd": 1.2311,
+                "ci_lo": -0.433,
+                "ci_hi": -0.204,
+                "payoff": 1.5,
+                "pf": 0.94
+              },
+              "advice_watch": {
+                "n": 443,
+                "winrate": 60,
+                "avg_r": -0.298,
+                "avg_r_gross": -0.015,
+                "cost_r": 0.283,
+                "sd": 0.8982,
+                "ci_lo": -0.382,
+                "ci_hi": -0.214,
+                "payoff": 0.65,
+                "pf": 0.96
+              }
+            },
+            "クライマックス(95%〜)": {
+              "n": 188,
+              "tp_sl": {
+                "n": 188,
+                "winrate": 36,
+                "avg_r": -0.285,
+                "avg_r_gross": -0.096,
+                "cost_r": 0.189,
+                "sd": 1.217,
+                "ci_lo": -0.459,
+                "ci_hi": -0.111,
+                "payoff": 1.5,
+                "pf": 0.85
+              },
+              "advice": {
+                "n": 188,
+                "winrate": 36,
+                "avg_r": -0.279,
+                "avg_r_gross": -0.09,
+                "cost_r": 0.189,
+                "sd": 1.214,
+                "ci_lo": -0.452,
+                "ci_hi": -0.105,
+                "payoff": 1.51,
+                "pf": 0.86
+              },
+              "advice_watch": {
+                "n": 188,
+                "winrate": 59,
+                "avg_r": -0.171,
+                "avg_r_gross": 0.018,
+                "cost_r": 0.189,
+                "sd": 0.9515,
+                "ci_lo": -0.307,
+                "ci_hi": -0.035,
+                "payoff": 0.72,
+                "pf": 1.04
+              }
+            },
+            "拡大(80〜95%)": {
+              "n": 171,
+              "tp_sl": {
+                "n": 171,
+                "winrate": 37,
+                "avg_r": -0.286,
+                "avg_r_gross": -0.064,
+                "cost_r": 0.222,
+                "sd": 1.2262,
+                "ci_lo": -0.47,
+                "ci_hi": -0.102,
+                "payoff": 1.5,
+                "pf": 0.9
+              },
+              "advice": {
+                "n": 171,
+                "winrate": 37,
+                "avg_r": -0.284,
+                "avg_r_gross": -0.062,
+                "cost_r": 0.222,
+                "sd": 1.2245,
+                "ci_lo": -0.467,
+                "ci_hi": -0.1,
+                "payoff": 1.51,
+                "pf": 0.9
+              },
+              "advice_watch": {
+                "n": 171,
+                "winrate": 56,
+                "avg_r": -0.361,
+                "avg_r_gross": -0.139,
+                "cost_r": 0.222,
+                "sd": 0.8467,
+                "ci_lo": -0.488,
+                "ci_hi": -0.234,
+                "payoff": 0.55,
+                "pf": 0.69
+              }
+            }
+          },
+          "mtf_blocked": 904
+        },
+        "GBP_JPY": {
+          "n": 1031,
+          "policies": {
+            "tp_sl": {
+              "n": 1031,
+              "winrate": 38,
+              "avg_r": -0.547,
+              "avg_r_gross": -0.054,
+              "cost_r": 0.493,
+              "sd": 1.2411,
+              "ci_lo": -0.623,
+              "ci_hi": -0.471,
+              "payoff": 1.5,
+              "pf": 0.91
+            },
+            "advice": {
+              "n": 1031,
+              "winrate": 38,
+              "avg_r": -0.547,
+              "avg_r_gross": -0.055,
+              "cost_r": 0.493,
+              "sd": 1.2401,
+              "ci_lo": -0.623,
+              "ci_hi": -0.472,
+              "payoff": 1.5,
+              "pf": 0.91
+            },
+            "advice_watch": {
+              "n": 1031,
+              "winrate": 60,
+              "avg_r": -0.523,
+              "avg_r_gross": -0.03,
+              "cost_r": 0.493,
+              "sd": 0.8934,
+              "ci_lo": -0.577,
+              "ci_hi": -0.468,
+              "payoff": 0.6,
+              "pf": 0.92
+            }
+          },
+          "bands": {
+            "弱(1.0〜1.2倍)": {
+              "n": 507,
+              "tp_sl": -0.578,
+              "advice": -0.577,
+              "advice_watch": -0.542
+            },
+            "中(1.2〜1.5倍)": {
+              "n": 310,
+              "tp_sl": -0.544,
+              "advice": -0.544,
+              "advice_watch": -0.538
+            },
+            "強(1.5倍〜)": {
+              "n": 214,
+              "tp_sl": -0.477,
+              "advice": -0.481,
+              "advice_watch": -0.456
+            }
+          },
+          "atr_bands": {
+            "拡大(80〜95%)": {
+              "n": 163,
+              "tp_sl": {
+                "n": 163,
+                "winrate": 39,
+                "avg_r": -0.396,
+                "avg_r_gross": -0.018,
+                "cost_r": 0.378,
+                "sd": 1.2548,
+                "ci_lo": -0.589,
+                "ci_hi": -0.204,
+                "payoff": 1.5,
+                "pf": 0.97
+              },
+              "advice": {
+                "n": 163,
+                "winrate": 39,
+                "avg_r": -0.4,
+                "avg_r_gross": -0.022,
+                "cost_r": 0.378,
+                "sd": 1.2491,
+                "ci_lo": -0.592,
+                "ci_hi": -0.208,
+                "payoff": 1.49,
+                "pf": 0.96
+              },
+              "advice_watch": {
+                "n": 163,
+                "winrate": 63,
+                "avg_r": -0.373,
+                "avg_r_gross": 0.005,
+                "cost_r": 0.378,
+                "sd": 0.8812,
+                "ci_lo": -0.508,
+                "ci_hi": -0.238,
+                "payoff": 0.61,
+                "pf": 1.01
+              }
+            },
+            "クライマックス(95%〜)": {
+              "n": 182,
+              "tp_sl": {
+                "n": 182,
+                "winrate": 37,
+                "avg_r": -0.409,
+                "avg_r_gross": -0.08,
+                "cost_r": 0.33,
+                "sd": 1.2385,
+                "ci_lo": -0.589,
+                "ci_hi": -0.229,
+                "payoff": 1.5,
+                "pf": 0.87
+              },
+              "advice": {
+                "n": 182,
+                "winrate": 37,
+                "avg_r": -0.409,
+                "avg_r_gross": -0.08,
+                "cost_r": 0.33,
+                "sd": 1.2385,
+                "ci_lo": -0.589,
+                "ci_hi": -0.229,
+                "payoff": 1.5,
+                "pf": 0.87
+              },
+              "advice_watch": {
+                "n": 182,
+                "winrate": 58,
+                "avg_r": -0.387,
+                "avg_r_gross": -0.057,
+                "cost_r": 0.33,
+                "sd": 0.8986,
+                "ci_lo": -0.517,
+                "ci_hi": -0.256,
+                "payoff": 0.62,
+                "pf": 0.86
+              }
+            },
+            "閑散(〜20%)": {
+              "n": 265,
+              "tp_sl": {
+                "n": 265,
+                "winrate": 42,
+                "avg_r": -0.64,
+                "avg_r_gross": 0.038,
+                "cost_r": 0.678,
+                "sd": 1.2527,
+                "ci_lo": -0.791,
+                "ci_hi": -0.489,
+                "payoff": 1.5,
+                "pf": 1.06
+              },
+              "advice": {
+                "n": 265,
+                "winrate": 42,
+                "avg_r": -0.64,
+                "avg_r_gross": 0.038,
+                "cost_r": 0.678,
+                "sd": 1.2527,
+                "ci_lo": -0.791,
+                "ci_hi": -0.489,
+                "payoff": 1.5,
+                "pf": 1.06
+              },
+              "advice_watch": {
+                "n": 265,
+                "winrate": 61,
+                "avg_r": -0.689,
+                "avg_r_gross": -0.011,
+                "cost_r": 0.678,
+                "sd": 0.8947,
+                "ci_lo": -0.797,
+                "ci_hi": -0.581,
+                "payoff": 0.62,
+                "pf": 0.97
+              }
+            },
+            "適正(20〜80%)": {
+              "n": 421,
+              "tp_sl": {
+                "n": 421,
+                "winrate": 35,
+                "avg_r": -0.606,
+                "avg_r_gross": -0.115,
+                "cost_r": 0.491,
+                "sd": 1.2233,
+                "ci_lo": -0.723,
+                "ci_hi": -0.489,
+                "payoff": 1.5,
+                "pf": 0.82
+              },
+              "advice": {
+                "n": 421,
+                "winrate": 35,
+                "avg_r": -0.606,
+                "avg_r_gross": -0.115,
+                "cost_r": 0.491,
+                "sd": 1.2233,
+                "ci_lo": -0.723,
+                "ci_hi": -0.489,
+                "payoff": 1.5,
+                "pf": 0.82
+              },
+              "advice_watch": {
+                "n": 421,
+                "winrate": 60,
+                "avg_r": -0.535,
+                "avg_r_gross": -0.044,
+                "cost_r": 0.491,
+                "sd": 0.8789,
+                "ci_lo": -0.619,
+                "ci_hi": -0.451,
+                "payoff": 0.59,
+                "pf": 0.89
+              }
+            }
+          },
+          "mtf_blocked": 1100
+        },
+        "AUD_JPY": {
+          "n": 1072,
+          "policies": {
+            "tp_sl": {
+              "n": 1072,
+              "winrate": 39,
+              "avg_r": -0.445,
+              "avg_r_gross": -0.023,
+              "cost_r": 0.422,
+              "sd": 1.2297,
+              "ci_lo": -0.518,
+              "ci_hi": -0.371,
+              "payoff": 1.5,
+              "pf": 0.96
+            },
+            "advice": {
+              "n": 1072,
+              "winrate": 39,
+              "avg_r": -0.447,
+              "avg_r_gross": -0.025,
+              "cost_r": 0.422,
+              "sd": 1.2285,
+              "ci_lo": -0.52,
+              "ci_hi": -0.373,
+              "payoff": 1.5,
+              "pf": 0.96
+            },
+            "advice_watch": {
+              "n": 1072,
+              "winrate": 63,
+              "avg_r": -0.411,
+              "avg_r_gross": 0.011,
+              "cost_r": 0.422,
+              "sd": 0.8698,
+              "ci_lo": -0.463,
+              "ci_hi": -0.359,
+              "payoff": 0.61,
+              "pf": 1.03
+            }
+          },
+          "bands": {
+            "中(1.2〜1.5倍)": {
+              "n": 275,
+              "tp_sl": -0.551,
+              "advice": -0.551,
+              "advice_watch": -0.449
+            },
+            "弱(1.0〜1.2倍)": {
+              "n": 555,
+              "tp_sl": -0.419,
+              "advice": -0.423,
+              "advice_watch": -0.402
+            },
+            "強(1.5倍〜)": {
+              "n": 242,
+              "tp_sl": -0.383,
+              "advice": -0.383,
+              "advice_watch": -0.391
+            }
+          },
+          "atr_bands": {
+            "適正(20〜80%)": {
+              "n": 448,
+              "tp_sl": {
+                "n": 448,
+                "winrate": 39,
+                "avg_r": -0.451,
+                "avg_r_gross": -0.035,
+                "cost_r": 0.417,
+                "sd": 1.2316,
+                "ci_lo": -0.565,
+                "ci_hi": -0.337,
+                "payoff": 1.5,
+                "pf": 0.94
+              },
+              "advice": {
+                "n": 448,
+                "winrate": 39,
+                "avg_r": -0.451,
+                "avg_r_gross": -0.035,
+                "cost_r": 0.417,
+                "sd": 1.2316,
+                "ci_lo": -0.565,
+                "ci_hi": -0.337,
+                "payoff": 1.5,
+                "pf": 0.94
+              },
+              "advice_watch": {
+                "n": 448,
+                "winrate": 61,
+                "avg_r": -0.426,
+                "avg_r_gross": -0.009,
+                "cost_r": 0.417,
+                "sd": 0.8749,
+                "ci_lo": -0.507,
+                "ci_hi": -0.345,
+                "payoff": 0.61,
+                "pf": 0.98
+              }
+            },
+            "拡大(80〜95%)": {
+              "n": 167,
+              "tp_sl": {
+                "n": 167,
+                "winrate": 40,
+                "avg_r": -0.345,
+                "avg_r_gross": -0.012,
+                "cost_r": 0.333,
+                "sd": 1.237,
+                "ci_lo": -0.532,
+                "ci_hi": -0.157,
+                "payoff": 1.5,
+                "pf": 0.98
+              },
+              "advice": {
+                "n": 167,
+                "winrate": 39,
+                "avg_r": -0.357,
+                "avg_r_gross": -0.024,
+                "cost_r": 0.333,
+                "sd": 1.2308,
+                "ci_lo": -0.544,
+                "ci_hi": -0.17,
+                "payoff": 1.51,
+                "pf": 0.96
+              },
+              "advice_watch": {
+                "n": 167,
+                "winrate": 63,
+                "avg_r": -0.368,
+                "avg_r_gross": -0.035,
+                "cost_r": 0.333,
+                "sd": 0.833,
+                "ci_lo": -0.494,
+                "ci_hi": -0.241,
+                "payoff": 0.52,
+                "pf": 0.9
+              }
+            },
+            "クライマックス(95%〜)": {
+              "n": 162,
+              "tp_sl": {
+                "n": 162,
+                "winrate": 38,
+                "avg_r": -0.307,
+                "avg_r_gross": -0.043,
+                "cost_r": 0.263,
+                "sd": 1.2195,
+                "ci_lo": -0.494,
+                "ci_hi": -0.119,
+                "payoff": 1.5,
+                "pf": 0.93
+              },
+              "advice": {
+                "n": 162,
+                "winrate": 38,
+                "avg_r": -0.307,
+                "avg_r_gross": -0.043,
+                "cost_r": 0.263,
+                "sd": 1.2195,
+                "ci_lo": -0.494,
+                "ci_hi": -0.119,
+                "payoff": 1.5,
+                "pf": 0.93
+              },
+              "advice_watch": {
+                "n": 162,
+                "winrate": 65,
+                "avg_r": -0.238,
+                "avg_r_gross": 0.026,
+                "cost_r": 0.263,
+                "sd": 0.8296,
+                "ci_lo": -0.365,
+                "ci_hi": -0.11,
+                "payoff": 0.58,
+                "pf": 1.07
+              }
+            },
+            "閑散(〜20%)": {
+              "n": 294,
+              "tp_sl": {
+                "n": 294,
+                "winrate": 40,
+                "avg_r": -0.564,
+                "avg_r_gross": 0.003,
+                "cost_r": 0.568,
+                "sd": 1.2226,
+                "ci_lo": -0.704,
+                "ci_hi": -0.424,
+                "payoff": 1.5,
+                "pf": 1.01
+              },
+              "advice": {
+                "n": 294,
+                "winrate": 40,
+                "avg_r": -0.564,
+                "avg_r_gross": 0.003,
+                "cost_r": 0.568,
+                "sd": 1.2226,
+                "ci_lo": -0.704,
+                "ci_hi": -0.424,
+                "payoff": 1.5,
+                "pf": 1.01
+              },
+              "advice_watch": {
+                "n": 294,
+                "winrate": 64,
+                "avg_r": -0.506,
+                "avg_r_gross": 0.062,
+                "cost_r": 0.568,
+                "sd": 0.8918,
+                "ci_lo": -0.608,
+                "ci_hi": -0.404,
+                "payoff": 0.66,
+                "pf": 1.17
+              }
+            }
+          },
+          "mtf_blocked": 872
+        }
+      }
+    },
     "day": {
       "days": 365,
-      "days_covered": 260,
-      "n": 4046,
-      "mtf_blocked": 359,
+      "days_covered": 261,
+      "n": 4048,
+      "mtf_blocked": 368,
       "current_th": 0.4,
       "policies": {
         "tp_sl": {
-          "n": 4046,
+          "n": 4048,
           "winrate": 37,
           "avg_r": -0.073,
           "avg_r_gross": -0.033,
           "cost_r": 0.04,
-          "sd": 1.2572,
+          "sd": 1.2571,
           "ci_lo": -0.112,
-          "ci_hi": -0.034
+          "ci_hi": -0.035
         },
         "advice": {
-          "n": 4046,
+          "n": 4048,
           "winrate": 38,
           "avg_r": -0.077,
           "avg_r_gross": -0.037,
           "cost_r": 0.04,
-          "sd": 1.2394,
+          "sd": 1.2392,
           "ci_lo": -0.115,
           "ci_hi": -0.038
         },
         "advice_watch": {
-          "n": 4046,
+          "n": 4048,
           "winrate": 64,
-          "avg_r": -0.049,
+          "avg_r": -0.048,
           "avg_r_gross": -0.009,
           "cost_r": 0.04,
-          "sd": 0.8419,
-          "ci_lo": -0.075,
-          "ci_hi": -0.023
+          "sd": 0.8418,
+          "ci_lo": -0.074,
+          "ci_hi": -0.022
         }
       },
       "bands": {
@@ -48,10 +1356,10 @@
           "advice_watch": -0.059
         },
         "中(1.2〜1.5倍)": {
-          "n": 840,
-          "tp_sl": -0.097,
-          "advice": -0.099,
-          "advice_watch": -0.032
+          "n": 842,
+          "tp_sl": -0.099,
+          "advice": -0.1,
+          "advice_watch": -0.03
         },
         "強(1.5倍〜)": {
           "n": 702,
@@ -63,69 +1371,69 @@
       "atr_bands": {
         "クライマックス(95%〜)": {
           "tp_sl": {
-            "n": 583,
+            "n": 584,
             "winrate": 40,
-            "avg_r": 0.022,
-            "avg_r_gross": 0.048,
+            "avg_r": 0.02,
+            "avg_r_gross": 0.046,
             "cost_r": 0.026,
-            "sd": 1.2763,
-            "ci_lo": -0.081,
-            "ci_hi": 0.126
+            "sd": 1.2759,
+            "ci_lo": -0.083,
+            "ci_hi": 0.124
           },
           "advice": {
-            "n": 583,
+            "n": 584,
             "winrate": 41,
-            "avg_r": 0.018,
-            "avg_r_gross": 0.043,
+            "avg_r": 0.017,
+            "avg_r_gross": 0.042,
             "cost_r": 0.026,
-            "sd": 1.2299,
-            "ci_lo": -0.082,
-            "ci_hi": 0.118
+            "sd": 1.2291,
+            "ci_lo": -0.083,
+            "ci_hi": 0.116
           },
           "advice_watch": {
-            "n": 583,
+            "n": 584,
             "winrate": 67,
             "avg_r": 0.02,
             "avg_r_gross": 0.046,
             "cost_r": 0.026,
-            "sd": 0.8326,
+            "sd": 0.8319,
             "ci_lo": -0.047,
             "ci_hi": 0.088
           },
-          "n": 583
+          "n": 584
         },
         "拡大(80〜95%)": {
           "tp_sl": {
-            "n": 795,
+            "n": 796,
             "winrate": 39,
-            "avg_r": -0.032,
-            "avg_r_gross": 0.001,
+            "avg_r": -0.033,
+            "avg_r_gross": -0.001,
             "cost_r": 0.033,
-            "sd": 1.2648,
-            "ci_lo": -0.12,
-            "ci_hi": 0.056
+            "sd": 1.2646,
+            "ci_lo": -0.121,
+            "ci_hi": 0.055
           },
           "advice": {
-            "n": 795,
+            "n": 796,
             "winrate": 39,
             "avg_r": -0.049,
-            "avg_r_gross": -0.016,
+            "avg_r_gross": -0.017,
             "cost_r": 0.033,
-            "sd": 1.2353,
+            "sd": 1.2346,
             "ci_lo": -0.135,
-            "ci_hi": 0.037
+            "ci_hi": 0.036
           },
           "advice_watch": {
-            "n": 795,
+            "n": 796,
             "winrate": 63,
-            "avg_r": -0.049,
-            "avg_r_gross": -0.016,
+            "avg_r": -0.048,
+            "avg_r_gross": -0.015,
             "cost_r": 0.033,
-            "sd": 0.8413,
-            "ci_lo": -0.107,
-            "ci_hi": 0.009
+            "sd": 0.8415,
+            "ci_lo": -0.106,
+            "ci_hi": 0.011
           },
-          "n": 795
+          "n": 796
         },
         "適正(20〜80%)": {
           "tp_sl": {
@@ -199,65 +1507,65 @@
         {
           "th": 0.4,
           "tp_sl": {
-            "n": 4046,
+            "n": 4048,
             "winrate": 37,
             "avg_r": -0.073,
             "avg_r_gross": -0.033,
             "cost_r": 0.04,
-            "sd": 1.2572,
+            "sd": 1.2571,
             "ci_lo": -0.112,
-            "ci_hi": -0.034
+            "ci_hi": -0.035
           },
           "advice": {
-            "n": 4046,
+            "n": 4048,
             "winrate": 38,
             "avg_r": -0.077,
             "avg_r_gross": -0.037,
             "cost_r": 0.04,
-            "sd": 1.2394,
+            "sd": 1.2392,
             "ci_lo": -0.115,
             "ci_hi": -0.038
           },
           "advice_watch": {
-            "n": 4046,
+            "n": 4048,
             "winrate": 64,
-            "avg_r": -0.049,
+            "avg_r": -0.048,
             "avg_r_gross": -0.009,
             "cost_r": 0.04,
-            "sd": 0.8419,
-            "ci_lo": -0.075,
-            "ci_hi": -0.023
+            "sd": 0.8418,
+            "ci_lo": -0.074,
+            "ci_hi": -0.022
           }
         },
         {
           "th": 0.5,
           "tp_sl": {
-            "n": 2326,
+            "n": 2328,
+            "winrate": 37,
+            "avg_r": -0.059,
+            "avg_r_gross": -0.02,
+            "cost_r": 0.039,
+            "sd": 1.2608,
+            "ci_lo": -0.11,
+            "ci_hi": -0.007
+          },
+          "advice": {
+            "n": 2328,
             "winrate": 38,
             "avg_r": -0.058,
             "avg_r_gross": -0.019,
             "cost_r": 0.039,
-            "sd": 1.261,
-            "ci_lo": -0.109,
-            "ci_hi": -0.006
-          },
-          "advice": {
-            "n": 2326,
-            "winrate": 38,
-            "avg_r": -0.057,
-            "avg_r_gross": -0.018,
-            "cost_r": 0.039,
-            "sd": 1.2434,
+            "sd": 1.2429,
             "ci_lo": -0.108,
             "ci_hi": -0.007
           },
           "advice_watch": {
-            "n": 2326,
+            "n": 2328,
             "winrate": 67,
             "avg_r": -0.024,
             "avg_r_gross": 0.015,
             "cost_r": 0.039,
-            "sd": 0.7944,
+            "sd": 0.7942,
             "ci_lo": -0.056,
             "ci_hi": 0.008
           }
@@ -409,14 +1717,14 @@
           "ci_hi": -0.004
         },
         "second_half": {
-          "n": 1159,
+          "n": 1161,
           "winrate": 39,
-          "avg_r": -0.04,
-          "avg_r_gross": 0.004,
+          "avg_r": -0.041,
+          "avg_r_gross": 0.003,
           "cost_r": 0.044,
-          "sd": 1.2486,
-          "ci_lo": -0.112,
-          "ci_hi": 0.032
+          "sd": 1.2477,
+          "ci_lo": -0.113,
+          "ci_hi": 0.03
         },
         "candidates": {
           "0.4": -0.088,
@@ -649,42 +1957,42 @@
           "mtf_blocked": 110
         },
         "EUR_JPY": {
-          "n": 941,
+          "n": 942,
           "policies": {
             "tp_sl": {
-              "n": 941,
+              "n": 942,
               "winrate": 38,
-              "avg_r": -0.047,
-              "avg_r_gross": -0.014,
+              "avg_r": -0.048,
+              "avg_r_gross": -0.015,
               "cost_r": 0.034,
-              "sd": 1.2622,
-              "ci_lo": -0.128,
-              "ci_hi": 0.033,
+              "sd": 1.2619,
+              "ci_lo": -0.129,
+              "ci_hi": 0.032,
               "payoff": 1.6,
               "pf": 0.98
             },
             "advice": {
-              "n": 941,
+              "n": 942,
               "winrate": 38,
               "avg_r": -0.049,
               "avg_r_gross": -0.015,
               "cost_r": 0.034,
-              "sd": 1.2421,
+              "sd": 1.2416,
               "ci_lo": -0.128,
-              "ci_hi": 0.031,
+              "ci_hi": 0.03,
               "payoff": 1.56,
-              "pf": 0.98
+              "pf": 0.97
             },
             "advice_watch": {
-              "n": 941,
+              "n": 942,
               "winrate": 66,
-              "avg_r": -0.003,
+              "avg_r": -0.002,
               "avg_r_gross": 0.031,
               "cost_r": 0.034,
-              "sd": 0.84,
+              "sd": 0.8396,
               "ci_lo": -0.056,
               "ci_hi": 0.051,
-              "payoff": 0.57,
+              "payoff": 0.56,
               "pf": 1.09
             }
           },
@@ -696,10 +2004,10 @@
               "advice_watch": -0.018
             },
             "中(1.2〜1.5倍)": {
-              "n": 179,
-              "tp_sl": -0.0,
-              "advice": -0.005,
-              "advice_watch": 0.052
+              "n": 180,
+              "tp_sl": -0.006,
+              "advice": -0.008,
+              "advice_watch": 0.053
             },
             "強(1.5倍〜)": {
               "n": 168,
@@ -710,40 +2018,40 @@
           },
           "atr_bands": {
             "クライマックス(95%〜)": {
-              "n": 145,
+              "n": 146,
               "tp_sl": {
-                "n": 145,
-                "winrate": 39,
-                "avg_r": -0.018,
-                "avg_r_gross": 0.004,
+                "n": 146,
+                "winrate": 38,
+                "avg_r": -0.025,
+                "avg_r_gross": -0.003,
                 "cost_r": 0.022,
-                "sd": 1.2705,
-                "ci_lo": -0.225,
-                "ci_hi": 0.189,
+                "sd": 1.2688,
+                "ci_lo": -0.231,
+                "ci_hi": 0.181,
                 "payoff": 1.6,
-                "pf": 1.01
+                "pf": 1.0
               },
               "advice": {
-                "n": 145,
-                "winrate": 41,
-                "avg_r": 0.006,
-                "avg_r_gross": 0.028,
+                "n": 146,
+                "winrate": 40,
+                "avg_r": 0.002,
+                "avg_r_gross": 0.024,
                 "cost_r": 0.022,
-                "sd": 1.2203,
-                "ci_lo": -0.193,
-                "ci_hi": 0.205,
-                "payoff": 1.53,
-                "pf": 1.05
+                "sd": 1.2172,
+                "ci_lo": -0.196,
+                "ci_hi": 0.199,
+                "payoff": 1.54,
+                "pf": 1.04
               },
               "advice_watch": {
-                "n": 145,
+                "n": 146,
                 "winrate": 72,
                 "avg_r": 0.097,
-                "avg_r_gross": 0.119,
+                "avg_r_gross": 0.12,
                 "cost_r": 0.022,
-                "sd": 0.8231,
-                "ci_lo": -0.037,
-                "ci_hi": 0.231,
+                "sd": 0.8203,
+                "ci_lo": -0.036,
+                "ci_hi": 0.23,
                 "payoff": 0.56,
                 "pf": 1.43
               }
@@ -866,7 +2174,7 @@
               }
             }
           },
-          "mtf_blocked": 83
+          "mtf_blocked": 86
         },
         "GBP_JPY": {
           "n": 1020,
@@ -1086,46 +2394,46 @@
               }
             }
           },
-          "mtf_blocked": 92
+          "mtf_blocked": 93
         },
         "AUD_JPY": {
-          "n": 1054,
+          "n": 1055,
           "policies": {
             "tp_sl": {
-              "n": 1054,
+              "n": 1055,
               "winrate": 37,
-              "avg_r": -0.084,
-              "avg_r_gross": -0.035,
+              "avg_r": -0.085,
+              "avg_r_gross": -0.036,
               "cost_r": 0.048,
-              "sd": 1.2571,
-              "ci_lo": -0.16,
-              "ci_hi": -0.008,
+              "sd": 1.2569,
+              "ci_lo": -0.161,
+              "ci_hi": -0.009,
               "payoff": 1.6,
               "pf": 0.94
             },
             "advice": {
-              "n": 1054,
+              "n": 1055,
               "winrate": 38,
               "avg_r": -0.088,
-              "avg_r_gross": -0.039,
+              "avg_r_gross": -0.04,
               "cost_r": 0.048,
-              "sd": 1.2417,
+              "sd": 1.2412,
               "ci_lo": -0.163,
               "ci_hi": -0.013,
               "payoff": 1.56,
               "pf": 0.94
             },
             "advice_watch": {
-              "n": 1054,
+              "n": 1055,
               "winrate": 63,
-              "avg_r": -0.077,
+              "avg_r": -0.076,
               "avg_r_gross": -0.028,
               "cost_r": 0.048,
-              "sd": 0.8449,
-              "ci_lo": -0.128,
-              "ci_hi": -0.026,
+              "sd": 0.845,
+              "ci_lo": -0.127,
+              "ci_hi": -0.025,
               "payoff": 0.55,
-              "pf": 0.92
+              "pf": 0.93
             }
           },
           "bands": {
@@ -1136,10 +2444,10 @@
               "advice_watch": -0.056
             },
             "中(1.2〜1.5倍)": {
-              "n": 225,
-              "tp_sl": -0.178,
-              "advice": -0.176,
-              "advice_watch": -0.061
+              "n": 226,
+              "tp_sl": -0.182,
+              "advice": -0.177,
+              "advice_watch": -0.057
             },
             "強(1.5倍〜)": {
               "n": 184,
@@ -1150,42 +2458,42 @@
           },
           "atr_bands": {
             "拡大(80〜95%)": {
-              "n": 217,
+              "n": 218,
               "tp_sl": {
-                "n": 217,
+                "n": 218,
                 "winrate": 37,
-                "avg_r": -0.083,
-                "avg_r_gross": -0.041,
+                "avg_r": -0.087,
+                "avg_r_gross": -0.046,
                 "cost_r": 0.041,
-                "sd": 1.2579,
-                "ci_lo": -0.25,
-                "ci_hi": 0.085,
+                "sd": 1.2567,
+                "ci_lo": -0.254,
+                "ci_hi": 0.08,
                 "payoff": 1.6,
                 "pf": 0.93
               },
               "advice": {
-                "n": 217,
+                "n": 218,
                 "winrate": 36,
-                "avg_r": -0.11,
-                "avg_r_gross": -0.069,
+                "avg_r": -0.112,
+                "avg_r_gross": -0.071,
                 "cost_r": 0.041,
-                "sd": 1.2347,
-                "ci_lo": -0.275,
-                "ci_hi": 0.054,
+                "sd": 1.2321,
+                "ci_lo": -0.276,
+                "ci_hi": 0.051,
                 "payoff": 1.56,
                 "pf": 0.89
               },
               "advice_watch": {
-                "n": 217,
+                "n": 218,
                 "winrate": 64,
-                "avg_r": -0.082,
-                "avg_r_gross": -0.04,
+                "avg_r": -0.077,
+                "avg_r_gross": -0.036,
                 "cost_r": 0.041,
-                "sd": 0.8071,
-                "ci_lo": -0.189,
-                "ci_hi": 0.026,
+                "sd": 0.8083,
+                "ci_lo": -0.184,
+                "ci_hi": 0.03,
                 "payoff": 0.51,
-                "pf": 0.89
+                "pf": 0.9
               }
             },
             "適正(20〜80%)": {
@@ -1306,13 +2614,13 @@
               }
             }
           },
-          "mtf_blocked": 74
+          "mtf_blocked": 79
         }
       }
     },
     "swing": {
       "days": 365,
-      "days_covered": 260,
+      "days_covered": 261,
       "n": 390,
       "mtf_blocked": 0,
       "current_th": 0.45,
@@ -2566,7 +3874,7 @@
     },
     "mtf": {
       "days": 365,
-      "days_covered": 260,
+      "days_covered": 261,
       "n": 708,
       "mtf_blocked": 0,
       "current_th": 0.4,
