@@ -542,6 +542,29 @@ class LongBacktestTest(RunTestCase):
         self.assertEqual(sum(b["n"] for b in m["bands"].values()),
                          m["policies"]["tp_sl"]["n"], "スコア帯の合計が採用数と合わない")
 
+    def test_report_carries_pooled_atr_bands(self):
+        """ツール画面が読む atr_bands が、通貨をまたいで合成された形で出ること。
+
+        件数だけでなく信頼区間まで無いと「値幅が広い方が勝てる」の判定ができない。"""
+        self.bt.MODES = ["day"]
+        self.bt.main()
+        m = self.read(self.out)["modes"]["day"]
+        ab = m.get("atr_bands")
+        self.assertTrue(ab, "atr_bands が無い")
+        labels = [lab for _, lab in F.ATR_REGIME_BANDS]
+        for name, row in ab.items():
+            self.assertIn(name, labels)
+            for pol in F.EXIT_POLICIES:
+                if pol in row:
+                    for k in ("n", "avg_r", "ci_lo", "ci_hi", "cost_r"):
+                        self.assertIn(k, row[pol], f"{name}/{pol} に {k} が無い")
+        self.assertEqual(sum(r["n"] for r in ab.values()) + m["atr_bands_warmup"],
+                         m["policies"]["tp_sl"]["n"],
+                         "値幅帯の合計＋区分なしが採用数と合わない（黙って消えている）")
+        # 通貨別にも残っていること（1通貨だけで出ている差を見抜くために必要）
+        per = [v for v in m["symbols"].values() if v.get("atr_bands")]
+        self.assertTrue(per, "通貨別の atr_bands が落ちている")
+
     def test_sample_is_larger_than_the_5min_stats(self):
         """長期検証の母数が、通常統計(直近8日)より多いこと。これが導入の目的。"""
         self.bt.WINDOWS = {"day": (12, 3000)}
@@ -1067,9 +1090,10 @@ class AtrBandStatsTest(RunTestCase):
                         self.assertIn(k, row[pol], f"{name}/{pol} に {k} が無い")
                     self.assertLessEqual(row[pol]["ci_lo"], row[pol]["avg_r"])
                     self.assertLessEqual(row[pol]["avg_r"], row[pol]["ci_hi"])
-        # 件数の合計は全体と一致（どこかの区分に落ちて消えていないこと）
+        # 件数は全て説明が付くこと（どこかで黙って消えていないこと）
         total = sum(r["n"] for r in ab.values())
-        self.assertEqual(total, st["n"], "レジーム別の件数合計が全体と合わない")
+        self.assertEqual(total + st["atr_bands_warmup"], st["n"],
+                         "レジーム別の件数合計＋区分なしが全体と合わない")
 
 
 class EntryRuleParityTest(unittest.TestCase):

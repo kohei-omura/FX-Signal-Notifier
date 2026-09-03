@@ -753,7 +753,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
         _SERIES_CACHE[ck] = cached
     ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s, atrpct_s = cached
     wins, losses = [], []
-    policy_r = {}; band_r = {}; atr_r = {}
+    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]
     n = len(oh); i = warm
     i_end = n - 1
     if entry_range:
@@ -814,12 +814,16 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
         for name, r in sim.items():
             policy_r.setdefault(name, []).append((r, cost))
         band_r.setdefault(_score_band(abs(total), th), []).append((sim, cost))
-        # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す
+        # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す。
+        # 期間の頭は順位を出すだけの本数が無く区分が付かない。黙って落とすと
+        # 帯の合計が採用数と合わなくなるので、件数を数えて表に出せるようにする。
         ab = _atr_band(atrpct_s[i] if i < len(atrpct_s) else None)
         if ab:
             slot = atr_r.setdefault(ab, {})
             for name, r in sim.items():
                 slot.setdefault(name, []).append((r, cost))
+        else:
+            atr_skipped[0] += 1
         i = xj + 1
     nn = len(wins) + len(losses)
     if nn < 8:
@@ -852,6 +856,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
         atr_bands[band] = row
     if atr_bands:
         out["atr_bands"] = atr_bands
+        out["atr_bands_warmup"] = atr_skipped[0]   # 本数不足で区分が付かなかった件数
     return out
 
 

@@ -121,7 +121,7 @@ def run_mode(mode):
         c.clear()
 
     symbols, total_pol, total_band, blocked, n_all = {}, {}, {}, 0, 0
-    total_atr = {}
+    total_atr = {}; atr_warm = 0
     for sym in F.SYMBOLS:
         try:
             st = F.compute_signal_stats(sym)
@@ -144,6 +144,7 @@ def run_mode(mode):
                 if b.get(k) is not None:
                     t[k] = t.get(k, 0.0) + b[k] * b["n"]
         # レジーム別は信頼区間まで見たいので、通貨ごとの集計をそのまま貯めて後で合成する
+        atr_warm += st.get("atr_bands_warmup") or 0
         for bn, b in (st.get("atr_bands") or {}).items():
             slot = total_atr.setdefault(bn, {})
             for k in F.EXIT_POLICIES:
@@ -174,6 +175,7 @@ def run_mode(mode):
     return {"days": days, "days_covered": covered, "n": n_all, "mtf_blocked": blocked,
             "current_th": F.PARAMS[mode]["th"],
             "policies": pol, "bands": band, "atr_bands": atr_band,
+            "atr_bands_warmup": atr_warm,
             "sweep": sweep_thresholds(mode), "holdout": holdout(mode),
             "symbols": {s: {"n": v["n"], "policies": v.get("policies"),
                             "bands": v.get("bands"), "atr_bands": v.get("atr_bands"),

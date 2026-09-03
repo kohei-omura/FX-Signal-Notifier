@@ -603,7 +603,6 @@ function chanceUps(pair, conf){
   if(pair.longEnv && pair.signal && ((pair.signal==='買い'&&pair.longEnv.dir==='up')||(pair.signal==='売り'&&pair.longEnv.dir==='down'))) cu.push('長期環境');
   if(pair.grv && [1,2].includes(pair.grv.no)) cu.push('グランビル');
   if(pair.adx!=null && pair.adx>=30 && pair.adx<=40) cu.push('ADX帯');
-  if(pair.regime && pair.regime.pct>=20 && pair.regime.pct<=80) cu.push('レジーム');
   return cu;
 }
 // チャンスアップのエフェクト色（複合数と pct から。白<青<緑<赤<金）
@@ -904,19 +903,27 @@ const SPREAD={USD_JPY:0.2,EUR_JPY:0.4,GBP_JPY:0.9,AUD_JPY:0.5};
 // 機能2: コンフルエンス重みをモード別テーブル化（swingは現行値を完全維持＝実証済+29.7%）
 //  scalp=時間帯/ニュース支配的→zone/blackout重み2 ／ day=adxBand/longEnv中心の現行比重
 //  機能3のregime(重み1)を全モードに追加。閾値75%/45%は割合判定のまま共通維持。
+// 【regime を外した経緯】ATRの順位20〜80%を良しとして加点していたが、これは根拠なく
+// 決めた区切りだった。1年・4,046件(day)/708件(mtf)で検証したところ、
+//   day : 閑散-0.107 / 適正-0.104 / 拡大-0.049 / クライマックス+0.018（右肩上がり、傾きz=+2.13）
+//   mtf : 閑散+0.040 / 適正+0.098 / 拡大+0.022 / クライマックス+0.022（傾きz=-0.34＝無関係）
+// dayの傾きは5%では有意だが、4区分×2モードの多重比較では届かず、しかも4通貨中
+// GBP/JPYの1つでしか起きていない。つまり「20〜80%が良い」も「広いほど良い」も支持されない。
+// 支持されない項目に配点したままだと、値幅が広いだけで総合判定が下がり通知が止まる。
+// 判定からは外し、レジームは情報として表示のみ続ける（ツール画面で成績を検証できる）。
 const CONFLUENCE_W_BY_MODE={
-  scalp:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:2,granville:0.5,blackout:1.5,regime:1},
-  day:  {longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1,regime:1},
-  swing:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1,regime:1}
+  scalp:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:2,granville:0.5,blackout:1.5},
+  day:  {longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1},
+  swing:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1}
 };
 function confW(){return CONFLUENCE_W_BY_MODE[(S&&S.mode)||'swing']||CONFLUENCE_W_BY_MODE.swing;}
 // 機能3: ボラティリティ・レジーム（ATR直近200本パーセンタイル・表示のみ）
 function atrRegime(o,P){var a=atrSeries(o,P.atr);if(!a||a.length<50)return null;var cur=a[a.length-1];if(cur==null)return null;
   var win=a.slice(-200).filter(function(v){return v!=null;});if(win.length<30)return null;
   var c=0;for(var i=0;i<win.length;i++)if(win[i]<=cur)c++;var pct=Math.round(c/win.length*100);
-  var cls,ic,lab;if(pct<20){cls='weak';ic='⚪';lab='閑散';}else if(pct<=80){cls='ok';ic='🟢';lab='適正';}else if(pct<=95){cls='warn';ic='🟡';lab='やや過熱';}else{cls='hot';ic='🔴';lab='クライマックス';}
+  // 区分名はバックテストの atr_bands と同じ。良し悪しの評価は付けない（検証で差が出なかった）。
+  var cls,ic,lab;if(pct<20){cls='weak';ic='⚪';lab='閑散';}else if(pct<=80){cls='ok';ic='🟢';lab='適正';}else if(pct<=95){cls='';ic='🔵';lab='拡大';}else{cls='warn';ic='🟡';lab='クライマックス';}
   return{pct:pct,cls:cls,ic:ic,lab:lab};}
-function regimeOK(pair){return pair.regime?(pair.regime.pct>=20&&pair.regime.pct<=80):null;}
 // 機能4: 連敗サーキットブレーカー（決済履歴からモード別直近連敗を集計・表示のみ）
 function modeStreak(mode){try{var cp=(POS.positions||[]).filter(function(p){return (p.status||'')==='closed';});
   cp.sort(function(a,b){return String(b.closed_at||'').localeCompare(String(a.closed_at||''));});
@@ -1226,7 +1233,6 @@ function confluence(pair,st){const W=confW();let got=0;let total=0;for(const k i
   add(W.zone,(ZONE&&(ZONE.zone==='golden'||ZONE.zone==='eu'||ZONE.zone==='gotobi')),'時間帯');
   add(W.granville,pair.grv?[1,2].includes(pair.grv.no):null,'グランビル');
   add(W.blackout,!S.blackout,'指標');
-  add(W.regime,regimeOK(pair),'レジーム');
   const rawPct=got/total;           // 素点（学習補正なし）
   let pct=rawPct;
   // 学習補正（既定OFF）。ONかつ統計条件を満たす時だけ、単一バケット・最大±5ptで加減算する。

@@ -677,6 +677,7 @@ async function entryLogSync(){
            if(br.ok) bt=await br.json(); }catch(e){}
       renderExitPolicies(st, bt);
       try{ renderSweep(bt, (st&&st.mode)||'day'); }catch(e){ console.warn(e); }
+      try{ renderRegimeBands(bt, (st&&st.mode)||'day'); }catch(e){ console.warn(e); }
     }
   }catch(e){ console.warn('検証データの取得に失敗', e); }
   var el=document.getElementById('impmsg');
@@ -802,6 +803,105 @@ function renderSweep(backtest, mode){
     +'上げるほど件数が減るので、期待Rが上がっても区間は広がります。<br>'
     +'<b>'+m.sweep.length+'通り試せば、優位性が無くても偶然どれかは良く見えます。</b>'
     +'下の過学習チェックで再現するかを必ず確認してください。</div>'+hb;
+}
+
+/* ===== 値幅(ボラティリティ)別の成績 =====
+   「TP/SLが普段より広い時の方が勝ちやすい」という体感を確かめるための表。
+   backtest.json の atr_bands（毎日05:30に1年ぶんを再集計）をそのまま出す。
+   区分は index.html のレジームチップと同じ境界（ATRの直近200本での順位）。 */
+var REGIME_ORDER = ['閑散(〜20%)','適正(20〜80%)','拡大(80〜95%)','クライマックス(95%〜)'];
+
+/* 2つの帯の差が偶然で説明できるか。z = 差 / 合成標準誤差。
+   信頼区間から標準誤差を逆算する（ci = 平均 ± 1.96×SE）。 */
+function bandSE(v){ return (v.ci_hi - v.ci_lo) / (2*1.96); }
+function bandDiffZ(a, b){
+  var se = Math.sqrt(Math.pow(bandSE(a),2) + Math.pow(bandSE(b),2));
+  return se > 0 ? (b.avg_r - a.avg_r) / se : 0;
+}
+
+function renderRegimeBands(backtest, mode){
+  var el=document.getElementById('regimeband'); if(!el) return;
+  var m=backtest&&backtest.modes&&backtest.modes[mode];
+  var ab=m&&m.atr_bands;
+  if(!ab||!Object.keys(ab).length){
+    el.innerHTML='<div class="note">長期検証(backtest.json)に値幅別の集計がまだありません。毎日05:30に自動生成されます。</div>';
+    return;
+  }
+  var base=ab['適正(20〜80%)']&&ab['適正(20〜80%)'].advice;
+  var rows=REGIME_ORDER.map(function(k){
+    var v=ab[k]&&ab[k].advice; if(!v) return '';
+    var und=(v.ci_lo<0&&v.ci_hi>0);
+    var cmp='—';
+    if(base&&k!=='適正(20〜80%)'){
+      var z=bandDiffZ(base,v);
+      cmp=(v.avg_r-base.avg_r>=0?'+':'')+(v.avg_r-base.avg_r).toFixed(3)
+         +'<br><span style="font-size:11px;opacity:.75">z='+(z>=0?'+':'')+z.toFixed(2)+'</span>';
+    }
+    return '<tr><td>'+k+'</td><td>'+v.n+'</td><td>'+v.winrate+'%</td>'
+      +'<td class="'+(und?'':(v.avg_r>=0?'good':'bad'))+'">'+(v.avg_r>=0?'+':'')+v.avg_r.toFixed(3)+'</td>'
+      +'<td style="font-size:11px;opacity:.8">'+(v.ci_lo>=0?'+':'')+v.ci_lo.toFixed(3)
+      +'〜'+(v.ci_hi>=0?'+':'')+v.ci_hi.toFixed(3)+(und?'<br><b>判定不能</b>':'')+'</td>'
+      +'<td>'+cmp+'</td>'
+      +'<td style="font-size:11px;opacity:.8">'+v.cost_r.toFixed(3)+'</td></tr>';
+  }).join('');
+
+  // 通貨ごとに同じ向きに出ているか。1つの通貨だけで出ている差は採用できない。
+  var syms=(m.symbols)||{}, per='';
+  var names=Object.keys(syms);
+  if(names.length){
+    per='<table style="margin-top:10px"><thead><tr><th>ペア</th>'
+      +REGIME_ORDER.map(function(k){return '<th>'+k.replace(/\(.*/,'')+'</th>';}).join('')
+      +'</tr></thead><tbody>'
+      +names.map(function(sy){
+        var sb=syms[sy]&&syms[sy].atr_bands;
+        return '<tr><td>'+sy.replace('_','/')+'</td>'+REGIME_ORDER.map(function(k){
+          var v=sb&&sb[k]&&sb[k].advice;
+          if(!v) return '<td style="opacity:.5">—</td>';
+          return '<td class="'+(v.avg_r>=0?'good':'bad')+'" style="font-size:11px">'
+            +(v.avg_r>=0?'+':'')+v.avg_r.toFixed(3)
+            +'<br><span style="opacity:.6">n='+v.n+'</span></td>';
+        }).join('')+'</tr>';
+      }).join('')+'</tbody></table>';
+  }
+
+  // 全体としてどう読むか（帯の順位と期待Rの重み付き回帰の傾き）
+  var xs=[],ys=[],ws=[];
+  REGIME_ORDER.forEach(function(k,i){
+    var v=ab[k]&&ab[k].advice; if(!v) return;
+    var se=bandSE(v); if(!(se>0)) return;
+    xs.push(i); ys.push(v.avg_r); ws.push(1/(se*se));
+  });
+  var verdict='';
+  if(xs.length>=3){
+    var W=0,mx=0,my=0,i;
+    for(i=0;i<xs.length;i++){W+=ws[i];mx+=ws[i]*xs[i];my+=ws[i]*ys[i];}
+    mx/=W; my/=W;
+    var sxx=0,sxy=0;
+    for(i=0;i<xs.length;i++){sxx+=ws[i]*Math.pow(xs[i]-mx,2);sxy+=ws[i]*(xs[i]-mx)*(ys[i]-my);}
+    var slope=sxy/sxx, zs=slope*Math.sqrt(sxx);
+    // 4区分×モード数ぶん比較しているので、5%そのままでは甘い（多重比較）
+    var strong=Math.abs(zs)>=2.73, weak=Math.abs(zs)>=1.96;
+    verdict='<div style="margin-top:10px;padding:9px 12px;border:1px solid '
+      +(strong?'var(--up)':'var(--line,#333)')+';border-radius:9px;font-size:12.5px;line-height:1.8">'
+      +'<b>値幅が広いほど成績は良くなるか</b><br>'
+      +'1区分あたり <b>'+(slope>=0?'+':'')+slope.toFixed(4)+'R</b>（z='+(zs>=0?'+':'')+zs.toFixed(2)+'）<br>'
+      +(strong?'✅ 多重比較を考慮しても差があります。'
+        :(weak?'⚠️ 5%では差が出ますが、区分を何通りも比べているぶんを考えると<b>まだ採用できません</b>（|z|≥2.73が必要）。'
+              :'⛔ <b>値幅と成績に関係は見られません。</b>広い時に勝てた記憶は、他の要因か偶然です。'))
+      +'</div>';
+  }
+
+  el.innerHTML='<table><thead><tr><th>値幅</th><th>件数</th><th>勝率</th><th>期待R/回</th>'
+    +'<th>95%区間</th><th>適正との差</th><th>コスト</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table>'+verdict
+    +((m.atr_bands_warmup)?'<div class="note" style="margin-top:6px">※ 期間の頭の '
+       +m.atr_bands_warmup+'件は、順位を出すだけの本数が無いため区分なしです（合計 '
+       +(m.policies&&m.policies.tp_sl?m.policies.tp_sl.n:'?')+'件）。</div>':'')
+    +'<div class="note">🎯推奨で降りた場合の1回あたり期待R（スプレッド控除後）。'
+    +'値幅はATRの直近200本での順位で、画面のレジームチップと同じ区分です。<br>'
+    +'<b>コスト欄は必ず右下がりになります</b>— 値幅が広い＝SLが広い＝スプレッドが1Rに占める割合が小さい、という算数だからです。'
+    +'期待Rの差がコストの差とほぼ同じなら、それは「勝ちやすい」のではなく「取られにくい」だけです。</div>'
+    +(per?'<div class="note" style="margin-top:10px"><b>通貨ごとの内訳</b>（1つの通貨だけで出ている差は採用できません）</div>'+per:'');
 }
 
 /* ===== 現状診断（このまま続けて勝てるのか） =====
