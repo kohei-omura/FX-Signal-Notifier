@@ -744,15 +744,16 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
     ck = (symbol, MODE, P["interval"], len(oh), days)
     cached = _SERIES_CACHE.get(ck)
     if cached is None:
+        _atr = atr_series(oh, P["atr"])
         cached = (ema_series(closes, P["ema_f"]), ema_series(closes, P["ema_s"]),
                   rsi_series(closes, P["rsi"]), macd_hist_series(closes, *P["macd"]),
                   bb_series(closes, P["bb"][0], P["bb"][1]),
-                  atr_series(oh, P["atr"]), adx_series(oh, P["adx"]),
-                  htf_aligned_series(symbol, times, days))
+                  _atr, adx_series(oh, P["adx"]),
+                  htf_aligned_series(symbol, times, days), _atr_pct_series(_atr))
         _SERIES_CACHE[ck] = cached
-    ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s = cached
+    ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s, atrpct_s = cached
     wins, losses = [], []
-    policy_r = {}; band_r = {}
+    policy_r = {}; band_r = {}; atr_r = {}
     n = len(oh); i = warm
     i_end = n - 1
     if entry_range:
@@ -813,6 +814,12 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
         for name, r in sim.items():
             policy_r.setdefault(name, []).append((r, cost))
         band_r.setdefault(_score_band(abs(total), th), []).append((sim, cost))
+        # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す
+        ab = _atr_band(atrpct_s[i] if i < len(atrpct_s) else None)
+        if ab:
+            slot = atr_r.setdefault(ab, {})
+            for name, r in sim.items():
+                slot.setdefault(name, []).append((r, cost))
         i = xj + 1
     nn = len(wins) + len(losses)
     if nn < 8:
@@ -836,11 +843,53 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
                 bands[band][name] = round(sum(nets)/len(nets), 3)   # スプレッド控除後
     if bands:
         out["bands"] = bands
+    atr_bands = {}
+    for band, per in atr_r.items():
+        row = {"n": max(len(v) for v in per.values())}
+        for name, rows in per.items():
+            if rows:
+                row[name] = _r_summary(rows)
+        atr_bands[band] = row
+    if atr_bands:
+        out["atr_bands"] = atr_bands
     return out
 
 
 # スコアの強さ別に分ける。しきい値の何倍かで見る（モードが変わっても意味が保てる）。
 SCORE_BANDS = ((1.5, "強(1.5倍〜)"), (1.2, "中(1.2〜1.5倍)"), (1.0, "弱(1.0〜1.2倍)"))
+
+
+# 値幅（ATR）の状態別に分ける。画面の「レジーム」チップと同じ区切りにしてある。
+# 直近ATR_PCT_WINDOW本の中でのATRの順位(%)で見るので、通貨やモードが変わっても意味が保てる。
+ATR_PCT_WINDOW = 200
+ATR_REGIME_BANDS = ((95, "クライマックス(95%〜)"), (80, "拡大(80〜95%)"),
+                    (20, "適正(20〜80%)"), (0, "閑散(〜20%)"))
+
+
+def _atr_pct_series(atr_s, win=ATR_PCT_WINDOW):
+    """各バーのATRが『直近win本の中で何%の位置にいるか』。
+
+       その時点までの値だけで計算する（未来のATRを見て順位を付けない）。
+       画面の atrRegime() と同じ定義: 自分以下の本数 / 窓の本数。"""
+    out = [None] * len(atr_s)
+    for i, cur in enumerate(atr_s):
+        if cur is None:
+            continue
+        lo = max(0, i - win + 1)
+        w = [v for v in atr_s[lo:i+1] if v is not None]
+        if len(w) < 30:
+            continue
+        out[i] = sum(1 for v in w if v <= cur) / len(w) * 100
+    return out
+
+
+def _atr_band(pct):
+    if pct is None:
+        return None
+    for lo, label in ATR_REGIME_BANDS:
+        if pct >= lo:
+            return label
+    return ATR_REGIME_BANDS[-1][1]
 
 
 def _score_band(abs_score, th):
