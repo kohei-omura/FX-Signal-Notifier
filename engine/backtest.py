@@ -121,6 +121,7 @@ def run_mode(mode):
         c.clear()
 
     symbols, total_pol, total_band, blocked, n_all = {}, {}, {}, 0, 0
+    total_atr = {}
     for sym in F.SYMBOLS:
         try:
             st = F.compute_signal_stats(sym)
@@ -142,6 +143,12 @@ def run_mode(mode):
             for k in F.EXIT_POLICIES:
                 if b.get(k) is not None:
                     t[k] = t.get(k, 0.0) + b[k] * b["n"]
+        # レジーム別は信頼区間まで見たいので、通貨ごとの集計をそのまま貯めて後で合成する
+        for bn, b in (st.get("atr_bands") or {}).items():
+            slot = total_atr.setdefault(bn, {})
+            for k in F.EXIT_POLICIES:
+                if b.get(k):
+                    slot.setdefault(k, []).append(b[k])
 
     if not symbols:
         return None
@@ -152,15 +159,24 @@ def run_mode(mode):
         for k in F.EXIT_POLICIES:
             if k in t:
                 band[bn][k] = round(t[k]/t["n"], 3)
+    atr_band = {}
+    for bn, per in total_atr.items():
+        row = {}
+        for k, parts in per.items():
+            if parts:
+                row[k] = pool_summary(parts)
+        if row:
+            row["n"] = max(v["n"] for v in row.values())
+            atr_band[bn] = row
     # 実際に何日ぶんのデータが取れたか（取引所の保持期間で足りないことがある）
     covered = len({k[2] for k in F._KLINE_DAY_CACHE
                    if k[1] == F.P["interval"] and F._KLINE_DAY_CACHE[k]})
     return {"days": days, "days_covered": covered, "n": n_all, "mtf_blocked": blocked,
             "current_th": F.PARAMS[mode]["th"],
-            "policies": pol, "bands": band,
+            "policies": pol, "bands": band, "atr_bands": atr_band,
             "sweep": sweep_thresholds(mode), "holdout": holdout(mode),
             "symbols": {s: {"n": v["n"], "policies": v.get("policies"),
-                            "bands": v.get("bands"),
+                            "bands": v.get("bands"), "atr_bands": v.get("atr_bands"),
                             "mtf_blocked": v.get("mtf_blocked")} for s, v in symbols.items()}}
 
 
@@ -185,6 +201,13 @@ def main():
             b = r["bands"][bn]
             print(f"      スコア{bn:16} n={b['n']:4} " +
                   "  ".join(f"{k}={b.get(k, 0):+.3f}" for k in F.EXIT_POLICIES))
+        _order = {lab: i for i, (_, lab) in enumerate(F.ATR_REGIME_BANDS)}
+        for bn in sorted(r.get("atr_bands") or {}, key=lambda x: _order.get(x, 9)):
+            b = r["atr_bands"][bn]
+            v = b.get("advice") or {}
+            if v:
+                print(f"      値幅{bn:20} n={v['n']:4} 勝率{v['winrate']:3}% "
+                      f"期待R{v['avg_r']:+.3f} [{v['ci_lo']:+.3f}〜{v['ci_hi']:+.3f}]")
         for row in r.get("sweep") or []:
             v = row.get("advice") or {}
             if v:

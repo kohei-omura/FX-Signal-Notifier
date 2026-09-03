@@ -1012,6 +1012,66 @@ class MfeTest(RunTestCase):
         self.assertAlmostEqual(adv["mfe"], 159.0, places=3)
 
 
+class AtrRegimeTest(unittest.TestCase):
+    """値幅(ATR)レジームの区分。ここが未来を覗くと『広い時は勝てる』が自明に出てしまう。"""
+
+    def test_percentile_uses_only_past_and_current_bars(self):
+        """あるバーのパーセンタイルが、それ以降のATRに一切左右されないこと。"""
+        rnd = random.Random(7)
+        base = [abs(rnd.gauss(0.1, 0.03)) for _ in range(300)]
+        a = F._atr_pct_series(base)
+        # 後半を極端な値に差し替えても、前半の値は変わらないはず
+        tail = base[:150] + [9.9] * 150
+        b = F._atr_pct_series(tail)
+        self.assertEqual(a[:150], b[:150], "未来のATRが過去のパーセンタイルを動かしている")
+
+    def test_percentile_matches_a_direct_count(self):
+        base = [float(i % 50) + 1 for i in range(260)]
+        got = F._atr_pct_series(base, win=100)
+        for i in (120, 200, 259):
+            w = base[max(0, i - 99):i + 1]
+            want = sum(1 for v in w if v <= base[i]) / len(w) * 100
+            self.assertAlmostEqual(got[i], want, places=9)
+
+    def test_warmup_bars_have_no_band(self):
+        got = F._atr_pct_series([0.1] * 20)
+        self.assertTrue(all(v is None for v in got), "本数不足なのに区分を付けている")
+        self.assertIsNone(F._atr_band(None))
+
+    def test_bands_cover_the_whole_range_in_order(self):
+        self.assertEqual(F._atr_band(0.0), "閑散(〜20%)")
+        self.assertEqual(F._atr_band(19.9), "閑散(〜20%)")
+        self.assertEqual(F._atr_band(20.0), "適正(20〜80%)")
+        self.assertEqual(F._atr_band(79.9), "適正(20〜80%)")
+        self.assertEqual(F._atr_band(80.0), "拡大(80〜95%)")
+        self.assertEqual(F._atr_band(94.9), "拡大(80〜95%)")
+        self.assertEqual(F._atr_band(95.0), "クライマックス(95%〜)")
+        self.assertEqual(F._atr_band(100.0), "クライマックス(95%〜)")
+
+
+class AtrBandStatsTest(RunTestCase):
+    def test_stats_report_atr_bands_with_confidence_intervals(self):
+        """画面とツールが読む atr_bands が、期待Rと信頼区間まで揃って出ること。"""
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        st = F.compute_signal_stats("USD_JPY")
+        self.assertIsNotNone(st, "統計が取れない（前提が崩れている）")
+        ab = st.get("atr_bands")
+        self.assertTrue(ab, "atr_bands が無い＝レジーム別の検証ができない")
+        labels = [lab for _, lab in F.ATR_REGIME_BANDS]
+        for name, row in ab.items():
+            self.assertIn(name, labels, f"未知の区分: {name}")
+            self.assertGreater(row["n"], 0)
+            for pol in F.EXIT_POLICIES:
+                if pol in row:
+                    for k in ("n", "winrate", "avg_r", "cost_r", "sd", "ci_lo", "ci_hi"):
+                        self.assertIn(k, row[pol], f"{name}/{pol} に {k} が無い")
+                    self.assertLessEqual(row[pol]["ci_lo"], row[pol]["avg_r"])
+                    self.assertLessEqual(row[pol]["avg_r"], row[pol]["ci_hi"])
+        # 件数の合計は全体と一致（どこかの区分に落ちて消えていないこと）
+        total = sum(r["n"] for r in ab.values())
+        self.assertEqual(total, st["n"], "レジーム別の件数合計が全体と合わない")
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 
