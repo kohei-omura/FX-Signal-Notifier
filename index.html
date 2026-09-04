@@ -1671,6 +1671,10 @@ function renderStale(){
   }
   if(LAST_TICK_TS && now-LAST_TICK_TS>60000)
     msgs.push(`⚠️ ライブ価格の取得が停止（最終 <b>${ageTxt(now-LAST_TICK_TS)}</b>）。表示価格が実勢とズレている可能性があります。`);
+  // ライブ通知(LINE)が実際には送られていない場合。30分は出しておく。
+  if(LIVE_NOTIFY_LAST&&now-LIVE_NOTIFY_LAST.ts<30*60000)
+    msgs.push(`⚠️ 直近のライブ通知がLINEに届いていません: ${escHtml(LIVE_NOTIFY_LAST.reason)}`
+      +`（画面の表示とメールには影響しません）`);
   // サーバー側が記録した具体的な原因（何が失敗しているのかを憶測させない）
   const ws=(S.warnings||[]).map(w=>w&&w.msg).filter(Boolean);
   if(ws.length)msgs.push('🛠 サーバー側の記録: '+ws.slice(0,3).map(escHtml).join(' ／ ')
@@ -2466,10 +2470,21 @@ async function fetchKlines(base,sym,P,need){
 function notifyBase(){return LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');}
 function loadNotified(){try{return JSON.parse(localStorage.getItem('fxnavi_notified'))||{}}catch(e){return{}}}
 function saveNotified(o){try{localStorage.setItem('fxnavi_notified',JSON.stringify(o));}catch(e){}}
+// Worker が「送らなかった」時の記録。黙って捨てると、通知が来ない理由が
+// 誰にも分からなくなる（実際にWorker側の判定比の読み取り不具合で起きていた）。
+let LIVE_NOTIFY_LAST=null;
 async function notifyLive(text){
   if(!LIVE_PRICE_URL)return;
-  try{await fetch(notifyBase()+'?action=notify'+(NOTIFY_KEY?('&key='+encodeURIComponent(NOTIFY_KEY)):''),
-    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});}catch(e){}
+  try{
+    const r=await fetch(notifyBase()+'?action=notify'+(NOTIFY_KEY?('&key='+encodeURIComponent(NOTIFY_KEY)):''),
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    let j=null; try{ j=await r.json(); }catch(e){}
+    if(!r.ok){ LIVE_NOTIFY_LAST={ts:Date.now(),reason:'HTTP '+r.status}; }
+    else if(j&&j.skipped){ LIVE_NOTIFY_LAST={ts:Date.now(),reason:'Workerが送信を見送り（'+j.skipped+'）'}; }
+    else if(j&&j.error){ LIVE_NOTIFY_LAST={ts:Date.now(),reason:String(j.error)}; }
+    else { LIVE_NOTIFY_LAST=null; }
+  }catch(e){ LIVE_NOTIFY_LAST={ts:Date.now(),reason:'送信できませんでした（'+(e&&e.message||e)+'）'}; }
+  try{ renderStale(); }catch(e){}
 }
 let LIVE_CALC_BUSY=false,LIVE_LAST=0,LIVE_AT=0,LIVE_PAIRS={};
 async function liveSignals(){

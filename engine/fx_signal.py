@@ -1691,6 +1691,24 @@ def save_degraded_status():
         print(f"[WARN] status.json への警告書き込みに失敗: {e}", file=sys.stderr)
 
 
+def flush_warnings_to_status():
+    """通知の送信は status.json を書いた後に行うため、そこで出た警告は
+       そのままだと画面に届かない（プロセスが終わって消える）。
+       送信後にもう一度 status.json へ書き戻して、届かなかったことを可視化する。"""
+    if not (_WARNINGS and os.path.exists(STATUS_FILE)):
+        return
+    st = read_json(STATUS_FILE)
+    if not isinstance(st, dict):
+        return
+    if st.get("warnings") == list(_WARNINGS):
+        return
+    st["warnings"] = list(_WARNINGS)
+    try:
+        write_json(STATUS_FILE, st)
+    except Exception as e:
+        print(f"[WARN] status.json への警告書き込みに失敗: {e}", file=sys.stderr)
+
+
 def mail_subject(sig_events, pos_events, level_count):
     """件名だけで何が起きたか分かるようにする（スマホの通知を開かずに判断できるように）。"""
     def f(sym):
@@ -1717,23 +1735,34 @@ def mail_subject(sig_events, pos_events, level_count):
 
 
 def notify_line(text):
+    """LINEへ送る。失敗は必ず warn() を通す。
+
+       以前は stderr に出すだけで status.json にも画面にも出ず、
+       送れていないことに気づく手段が無かった。
+       ステータスコードも見ていなかったため、401(トークン失効)や
+       429(上限超過)でも「送信した」ことになっていた。"""
     token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     if not token:
-        print("[INFO] LINE未設定。スキップ"); return
+        print("[INFO] LINE未設定。スキップ"); return False
     try:
         r = requests.post("https://api.line.me/v2/bot/message/broadcast",
                           headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                           json={"messages": [{"type": "text", "text": text}]}, timeout=15)
         print(f"[INFO] LINE送信 status={r.status_code} {r.text[:120]}")
+        if r.status_code // 100 != 2:
+            warn(f"LINE送信が拒否されました (HTTP {r.status_code}): {r.text[:120]}", tag="line-send")
+            return False
+        return True
     except Exception as e:
-        print(f"[WARN] LINE送信失敗: {e}", file=sys.stderr)
+        warn(f"LINE送信失敗: {e}", tag="line-send")
+        return False
 
 
 def notify_mail(subject, body):
     addr = os.environ.get("GMAIL_ADDRESS"); pw = os.environ.get("GMAIL_APP_PASSWORD")
     to = os.environ.get("MAIL_TO") or addr
     if not (addr and pw):
-        print("[INFO] Gmail未設定。スキップ"); return
+        print("[INFO] Gmail未設定。スキップ"); return False
     try:
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"], msg["From"], msg["To"] = subject, addr, to
@@ -1741,8 +1770,11 @@ def notify_mail(subject, body):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as s:
             s.login(addr, pw); s.send_message(msg)
         print("[INFO] メール送信完了")
+        return True
     except Exception as e:
-        print(f"[WARN] メール送信失敗: {e}", file=sys.stderr)
+        # 送れていないことは画面から見えないと分からない（LINEと同じ理由）
+        warn(f"メール送信失敗: {e}", tag="mail-send")
+        return False
 
 
 MODE_FILE = data_path("mode.json")
@@ -1827,6 +1859,8 @@ def main():
         notify_line(head + "\n\n".join(line_parts) + tail)
     if mail_parts:
         notify_mail(subject, head + "\n\n".join(mail_parts) + tail)
+    # 送信で出た警告を画面へ回す（送れていないことに気づけるように）
+    flush_warnings_to_status()
 
 
 if __name__ == "__main__":
