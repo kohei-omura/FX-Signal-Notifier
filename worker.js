@@ -21,28 +21,47 @@ function isLive(text) {
   return LIVE_PREFIXES.some(p => t.startsWith(p));
 }
 
-// 「（5/10）」「(3/13)」「5/10」などから判定比を取り出す。見つからなければ null。
+// 総合判定の割合を読み取る。文面は「🎯総合判定 🟡 保留・検討（54% 6.5/12）」の形。
+//
+// 【以前の不具合】「6.5/12」のような小数の得点を \d{1,3}\/\d{1,3} で読むと、
+// 小数点の後ろだけが拾われて 5/12=42% になり、本当は54%あるのに遮断していた。
+// グランビル(配点0.5)が付くたびに得点が .5 になるため、かなりの頻度で起きていた。
+// そこで、明示されている「％」を最優先で読む。比率は予備で、小数も読めるようにする。
+function judgePercent(text) {
+  const t = String(text || "");
+  // 総合判定の行にある％を最優先（TP勝率などの別の％を拾わないよう行を限定する）
+  let m = t.match(/総合判定[^\n]*?(\d{1,3})\s*%/);
+  if (!m) m = t.match(/(\d{1,3})\s*%/);
+  if (m) {
+    const v = parseInt(m[1], 10);
+    if (v >= 0 && v <= 100) return v / 100;
+  }
+  return null;
+}
+
+// 予備の読み取り。「6.5/12」「(5/10)」など。分母2〜30の“判定比らしい”ものだけ採用。
 function judgeRatio(text) {
-  const m = String(text || "").match(/[（(]?\s*(\d{1,3})\s*\/\s*(\d{1,3})\s*[）)]?/g);
-  if (!m) return null;
-  let best = null;
-  for (const seg of m) {
-    const p = seg.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
-    if (!p) continue;
-    const a = parseInt(p[1], 10), b = parseInt(p[2], 10);
-    // 価格やpipsを誤検出しないよう、分母が2〜30の「判定比らしい」ものだけ採用
+  const re = /(\d{1,3}(?:\.\d+)?)\s*\/\s*(\d{1,3}(?:\.\d+)?)/g;
+  let best = null, p;
+  while ((p = re.exec(String(text || ""))) !== null) {
+    const a = parseFloat(p[1]), b = parseFloat(p[2]);
     if (b >= 2 && b <= 30 && a <= b) best = a / b;
   }
   return best;
 }
 
 // LINEへ送ってよいか。ライブ通知だけがフィルタ対象で、サーバー発の通知は常に通す。
+//
+// 読み取れなかった時は【通す】。以前は遮断していたが、文面を変えるたびに
+// 通知が黙って止まる（mtfモード追加時のように）ので、判定不能は通す側に倒す。
+// 画面(index.html)側でも50%以上＋上位足一致で絞っているため二重の網になっている。
 function allowToLine(text) {
   if (!LIVE_FILTER_ON) return { ok: true };
   if (!isLive(text)) return { ok: true };
-  const r = judgeRatio(text);
-  if (r === null) return { ok: false, reason: "live-no-judge-ratio" };
-  if (r < LIVE_MIN_RATIO) return { ok: false, reason: `live-low-score(${(r*100).toFixed(0)}%)` };
+  const r = judgePercent(text);
+  const r2 = (r === null) ? judgeRatio(text) : r;
+  if (r2 === null) return { ok: true, note: "live-no-judge-ratio(通過)" };
+  if (r2 < LIVE_MIN_RATIO) return { ok: false, reason: `live-low-score(${(r2 * 100).toFixed(0)}%)` };
   return { ok: true };
 }
 
@@ -70,6 +89,7 @@ export default {
         // ★ライブ通知は総合判定が LIVE_MIN_RATIO 未満なら送らない（LINE枠の節約）
         const gate = allowToLine(text);
         if (!gate.ok) {
+          // 画面側がこの skipped を読んで「送っていない」ことを表示できるようにする
           return json({ ok: true, skipped: gate.reason });
         }
 

@@ -101,6 +101,11 @@ class RunTestCase(unittest.TestCase):
                      "ACCOUNT_JPY", "RISK_CAP_PCT"):
             self.addCleanup(setattr, F, name, getattr(F, name))
         self.sent = {"line": [], "mail": []}
+        # 差し替える前の本物を残す。上書きしっぱなしだと、実際の送信処理を
+        # 検証したいテストからは二度と本物に触れなくなる。
+        self.real_notify_line, self.real_notify_mail = F.notify_line, F.notify_mail
+        self.addCleanup(setattr, F, "notify_line", self.real_notify_line)
+        self.addCleanup(setattr, F, "notify_mail", self.real_notify_mail)
         F.notify_line = lambda t: self.sent["line"].append(t)
         F.notify_mail = lambda s, b: self.sent["mail"].append((s, b))
         mock_api.fail_mode = None
@@ -1094,6 +1099,64 @@ class AtrBandStatsTest(RunTestCase):
         total = sum(r["n"] for r in ab.values())
         self.assertEqual(total + st["atr_bands_warmup"], st["n"],
                          "レジーム別の件数合計＋区分なしが全体と合わない")
+
+
+class NotifyFailureVisibilityTest(RunTestCase):
+    """通知が送れなかったことを画面から見えるようにする。
+
+    以前は stderr に出すだけで status.json にも画面にも出ず、
+    「通知が来ない」の原因を追う手がかりが無かった。
+    さらにLINEはHTTPステータスを見ておらず、401でも成功扱いだった。
+    """
+
+    def setUp(self):
+        super().setUp()
+        # 実際の送信処理を検証したいので、基底クラスの差し替えを本物に戻す
+        F.notify_line = self.real_notify_line
+        os.environ["LINE_CHANNEL_ACCESS_TOKEN"] = "dummy"
+        self.addCleanup(os.environ.pop, "LINE_CHANNEL_ACCESS_TOKEN", None)
+
+    def test_line_rejection_is_surfaced(self):
+        """LINEが4xxを返したら「送れていない」と分かること。"""
+        class Resp:
+            status_code = 401
+            text = '{"message":"Invalid access token"}'
+        F.requests.post = lambda *a, **k: Resp()
+        self.addCleanup(lambda: F.requests.__dict__.pop("post", None))
+        ok = F.notify_line("test")
+        self.assertFalse(ok, "4xxなのに送信成功として扱っている")
+        msgs = " ".join(w["msg"] for w in F._WARNINGS)
+        self.assertIn("401", msgs, "拒否されたことが警告に残っていない")
+
+    def test_line_exception_is_surfaced(self):
+        def boom(*a, **k):
+            raise RuntimeError("network down")
+        F.requests.post = boom
+        self.addCleanup(lambda: F.requests.__dict__.pop("post", None))
+        self.assertFalse(F.notify_line("test"))
+        self.assertTrue(any(w.get("tag") == "line-send" for w in F._WARNINGS),
+                        "送信失敗が警告に残っていない")
+
+    def test_warnings_raised_after_status_is_written_still_reach_the_screen(self):
+        """通知の送信は status.json を書いた後。そこで出た警告も画面に届くこと。"""
+        F.main()
+        before = [w["msg"] for w in (self.status().get("warnings") or [])]
+        self.assertFalse(any("メール送信失敗" in m for m in before), "前提が崩れている")
+        F.warn("メール送信失敗: テスト", tag="mail-send")
+        F.flush_warnings_to_status()
+        msgs = [w["msg"] for w in (self.status().get("warnings") or [])]
+        self.assertTrue(any("メール送信失敗" in m for m in msgs),
+                        "書き込み後に出た警告が status.json に届いていない")
+
+    def test_flush_keeps_the_rest_of_status_intact(self):
+        """警告の書き戻しで、画面が読む他の内容を壊さないこと。"""
+        F.main()
+        before = self.status()
+        F.warn("LINE送信が拒否されました (HTTP 429)", tag="line-send")
+        F.flush_warnings_to_status()
+        after = self.status()
+        for k in ("pairs", "open_positions", "generated_at", "mode"):
+            self.assertEqual(before.get(k), after.get(k), f"{k} が書き換わっている")
 
 
 class EntryRuleParityTest(unittest.TestCase):
