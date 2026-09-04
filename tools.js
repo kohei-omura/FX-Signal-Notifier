@@ -849,6 +849,61 @@ function renderSweep(backtest, mode){
     +'下の過学習チェックで再現するかを必ず確認してください。</div>'+hb;
 }
 
+/* ===== Workerの疎通確認 =====
+   Cloudflare Worker はリポジトリとは別に手で配置する。コードを直しても
+   配置し忘れれば古い版が動き続け、しかも画面からは全く見えない。
+   実際にライブ通知が誤って遮断されていたのに、数週間気づけなかった。
+
+   確認の仕掛け: 旧版と新版で「読み取る数字が違う」文面を送る。
+     文面「総合判定 …（40% 6.5/12）」
+       旧版 … 比率だけを読む。小数に対応しておらず "5/12" → 42%
+       新版 … ％を優先して読む → 40%
+   どちらも50%未満なので【LINEには送られない】。返ってくる理由の数字だけで版が分かる。 */
+var WORKER_PROBE = "⚡ライブ 疎通確認（送信されません）\n🎯総合判定 🔴 見送り（40% 6.5/12）";
+
+async function workerCheck(){
+  var el=document.getElementById('workerchk'); if(!el) return;
+  var box=function(cls,html){ el.innerHTML='<button class="bgo" onclick="workerCheck()">もう一度確認する</button>'
+    +'<div style="margin-top:8px;padding:9px 12px;border:1px solid var('+cls+');border-radius:9px;'
+    +'font-size:12.5px;line-height:1.8">'+html+'</div>'; };
+  if(typeof LIVE_PRICE_URL==='undefined'||!LIVE_PRICE_URL){ box('--down','WorkerのURLが未設定です。'); return; }
+  el.innerHTML='<div class="note">確認中…</div>';
+  var base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,''), out=[];
+
+  // 1) 価格中継（これが動かないとライブ計算そのものが止まる）
+  var relay=null;
+  try{
+    var r=await fetch(base+'?t='+Date.now(),{cache:'no-store'});
+    var j=await r.json();
+    relay=(j&&Array.isArray(j.data)&&j.data.length)?j.data.length:0;
+  }catch(e){ relay=null; }
+  out.push(relay?('✅ 価格中継: 正常（'+relay+'通貨）')
+                :'⛔ <b>価格中継が応答しません。</b>ライブ価格とライブ通知が止まります。');
+
+  // 2) 配置されている版（LINEには送らない文面で判別する）
+  var key=(typeof NOTIFY_KEY!=='undefined'&&NOTIFY_KEY)?('&key='+encodeURIComponent(NOTIFY_KEY)):'';
+  try{
+    var pr=await fetch(base+'?action=notify'+key,{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({text:WORKER_PROBE})});
+    var pj=await pr.json();
+    if(pj&&pj.error){ out.push('⛔ Workerがエラーを返しました: '+String(pj.error)); }
+    else if(pj&&typeof pj.skipped==='string'){
+      if(pj.skipped.indexOf('40%')>=0)
+        out.push('✅ <b>最新版が配置されています。</b>小数の得点を正しく読めています。');
+      else if(pj.skipped.indexOf('42%')>=0)
+        out.push('⚠️ <b>古い版が動いています。</b>リポジトリの worker.js を'
+          +'Cloudflareに貼り直してください。このままだと総合判定50%以上のライブ通知が'
+          +'誤って遮断されることがあります（応答: '+pj.skipped+'）。');
+      else out.push('❓ 判別できない応答です（'+pj.skipped+'）。');
+    }
+    else if(pj&&pj.ok){ out.push('❓ 遮断されるはずの文面が通りました。フィルタが無効かもしれません。'); }
+    else out.push('❓ 想定外の応答: '+JSON.stringify(pj).slice(0,120));
+  }catch(e){ out.push('⛔ 通知エンドポイントに届きません: '+(e&&e.message||e)); }
+
+  var bad=out.some(function(x){return x.indexOf('⛔')===0||x.indexOf('⚠️')===0;});
+  box(bad?'--down':'--up', out.join('<br>'));
+}
+
 /* ===== 値幅(ボラティリティ)別の成績 =====
    「TP/SLが普段より広い時の方が勝ちやすい」という体感を確かめるための表。
    backtest.json の atr_bands（毎日05:30に1年ぶんを再集計）をそのまま出す。

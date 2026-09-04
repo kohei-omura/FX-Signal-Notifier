@@ -38,7 +38,7 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
 <h1>FX Navi ツール</h1><div class="sub">JOURNAL ・ RISK ・ BACKTEST</div>
 <div id="syncbar" style="display:none;margin:0 0 12px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:var(--card);font-size:13px"></div>
 <div id="todaybar" style="margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px"></div>
-<script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";</script>
+<script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";const NOTIFY_KEY="高坂麗奈ちゃん";</script>
 
 <div class="sec" data-sec="0" onclick="toggleSection('0')" style="cursor:pointer">① 成績分析（トレード記録）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
 <div class="card">
@@ -110,6 +110,10 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
   <div id="policies"><div class="note">「🧠 記録簿を取込」を押すと最新のサーバー統計を読み込みます。</div></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">エントリー基準を変えたらどうなるか（＋過学習チェック）</div>
   <div id="sweep"></div>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">Workerの疎通確認</div>
+  <div id="workerchk"><button class="bgo" onclick="workerCheck()">Workerを確認する</button>
+    <div class="note">Cloudflare Workerはリポジトリとは別に手で配置するため、コードを直しても
+    配置し忘れると古いまま動き続けます。実際に配置されている版を確認します（LINEには送りません）。</div></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">値幅（ボラティリティ）別の成績</div>
   <div id="regimeband"></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">ペア別</div>
