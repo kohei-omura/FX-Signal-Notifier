@@ -761,9 +761,53 @@ function renderCostPanel(){
    運用ルールとして回した結果で見る。
    ただし何通りも試せば偶然どれかは良く見えるので、前半だけで選んだしきい値を
    後半（選定に使っていないデータ）で検証した結果を必ず並べて出す。 */
+/* mtfは押し目/戻りのRSI基準で入るため、スコアのしきい値を振っても
+   エントリー地点が1つも変わらない（全通り同じ結果になる）。
+   振るべきなのはRSI基準なので、モードに応じて表を出し分ける。 */
+function renderPullbackSweep(el, m){
+  var cur=m.pullback||[];
+  var rows=(m.pullback_sweep||[]).map(function(r){
+    var v=r.advice||r.tp_sl; if(!v) return '';
+    var und=(v.ci_lo<0&&v.ci_hi>0);
+    var isCur=(r.lo===cur[0]&&r.hi===cur[1]);
+    return '<tr'+(isCur?' style="font-weight:800"':'')+'><td>'+r.lo+' / '+r.hi+(isCur?'（現在）':'')+'</td>'
+      +'<td>'+v.n+'</td><td>'+v.winrate+'%</td>'
+      +'<td class="'+(und?'':(v.avg_r>=0?'good':'bad'))+'">'+(v.avg_r>=0?'+':'')+v.avg_r.toFixed(3)+'</td>'
+      +'<td style="font-size:11px;opacity:.8">'+(v.ci_lo>=0?'+':'')+v.ci_lo.toFixed(3)
+      +'〜'+(v.ci_hi>=0?'+':'')+v.ci_hi.toFixed(3)+(und?'<br><b>判定不能</b>':'')+'</td></tr>';
+  }).join('');
+  var h=m.pullback_holdout, hb='';
+  if(h&&h.first_half&&h.second_half){
+    var f=h.first_half, sec=h.second_half;
+    var held=(sec.avg_r>0&&sec.ci_lo>0), kept=(sec.avg_r>0);
+    hb='<div style="margin-top:10px;padding:9px 12px;border:1px solid '
+      +(held?'var(--up)':'var(--down)')+';border-radius:9px;font-size:12.5px;line-height:1.8">'
+      +'<b>過学習チェック（前半で選び、後半で試す）</b><br>'
+      +'前半だけを見て最良だったRSI基準: <b>'+(h.best||[]).join(' / ')+'</b>'
+      +'（前半 '+(f.avg_r>=0?'+':'')+f.avg_r.toFixed(3)+'R / n='+f.n+'）<br>'
+      +'それを後半（選定に使っていないデータ）で試すと: <b class="'+(kept?'good':'bad')+'">'
+      +(sec.avg_r>=0?'+':'')+sec.avg_r.toFixed(3)+'R</b>'
+      +'（n='+sec.n+' / 95%区間 '+(sec.ci_lo>=0?'+':'')+sec.ci_lo.toFixed(3)
+      +'〜'+(sec.ci_hi>=0?'+':'')+sec.ci_hi.toFixed(3)+'）<br>'
+      +(held?'✅ 後半でもプラスを保っています。'
+            :(kept?'⚠️ 後半もプラスですが区間が0をまたぐため、まだ優位性があるとは言えません。'
+                  :'⛔ <b>後半では再現しませんでした。</b>前半の良さは過去に合わせただけの数字です。'))
+      +'</div>';
+  }
+  el.innerHTML='<table><thead><tr><th>RSI基準<br><span style="font-weight:400;opacity:.7">買い/売り</span></th>'
+    +'<th>件数</th><th>勝率</th><th>期待R/回</th><th>95%区間</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table>'
+    +'<div class="note">このモードは「上位足の方向へ、RSIがここまで戻ったら入る」で判定します。'
+    +'スコアのしきい値は使っていないので、振るべきなのはこちらです。<br>'
+    +'数字を小さく（例 45/55）するほど浅い戻りで入るので件数は増えますが、'
+    +'その一回一回は上位足の方向へ十分引きつけられていません。<br>'
+    +'<b>'+((m.pullback_sweep||[]).length)+'通り試せば、優位性が無くても偶然どれかは良く見えます。</b>'
+    +'下の過学習チェックで再現するかを必ず確認してください。</div>'+hb;
+}
 function renderSweep(backtest, mode){
   var el=document.getElementById('sweep'); if(!el) return;
   var m=backtest&&backtest.modes&&backtest.modes[mode];
+  if(m&&m.pullback_sweep&&m.pullback_sweep.length){ renderPullbackSweep(el, m); return; }
   if(!m||!m.sweep||!m.sweep.length){
     el.innerHTML='<div class="note">長期検証(backtest.json)がまだありません。毎日05:30に自動生成されます。</div>';
     return;

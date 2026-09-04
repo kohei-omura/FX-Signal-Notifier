@@ -566,14 +566,20 @@ def _compose_score(symbol, price, ef, es, rv, hist, hist_prev, bb_mid, bb_sd, a,
             "ema_sig": ema_sig, "macd_sig": macd_sig, "bb_sig": bb_sig}
 
 
-def entry_side(symbol, total, rv, th, aligned=None):
+def entry_side(symbol, total, rv, th, aligned=None, pullback=None):
     """そのモードのエントリー判定。ライブもバックテストもここを通す。
 
        aligned は上位足の一致方向。バックテストは過去の値を渡し、
-       ライブは省略して mtf_view() の現在値を使う。"""
+       ライブは省略して mtf_view() の現在値を使う。
+       pullback は押し目/戻りのRSI基準 (lo, hi)。検証で振るためだけの差し替え口で、
+       省略すれば運用値 MTF_PULLBACK_RSI を使う。
+
+       mtf_pullback は th（スコアしきい値）を一切見ない。
+       そのためスコアのしきい値スイープはこのモードでは何も動かせず、
+       代わりにここを振る必要がある（sweep_pullback）。"""
     if P.get("rule") == "mtf_pullback":
         al = aligned if aligned is not None else (mtf_view(symbol) or {}).get("aligned")
-        lo, hi = MTF_PULLBACK_RSI
+        lo, hi = pullback or MTF_PULLBACK_RSI
         if al == 1 and rv is not None and rv <= lo:
             return "買い"
         if al == -1 and rv is not None and rv >= hi:
@@ -713,11 +719,14 @@ def _median(a):
     return s[m] if len(s) % 2 else (s[m-1]+s[m])/2
 
 
-def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
+def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
+                         pullback_override=None):
     """過去バーを歩いて『シグナル→TP/SLのどちらに先に当たったか』を数える。
 
        th_override: しきい値を差し替えて検証する（「0.60で運用したら」を実際に回すため。
                     事後にスコア帯で切り分けるのとは別物で、エントリー地点も変わる）。
+       pullback_override: mtfの押し目/戻りRSI基準 (lo, hi) を差し替える。
+                    mtfは th を見ないので、しきい値検証はこちらで行う。
        rule: エントリー判定を差し替える。rule(ctx, i) -> "買い"/"売り"/None。
              別の仮説を、同じ検証手順（コスト控除・信頼区間・アウトオブサンプル）で
              比べるための差し替え口。None なら現行ロジック。
@@ -775,7 +784,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
                 if None not in (ef, es, rv) and None not in (md, bb, ax):
                     total = _compose_score(symbol, closes[i], ef, es, rv,
                                            md[0], md[1], bb[0], bb[1], a, ax[0])["total"]
-                    side = entry_side(symbol, total, rv, th, aligned=aligned_s[i])
+                    side = entry_side(symbol, total, rv, th, aligned=aligned_s[i],
+                                      pullback=pullback_override)
         if not side:
             i += 1; continue
         want = 1 if side == "買い" else -1
@@ -833,6 +843,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None):
            "hold_tp_min": round(tm*bar_min) if tm is not None else None,
            "hold_sl_min": round(sm*bar_min) if sm is not None else None,
            "stats_ts": int(datetime.datetime.now(JST).timestamp()), "stats_mode": MODE}
+    if P.get("rule") == "mtf_pullback":
+        out["pullback"] = list(pullback_override or MTF_PULLBACK_RSI)
     pol = {k: _r_summary(v) for k, v in policy_r.items() if v}
     if pol:
         out["policies"] = pol
@@ -1602,8 +1614,17 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         if market_open and sig and entry and sig != (prev_signals or {}).get(sym):
             rtxt = " / ".join(sc["reasons"])
             arrow = "以下" if sig == "買い" else "以上"
-            strong_th = P["th"] * STRONG_MULT
-            if abs(sc["score"]) >= strong_th:
+            # mtfは「上位足の方向へ、短期の逆行が一定まで進んだところ」で入る設計。
+            # そのため売りシグナルでもスコアはプラスになり、理由欄にも上昇の材料が並ぶ。
+            # スコア基準の強弱判定はこのモードでは意味を持たないので、
+            # 何を見て入るのかをそのまま書く（受け手が矛盾と誤解しないように）。
+            pull = P.get("rule") == "mtf_pullback"
+            if pull:
+                lo, hi = MTF_PULLBACK_RSI
+                need = f"RSI{lo}以下" if sig == "買い" else f"RSI{hi}以上"
+                kind = "押し目買い" if sig == "買い" else "戻り売り"
+                s_mark = f"↩︎{kind}（{need}で入る設定 → 今RSI{sc['rsi']}）"
+            elif abs(sc["score"]) >= P["th"] * STRONG_MULT:
                 s_mark = f"⭐強シグナル（{P['th']*STRONG_MULT:.2f}以上）"
             else:
                 s_mark = f"⚠️標準シグナル — 過去データでは低スコアほど成績が悪い傾向"
@@ -1623,10 +1644,21 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             _d = 1 if sig == "買い" else -1
             _tp_ref = _ref + _d * sc["tp_pips"] * PIP_SIZE
             _sl_ref = _ref - _d * sc["sl_pips"] * PIP_SIZE
+            # mtfではスコアと理由が「逆方向」に見えるのが正常。先に断っておく。
+            if pull:
+                _dir = "上昇" if sc["score"] >= 0 else "下降"
+                score_txt = (f"  {s_mark}\n"
+                             f"  ⚠️短期は{_dir}中（スコア{sc['score']:+.2f}）"
+                             f"— 短期の勢いに逆らって入る形が仕様どおりです\n"
+                             f"  （参考）{rtxt}\n")
+            else:
+                score_txt = (f"  スコア{sc['score']:+.2f}"
+                             f"（テク{sc['tech']:+.2f}/ファンダ{sc['fund']:+.2f}） {s_mark}\n"
+                             f"  {rtxt}\n")
             notify.append(f"{'🟢' if sig=='買い' else '🔴'} {sym} {sig}"
                           f"（{MODE_LABEL.get(MODE, MODE)}）\n"
-                          f"  スコア{sc['score']:+.2f}（テク{sc['tech']:+.2f}/ファンダ{sc['fund']:+.2f}） {s_mark}\n"
-                          f"  {rtxt}\n  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
+                          + score_txt
+                          + f"  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
                           f"  📍{entry['entry_ref']}で建てた場合のOCO → TP {_tp_ref:.3f} / SL {_sl_ref:.3f}\n"
                           f"  ※建値が変われば発注価格も変わります。確定値は登録後の保有カード「発注レベル」を参照\n"
                           f"  ▶エントリー目安: 通知価格 {entry['entry_ref']}\n"

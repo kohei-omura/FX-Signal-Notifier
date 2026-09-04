@@ -1159,6 +1159,109 @@ class NotifyFailureVisibilityTest(RunTestCase):
             self.assertEqual(before.get(k), after.get(k), f"{k} が書き換わっている")
 
 
+class PullbackSweepTest(RunTestCase):
+    """mtfの押し目/戻りRSI基準を検証できること。
+
+    mtfの entry_side は th を見ないため、既存のしきい値スイープでは
+    エントリー地点が1つも変わらない（6通りとも同じ結果になる）。
+    「60が適切か」を測る手段が無かった。
+    """
+
+    def setUp(self):
+        super().setUp()
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+
+    def test_score_threshold_does_not_move_mtf_entries(self):
+        """前提の確認: mtfでは th を振っても判定が変わらない。"""
+        for th in (0.40, 0.90):
+            self.assertEqual(F.entry_side("USD_JPY", 0.0, 65.0, th, aligned=-1), "売り")
+            self.assertEqual(F.entry_side("USD_JPY", 0.99, 50.0, th, aligned=-1), None)
+
+    def test_pullback_override_moves_entries(self):
+        """RSI基準を振ると判定が変わること（これが検証の対象）。"""
+        # RSI55 は既定(60)では入らないが、(45,55) なら売りになる
+        self.assertIsNone(F.entry_side("USD_JPY", 0.0, 55.0, 0.40, aligned=-1))
+        self.assertEqual(
+            F.entry_side("USD_JPY", 0.0, 55.0, 0.40, aligned=-1, pullback=(45, 55)), "売り")
+        # 厳しくすると既定で入る場面が消える
+        self.assertEqual(F.entry_side("USD_JPY", 0.0, 61.0, 0.40, aligned=-1), "売り")
+        self.assertIsNone(
+            F.entry_side("USD_JPY", 0.0, 61.0, 0.40, aligned=-1, pullback=(30, 70)))
+
+    def test_override_does_not_leak_into_live_settings(self):
+        """検証用の差し替えが運用値を書き換えないこと。"""
+        before = tuple(F.MTF_PULLBACK_RSI)
+        F.entry_side("USD_JPY", 0.0, 55.0, 0.40, aligned=-1, pullback=(45, 55))
+        self.assertEqual(tuple(F.MTF_PULLBACK_RSI), before)
+
+    def test_stats_record_which_setting_produced_them(self):
+        """どの基準で出た数字かが結果に残ること（後から取り違えないため）。"""
+        st = F.compute_signal_stats("USD_JPY", pullback_override=(45, 55))
+        if st is None:
+            self.skipTest("この足では母数が足りない")
+        self.assertEqual(st["pullback"], [45, 55])
+
+    def test_loosening_the_band_never_reduces_entries(self):
+        """基準を緩めれば件数は増えこそすれ減らないこと（振り方の向きの確認）。"""
+        counts = {}
+        for pb in ((30, 70), (40, 60), (48, 52)):
+            st = F.compute_signal_stats("USD_JPY", pullback_override=pb)
+            counts[pb] = st["n"] if st else 0
+        self.assertLessEqual(counts[(30, 70)], counts[(40, 60)])
+        self.assertLessEqual(counts[(40, 60)], counts[(48, 52)])
+
+
+class MtfNotificationTest(RunTestCase):
+    """mtfの通知文が、方向と矛盾して見えないこと。
+
+    mtfは上位足の方向へ短期の逆行を狙うので、売りシグナルでもスコアは
+    プラスになり理由欄に上昇材料が並ぶ。断り書きが無いと受け手には
+    「買い材料しかないのに売れと言われた」としか読めない。
+    """
+
+    def _force_mtf_signal(self):
+        """mtfの売りが必ず1本立つ状態を作る。
+
+        検証したいのは通知の文面であってエントリー条件ではない。
+        モックの値動き任せにするとシグナルが出ずテストが素通りするので、
+        上位足の向きだけを固定して確実に成立させる。"""
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        # 差し替える前に本物を保存する（後で保存すると差し替え後の関数が
+        # 「元の値」として残り、この差し替えが他のテストへ漏れる）
+        self.addCleanup(setattr, F, "entry_side", F.entry_side)
+        self.addCleanup(setattr, F, "mtf_view", F.mtf_view)
+        F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: (
+            "売り" if sym == "USD_JPY" else None)
+        F.mtf_view = lambda sym: {"1hour": -1, "4hour": -1,
+                                  "label": "1h↓下降 / 4h↓下降", "aligned": -1}
+
+    def test_pullback_notice_explains_the_entry_condition(self):
+        self._force_mtf_signal()
+        F.main()
+        self.assertEqual(self.status()["mode"], "mtf", "前提: mtfで動いていること")
+        bodies = [b for _, b in self.sent["mail"] if "エントリー目安" in b]
+        self.assertTrue(bodies, "エントリー通知が出ていない（前提が崩れている）")
+        for b in bodies:
+            self.assertTrue("押し目買い" in b or "戻り売り" in b,
+                            "何を待って入ったのかが書かれていない")
+            self.assertIn("で入る設定", b, "入る条件（RSI基準）が書かれていない")
+            self.assertIn("仕様どおり", b, "スコアが逆に見える件の断りが無い")
+            self.assertNotIn("強シグナル", b, "mtfで意味を持たないスコア強弱を出している")
+            self.assertNotIn("低スコアほど成績が悪い", b,
+                             "mtfではスコアが判定に使われていないのに警告している")
+
+    def test_other_modes_keep_the_score_based_wording(self):
+        self.write(F.MODE_FILE, {"mode": "day"})
+        F.main()
+        self.assertEqual(self.status()["mode"], "day", "前提: dayで動いていること")
+        bodies = [b for _, b in self.sent["mail"] if "エントリー目安" in b]
+        if not bodies:
+            self.skipTest("この足ではエントリーシグナルが出ない")
+        for b in bodies:
+            self.assertIn("スコア", b)
+            self.assertNotIn("で入る設定", b, "day に mtf 用の文面が混ざっている")
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 

@@ -22,6 +22,9 @@ WINDOWS = {"scalp": (14, 30000), "day": (365, 40000), "swing": (365, 9000),
 # しきい値を実際の運用ルールとして振ってみる。事後にスコア帯で切り分けるのとは違い、
 # エントリー地点そのものが変わる。
 SWEEP_TH = [0.40, 0.50, 0.55, 0.60, 0.65, 0.70]
+# mtfの押し目/戻りRSI基準。50をはさんで対称に振る（買いは lo 以下、売りは hi 以上）。
+# 実運用は (40,60)。緩めるほど当たりは増えるが浅い戻りで入ることになる。
+SWEEP_PULLBACK = [(30, 70), (35, 65), (38, 62), (40, 60), (42, 58), (45, 55), (48, 52)]
 MODES = [m.strip() for m in os.environ.get("BACKTEST_MODES", "scalp,day,swing,mtf").split(",") if m.strip()]
 OUT = F.data_path("backtest.json")
 
@@ -76,6 +79,64 @@ def sweep_thresholds(mode):
         if any(k in row for k in F.EXIT_POLICIES):
             rows.append(row)
     return rows
+
+
+def sweep_pullback(mode):
+    """mtfの押し目/戻りRSI基準を振る。
+
+       mtfの entry_side は th を見ないため sweep_thresholds では何も動かない
+       （6通りとも同じ結果になる）。エントリー地点が実際に変わるのはこちら。
+
+       ★7通り試せば、優位性が無くても偶然どれかは良く見える。
+       採否は holdout_pullback（前半で選び後半で試す）で必ず確認すること。"""
+    rows = []
+    for pb in SWEEP_PULLBACK:
+        parts = []
+        for sym in F.SYMBOLS:
+            try:
+                st = F.compute_signal_stats(sym, pullback_override=pb)
+            except Exception as e:
+                print(f"[WARN] pullback {mode}/{sym}/{pb} 失敗: {e}", file=sys.stderr)
+                continue
+            if st and st.get("policies"):
+                parts.append(st["policies"])
+        if not parts:
+            continue
+        row = {"lo": pb[0], "hi": pb[1]}
+        for k in F.EXIT_POLICIES:
+            got = [p[k] for p in parts if k in p]
+            if got:
+                row[k] = pool_summary(got)
+        if any(k in row for k in F.EXIT_POLICIES):
+            rows.append(row)
+    return rows
+
+
+def holdout_pullback(mode, policy="advice"):
+    """前半で最良のRSI基準を選び、後半（選定に使っていないデータ）で試す。"""
+    def run(pb, rng):
+        parts = []
+        for sym in F.SYMBOLS:
+            try:
+                st = F.compute_signal_stats(sym, pullback_override=pb, entry_range=rng)
+            except Exception:
+                continue
+            if st and st.get("policies", {}).get(policy):
+                parts.append(st["policies"][policy])
+        return pool_summary(parts) if parts else None
+
+    first = {}
+    for pb in SWEEP_PULLBACK:
+        r = run(pb, (0.0, 0.5))
+        if r and r["n"] >= 30:
+            first[pb] = r
+    if not first:
+        return None
+    best = max(first, key=lambda t: first[t]["avg_r"])
+    second = run(best, (0.5, 1.0))
+    return {"policy": policy, "best": list(best),
+            "first_half": first[best], "second_half": second,
+            "candidates": {f"{a}/{b}": first[(a, b)]["avg_r"] for a, b in first}}
 
 
 def holdout(mode, policy="advice"):
@@ -176,7 +237,11 @@ def run_mode(mode):
             "current_th": F.PARAMS[mode]["th"],
             "policies": pol, "bands": band, "atr_bands": atr_band,
             "atr_bands_warmup": atr_warm,
-            "sweep": sweep_thresholds(mode), "holdout": holdout(mode),
+            **(({"pullback_sweep": sweep_pullback(mode),
+                 "pullback_holdout": holdout_pullback(mode),
+                 "pullback": list(F.MTF_PULLBACK_RSI)}
+                if F.PARAMS[mode].get("rule") == "mtf_pullback" else
+                {"sweep": sweep_thresholds(mode), "holdout": holdout(mode)})),
             "symbols": {s: {"n": v["n"], "policies": v.get("policies"),
                             "bands": v.get("bands"), "atr_bands": v.get("atr_bands"),
                             "mtf_blocked": v.get("mtf_blocked")} for s, v in symbols.items()}}
@@ -215,11 +280,20 @@ def main():
             if v:
                 print(f"      しきい値{row['th']:.2f} n={v['n']:4} "
                       f"期待R{v['avg_r']:+.3f} [{v['ci_lo']:+.3f}〜{v['ci_hi']:+.3f}]")
-        h = r.get("holdout")
-        if h and h.get("second_half"):
-            f_, s_ = h["first_half"], h["second_half"]
-            print(f"      前半で最良のしきい値 {h['best_th']:.2f}: "
-                  f"前半{f_['avg_r']:+.3f}(n={f_['n']}) → 後半{s_['avg_r']:+.3f}(n={s_['n']})")
+        for row in r.get("pullback_sweep") or []:
+            v = row.get("advice") or {}
+            cur = (row["lo"], row["hi"]) == tuple(r.get("pullback") or ())
+            if v:
+                print(f"      RSI {row['lo']}/{row['hi']}{'（現在）' if cur else '      '} n={v['n']:4} "
+                      f"勝率{v['winrate']:3}% 期待R{v['avg_r']:+.3f} "
+                      f"[{v['ci_lo']:+.3f}〜{v['ci_hi']:+.3f}]")
+        for key, lab in (("holdout", "しきい値"), ("pullback_holdout", "RSI基準")):
+            h = r.get(key)
+            if h and h.get("second_half"):
+                f_, s_ = h["first_half"], h["second_half"]
+                best = h.get("best_th") if key == "holdout" else "/".join(map(str, h.get("best") or []))
+                print(f"      前半で最良の{lab} {best}: "
+                      f"前半{f_['avg_r']:+.3f}(n={f_['n']}) → 後半{s_['avg_r']:+.3f}(n={s_['n']})")
     if not out["modes"]:
         print("[ERROR] どのモードも集計できませんでした（既存の backtest.json は残します）",
               file=sys.stderr)
