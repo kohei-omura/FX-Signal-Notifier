@@ -1150,7 +1150,7 @@
   "open_positions": [],
   "closed_positions": [],
   "degraded": true,
-  "degraded_at": "2026-09-05 10:10 JST",
+  "degraded_at": "2026-09-05 10:15 JST",
   "warnings": [
     {
       "tag": "api:/ticker",
@@ -1165,28 +1165,28 @@
       "msg": "API連続失敗5回。以降は再試行を打ち切って早く抜ける"
     },
     {
-      "tag": "ohlc:USD_JPY",
-      "msg": "USD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:EUR_JPY",
-      "msg": "EUR_JPY のローソク足が取得できませんでした"
-    },
-    {
       "tag": "ohlc:AUD_JPY",
       "msg": "AUD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:GBP_JPY",
-      "msg": "GBP_JPY のローソク足が取得できませんでした"
     },
     {
       "tag": "mtf:1hour",
       "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
     },
     {
+      "tag": "ohlc:EUR_JPY",
+      "msg": "EUR_JPY のローソク足が取得できませんでした"
+    },
+    {
+      "tag": "ohlc:USD_JPY",
+      "msg": "USD_JPY のローソク足が取得できませんでした"
+    },
+    {
       "tag": "mtf:4hour",
       "msg": "USD_JPY の4hour足が0本しか取れず、上位足の判定ができません"
+    },
+    {
+      "tag": "ohlc:GBP_JPY",
+      "msg": "GBP_JPY のローソク足が取得できませんでした"
     },
     {
       "tag": "skip-status",
