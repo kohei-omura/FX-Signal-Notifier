@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-09-05 08:55 JST",
+  "generated_at": "2026-09-05 11:00 JST",
   "market_open": false,
   "mode": "mtf",
   "blackout": false,
@@ -236,7 +236,7 @@
       "hold_sl_min": 165,
       "tp_winrate": 29,
       "stats_n": 21,
-      "stats_ts": 1788566139,
+      "stats_ts": 1788573641,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -519,7 +519,7 @@
       "hold_sl_min": 128,
       "tp_winrate": 38,
       "stats_n": 26,
-      "stats_ts": 1788566138,
+      "stats_ts": 1788573640,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -802,7 +802,7 @@
       "hold_sl_min": 135,
       "tp_winrate": 50,
       "stats_n": 26,
-      "stats_ts": 1788566139,
+      "stats_ts": 1788573640,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1085,7 +1085,7 @@
       "hold_sl_min": 82,
       "tp_winrate": 52,
       "stats_n": 21,
-      "stats_ts": 1788566138,
+      "stats_ts": 1788573641,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1148,49 +1148,5 @@
     }
   ],
   "open_positions": [],
-  "closed_positions": [],
-  "degraded": true,
-  "degraded_at": "2026-09-05 10:55 JST",
-  "warnings": [
-    {
-      "tag": "api:/ticker",
-      "msg": "API失敗 /ticker : status=5 [{'message_code': 'ERR-5201', 'message_string': 'MAINTENANCE. Please wait for a while'}]"
-    },
-    {
-      "tag": "ticker",
-      "msg": "現在値(ticker)を取得できませんでした"
-    },
-    {
-      "tag": "breaker",
-      "msg": "API連続失敗5回。以降は再試行を打ち切って早く抜ける"
-    },
-    {
-      "tag": "ohlc:AUD_JPY",
-      "msg": "AUD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:USD_JPY",
-      "msg": "USD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:GBP_JPY",
-      "msg": "GBP_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:EUR_JPY",
-      "msg": "EUR_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "mtf:1hour",
-      "msg": "GBP_JPY の1hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "mtf:4hour",
-      "msg": "GBP_JPY の4hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "skip-status",
-      "msg": "価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）"
-    }
-  ]
+  "closed_positions": []
 }
