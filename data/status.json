@@ -1148,5 +1148,49 @@
     }
   ],
   "open_positions": [],
-  "closed_positions": []
+  "closed_positions": [],
+  "degraded": true,
+  "degraded_at": "2026-09-05 09:00 JST",
+  "warnings": [
+    {
+      "tag": "api:/ticker",
+      "msg": "API失敗 /ticker : status=5 [{'message_code': 'ERR-5201', 'message_string': 'MAINTENANCE. Please wait for a while'}]"
+    },
+    {
+      "tag": "ticker",
+      "msg": "現在値(ticker)を取得できませんでした"
+    },
+    {
+      "tag": "breaker",
+      "msg": "API連続失敗5回。以降は再試行を打ち切って早く抜ける"
+    },
+    {
+      "tag": "ohlc:EUR_JPY",
+      "msg": "EUR_JPY のローソク足が取得できませんでした"
+    },
+    {
+      "tag": "ohlc:AUD_JPY",
+      "msg": "AUD_JPY のローソク足が取得できませんでした"
+    },
+    {
+      "tag": "ohlc:GBP_JPY",
+      "msg": "GBP_JPY のローソク足が取得できませんでした"
+    },
+    {
+      "tag": "ohlc:USD_JPY",
+      "msg": "USD_JPY のローソク足が取得できませんでした"
+    },
+    {
+      "tag": "mtf:1hour",
+      "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
+    },
+    {
+      "tag": "mtf:4hour",
+      "msg": "USD_JPY の4hour足が0本しか取れず、上位足の判定ができません"
+    },
+    {
+      "tag": "skip-status",
+      "msg": "価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）"
+    }
+  ]
 }
