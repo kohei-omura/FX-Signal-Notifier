@@ -1607,6 +1607,17 @@ async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
     catch(e){toast('画面は切替。通知反映は保存失敗: '+e.message);}
   }else{toast('画面のみ切替。通知にも反映するには⚙でGitHub設定を');}
 }
+/* 端末に残った古い指定を捨てて、実際に運用しているモードへ戻す。
+   mode.json をファイルごと差し替えて切り替えた場合、端末の localStorage には
+   前回タップした値が残り続ける。本人が何も変えていないのにその端末だけ
+   別モードで動く原因になるので、明示的に捨てられるようにする。 */
+function adoptServerMode(){
+  if(!MODEJSON||!MODES.includes(MODEJSON)){toast('運用モードを取得できていません');return;}
+  try{localStorage.removeItem('fxnavi_mode');}catch(e){}
+  S.mode=MODEJSON;LIVE_NOTIFY_LAST=null;
+  render();liveSignals();refreshStats(true);
+  toast('画面を'+(MODE_LABEL[MODEJSON]||MODEJSON)+'に合わせました');
+}
 // 画面モードに合わせて mode.json を上書き（通知モードを画面に同期）
 async function syncModeJson(){
   const m=S.mode||'scalp',c=cfg();
@@ -1622,8 +1633,11 @@ function renderModeWarn(){
   if(MODEJSON && MODES.includes(MODEJSON) && MODEJSON!==screen){
     el.innerHTML=`<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--down);border-radius:10px;background:rgba(255,122,138,.08);font-size:12.5px;color:var(--ink)">
       ⚠️ 通知モードが画面と違います — 通知=<b>${MODE_LABEL[MODEJSON]||MODEJSON}</b> ／ 画面=<b>${MODE_LABEL[screen]||screen}</b>。
-      このままだと通知のTP/SL幅が画面とズレます。
-      <button class="btn sm" style="margin-left:6px" onclick="syncModeJson()">通知を画面に合わせる</button></div>`;
+      このままだと通知のTP/SL幅が画面とズレるため、<b>⚡ライブ通知は停止中</b>です。
+      <div style="margin-top:6px">
+        <button class="btn sm" onclick="adoptServerMode()">画面を通知に合わせる</button>
+        <button class="btn ghost sm" style="margin-left:6px" onclick="syncModeJson()">通知を画面に合わせる</button>
+      </div></div>`;
   }else{el.innerHTML='';}
 }
 // サーバー更新(status.json)とライブ価格(ticker)の停止を検知して警告
@@ -2473,6 +2487,25 @@ function saveNotified(o){try{localStorage.setItem('fxnavi_notified',JSON.stringi
 // Worker が「送らなかった」時の記録。黙って捨てると、通知が来ない理由が
 // 誰にも分からなくなる（実際にWorker側の判定比の読み取り不具合で起きていた）。
 let LIVE_NOTIFY_LAST=null;
+/* ライブ通知を送ってよいか。
+   画面のモードは「見るためだけ」に切り替えられるが、⚡ライブ通知は売買の合図なので
+   実際に運用しているモード（mode.json）からしか送ってはいけない。
+   端末に残った古い localStorage が読み込みのたびにサーバーの設定を上書きするため、
+   本人が何も変えていなくても別モードの通知が飛ぶことがあった（デイの通知が
+   mtf運用中に届いた実例あり）。TP/SL幅も戦略も別物なので、送らずに理由を出す。 */
+function liveNotifyBlock(){
+  const screen=(S&&S.mode)||null;
+  // 判定できない時は【送らない】。S.mode が未確定だと liveSignals は scalp の
+  // 設定で計算してしまい（JS_PARAMS[S.mode]||JS_PARAMS.scalp）、
+  // 実測でコスト0.347R＝構造的に成立しないモードの合図を送ることになる。
+  // 送らなくても画面には出るので、迷ったら送らない側に倒す。
+  if(!screen||!MODES.includes(screen))return '画面のスタイルが確定していないため送信していません';
+  if(!MODEJSON||!MODES.includes(MODEJSON))
+    return '運用モード(mode.json)を確認できていないため送信していません';
+  if(MODEJSON===screen)return null;
+  return `画面が「${MODE_LABEL[screen]||screen}」・運用は「${MODE_LABEL[MODEJSON]||MODEJSON}」で食い違っているため送信していません`;
+}
+
 async function notifyLive(text){
   if(!LIVE_PRICE_URL)return;
   try{
@@ -2543,7 +2576,13 @@ async function liveSignals(){
           const _agree=mtfAgree(pair);
           const _mtfOK=(!LIVE_NOTIFY_NEED_MTF)||(_agree===null)||(_agree===true);
           const _scoreOK=cf.pct>=LIVE_NOTIFY_MIN_PCT;
-          if((suppressOppNotify()&&longEnvAlign(pair)===false)||_lossStop||!_scoreOK||!_mtfOK){
+          const _modeBlock=liveNotifyBlock();
+          if(_modeBlock){
+            // 運用していないモードの合図をLINEへ流さない。気づけるよう画面には出す。
+            LIVE_NOTIFY_LAST={ts:now,reason:_modeBlock};
+            try{renderStale();}catch(e){}
+          }
+          else if((suppressOppNotify()&&longEnvAlign(pair)===false)||_lossStop||!_scoreOK||!_mtfOK){
             /* 抑制（LINE枠節約。画面表示とメール通知には影響しない） */
           }
           else{notifyLive(txt2);notified[sym]={side:sig,ts:now};}
