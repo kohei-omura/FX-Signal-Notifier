@@ -1287,11 +1287,19 @@ class TouchDetectionTest(RunTestCase):
                                  {"atr": 0.05, "score": -0.5, "rsi": 45, "adx": 25}, None)
 
     def test_short_tp_needs_the_ask_to_reach_it(self):
-        """売り建ての利確はASKで決まる。BIDだけが届いた足では到達にしない。"""
-        # BIDの安値はTPちょうど。ASK(=BID+0.5pips)はまだ届いていない → 到達ではない
-        adv = self._advice(bar_low=self.TP, bar_high=153.60, bid=153.589, ask=153.594)
-        self.assertNotIn("TP", adv["reason"],
-                         "BIDだけが届いた足で「TP到達」と判定している")
+        """売り建ての利確はASKで決まる。BIDだけが届いた足では到達にしない。
+
+        実際に起きた誤報そのもの。GMOの15分足(BID) 2026/09/08 09:30 は
+        O153.547 H153.774 L153.527 C153.772 で、安値がTPと1銭も違わなかった。
+        BIDで比べると <= が成立してしまうが、売り建てはASKで買い戻すので
+        ASKの安値は 153.529〜153.532（スプレッド0.2〜0.5pips）。
+        TPには届いておらず、GMOのOCOも約定していなかった。"""
+        for spread in (0.002, 0.005):     # チャート表示SP:0.2 / 通知時点の実測0.5
+            bid = 153.589
+            adv = self._advice(bar_low=self.TP, bar_high=153.774,
+                               bid=bid, ask=round(bid + spread, 3))
+            self.assertNotIn("TP", adv["reason"],
+                             f"スプレッド{spread*100:.1f}pipsでもBIDだけで「TP到達」と判定している")
 
     def test_short_tp_fires_once_the_ask_reaches_it(self):
         """ASK相当まで届いていれば拾うこと（救済そのものは残す）。"""
