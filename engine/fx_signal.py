@@ -1243,6 +1243,25 @@ def load_entry_log():
     return {"entries": []}
 
 
+def _entry_strength(score, rsi, side, th):
+    """記録簿に残す『強さ』。モードによって根拠が違うので判定も変える。
+
+       mtf は押し目/戻りの深さで入るので、スコアの大小には意味が無い。
+       実際 RSI8.9 の戻り売りが「強」、RSI36.9 が「弱」と、
+       押し目の深さと逆の記録が残っていた。mtf では基準をどれだけ
+       超えたかで測る（超えるほど深く引きつけている）。"""
+    if P.get("rule") == "mtf_pullback":
+        if rsi is None:
+            return "不明"
+        lo, hi = MTF_PULLBACK_RSI
+        over = (lo - rsi) if side == "long" else (rsi - hi)
+        return "強" if over >= 10 else ("標準" if over >= 3 else "弱")
+    if score is None:
+        return "不明"
+    return ("強" if abs(score) >= th*STRONG_MULT else
+            ("標準" if abs(score) >= th else "弱"))
+
+
 def stamp_new_entries(data):
     """新しく登録された保有ポジションに、その時点の判断材料をスタンプして記録簿へ追記する。
        ポジションを『削除』しても記録は残るので、後からGMOのCSVと突き合わせて検証できる。
@@ -1267,10 +1286,28 @@ def stamp_new_entries(data):
         mtf = mtf_view(sym) or {}
         side = p.get("side", "long")
         want = 1 if side == "long" else -1
-        # 判定材料が取れなかった回に 0.0 を書くと「スコア0の弱シグナルで入った」記録が
-        # 残り、後の検証（強さ別の成績）が狂う。取れない時は None のまま残す。
-        score = sc.get("score") if sc else None
         th = P.get("th", 0.40)
+        # 記録簿は5分ごとの実行時に書くので、ここで指標を取り直すと
+        # 「エントリーした時」ではなく「記録した時」の値が残る。値動きが出た後に
+        # 記録されると、押し目で入ったはずのものが極値で入ったように見えてしまう
+        # （実際 mtf の売り6件が RSI 8.9〜36.9 で記録され、売りの基準60と
+        #  正反対の値が並んでいた）。
+        # アプリはエントリーした瞬間の値を entry_* に保存しているので、そちらを優先する。
+        ent_rsi, ent_tech, ent_fund = p.get("entry_rsi"), p.get("entry_tech"), p.get("entry_fund")
+        from_entry = None not in (ent_rsi, ent_tech, ent_fund)
+        if from_entry:
+            rsi_v, tech_v, fund_v = ent_rsi, ent_tech, ent_fund
+            # スコアはそのモードの比率で組み直す（_compose_score と同じ式）
+            score = clamp(TECH_W * tech_v + FUND_W * fund_v)
+            adx_v = sc.get("adx") if sc else None      # ADXはエントリー時の保存が無い
+        else:
+            # 判定材料が取れなかった回に 0.0 を書くと「スコア0の弱シグナルで入った」記録が
+            # 残り、後の検証（強さ別の成績）が狂う。取れない時は None のまま残す。
+            score = sc.get("score") if sc else None
+            rsi_v = sc.get("rsi") if sc else None
+            tech_v = sc.get("tech") if sc else None
+            fund_v = sc.get("fund") if sc else None
+            adx_v = sc.get("adx") if sc else None
         rec = {
             "pos_id": pid,
             "logged_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S"),
@@ -1279,12 +1316,14 @@ def stamp_new_entries(data):
             "entry": entry,                     # ← CSVの「建単価」と対応（突き合わせキー）
             "mode": MODE,
             "score": round(score, 3) if score is not None else None,
-            "tech": round(sc["tech"], 3) if sc else None,
-            "fund": round(sc["fund"], 3) if sc else None,
-            "rsi": sc.get("rsi") if sc else None, "adx": sc.get("adx") if sc else None,
-            "strength": ("不明" if score is None else
-                         ("強" if abs(score) >= th*STRONG_MULT else
-                          ("標準" if abs(score) >= th else "弱"))),
+            "tech": round(tech_v, 3) if tech_v is not None else None,
+            "fund": round(fund_v, 3) if fund_v is not None else None,
+            "rsi": rsi_v, "adx": adx_v,
+            # entry=エントリーした瞬間の値 / logged=記録した時の値（アプリ経由でない登録）
+            "ctx_src": "entry" if from_entry else "logged",
+            # アプリが記録した総合判定（confluence）。エントリー時点の値。
+            "conf_pct": p.get("entry_score"), "conf_mark": p.get("entry_mark"),
+            "strength": _entry_strength(score, rsi_v, side, th),
             "mtf_label": mtf.get("label"),
             "mtf_aligned": mtf.get("aligned"),
             # 上位足との関係：順張り / 逆行 / レンジ
