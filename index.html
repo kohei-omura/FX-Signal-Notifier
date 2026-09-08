@@ -2673,6 +2673,19 @@ async function liveSignals(){
           valid_until:new Date(until).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5),valid_until_ts:until});}
       // 新規シグナルのみ通知（同一symは3分間は再通知しない）
       const now=Date.now(),rec=notified[sym];
+      /* ★前向き検証の記録は、通知の重複防止より先に行う。
+         以前はこの下の「新規シグナルの時だけ」のブロックの中にあったため、
+         シグナルが出た直後はまだ🟡で、しばらくして🟢に上がった場合に
+         記録されなかった。画面には🟢エントリーOKと出ているのに件数が
+         0のまま、という状態になる（実際そうなっていた）。
+         記録条件は「🟢OKであること」だけにする。二重登録は fwdRecord 側が
+         銘柄ごとに1件だけ持つ作りで防いでいる。 */
+      if(sig){
+        try{
+          const cfNow=confluence(pair,STATS[S.mode+sym]);
+          if(cfNow&&cfNow.cls==='ok')fwdRecord(pair);
+        }catch(e){}
+      }
       if(sig){
         if((!rec||rec.side!==sig)&&(!rec||now-rec.ts>180000)){
           const sg=sig==='買い'?'🟢買い':'🔴売り',arrow=sig==='買い'?'上限':'下限';
@@ -2692,7 +2705,6 @@ async function liveSignals(){
             +`TP+${sc.tp_pips}p / SL-${sc.sl_pips}p`
             +(pair.entry_ref!=null?`\n📍${pair.entry_ref}で建てた場合 → TP ${r3(sig==='買い'?pair.entry_ref+sc.tp_pips*PS_:pair.entry_ref-sc.tp_pips*PS_)} / SL ${r3(sig==='買い'?pair.entry_ref-sc.sl_pips*PS_:pair.entry_ref+sc.sl_pips*PS_)}`:'')
             +(st?` / TP勝率${st.winRate}%`:'');
-          if(cf.cls==='ok'&&pair.signal)fwdRecord(pair); // 機能6: 🟢OKで仮想エントリー記録
           const _lossStop=lossStopOn()&&modeStreak(S.mode)>=4; // 機能4: 連敗時は新規通知停止
           // ★LINE送信条件: 総合判定がLIVE_NOTIFY_MIN_PCT%以上 かつ 上位足が一致（MTF情報が無い時は通す）
           const _agree=mtfAgree(pair);

@@ -569,10 +569,20 @@ function mergeTradesUI(){
 }
 /* ===== スコア自動紐付け: 約定時刻に最も近いスナップショットを採用 ===== */
 function _loadSnap(){ try{ return JSON.parse(localStorage.getItem('fxnavi_snap')||'[]'); }catch(e){ return []; } }
+/* スナップショットは「画面を開いていた時」に5分ごとに残る推測値。
+   以前は銘柄と時刻(±90分)だけで最も近いものを採用しており、モードを見て
+   いなかった。総合判定はモードごとに変わるので、mtfで入った取引に
+   デイの画面で撮ったスナップショットのマークが付くことがある。
+   実際モードを何度か切り替えた日は、数分違いで別モードのスナップショットが
+   並ぶため、マーク別成績がそのまま狂う。
+   モードが分かっている取引は同じモードのものだけを使い、
+   窓も±30分に狭める（5分ごとに残るので十分）。
+   記録簿(サーバー側)から取れる conf_mark の方が確実なので、そちらが
+   入っていればここは動かない。 */
 function attachSnapScores(tolMin){
-  var tol=(tolMin==null?90:tolMin)*60000;
+  var tol=(tolMin==null?30:tolMin)*60000;
   var snap=_loadSnap(); if(!snap.length) return {filled:0,total:0,noSnap:true};
-  var t=loadTrades(), filled=0;
+  var t=loadTrades(), filled=0, skipped=0;
   t.forEach(function(x){
     if(x.score!=null&&x.score!=='') return;
     var od=_tOpen(x)||_tJst(x.closed_at||''); if(!od) return;
@@ -580,13 +590,19 @@ function attachSnapScores(tolMin){
     var ms=od.getTime(), best=null, bd=Infinity;
     snap.forEach(function(s){
       if(s.sym!==want) return;
+      // モードが分かっているなら、必ず同じモードのスナップショットを使う
+      if(x.mode&&s.mode&&s.mode!==x.mode) return;
       var d=Math.abs(s.t-ms); if(d>tol) return;
       if(d<bd){ bd=d; best=s; }
     });
-    if(best){ x.score=best.score; x.smark=best.mark; x.got=best.got;
+    if(!best){ skipped++; return; }
+    { x.score=best.score; x.smark=best.mark; x.got=best.got;
       if(!x.signal) x.signal=best.signal; if(x.rsi==null||x.rsi==='') x.rsi=best.rsi;
       if(x.tech==null||x.tech==='') x.tech=best.tech; if(x.fund==null||x.fund==='') x.fund=best.fund;
-      if(!x.mode) x.mode=best.mode; x.scoreSrc='snap'; filled++; }
+      if(!x.mode) x.mode=best.mode;
+      // モード不明のまま採用した場合は、後から見分けられるようにしておく
+      x.scoreSrc=(x.mode&&best.mode&&best.mode===x.mode)?'snap':'snap-modeunknown';
+      filled++; }
   });
   if(filled) saveTrades(t);
   return {filled:filled,total:t.length};
