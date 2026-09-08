@@ -1355,6 +1355,68 @@ class TouchDetectionTest(RunTestCase):
         self.assertEqual(adv["reason"], "TP到達")
 
 
+class EntryLogContextTest(RunTestCase):
+    """記録簿に残すのは『エントリーした時』の状態であること。
+
+    記録簿は5分ごとの実行時に書くので、そこで指標を取り直すと
+    値動きが出た後の値が残る。実際 mtf の売り6件は RSI 8.9〜36.9 で
+    記録されており、売りの基準60とは正反対の値が並んでいた。
+    """
+
+    def _pos(self, **kw):
+        p = {"id": "e1", "symbol": "USD_JPY", "side": "short", "entry": 158.5,
+             "lot": 1000, "status": "open"}
+        p.update(kw); return p
+
+    def test_prefers_the_values_captured_at_entry(self):
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        data = {"positions": [self._pos(entry_rsi=62.4, entry_tech=-0.30,
+                                        entry_fund=0.40, entry_score=58,
+                                        entry_mark="🟡 保留・検討")]}
+        self.assertEqual(F.stamp_new_entries(data), 1)
+        rec = self.read(F.ENTRY_LOG_FILE)["entries"][-1]
+        self.assertEqual(rec["rsi"], 62.4, "記録時点のRSIで上書きしている")
+        self.assertEqual(rec["ctx_src"], "entry")
+        self.assertEqual(rec["conf_pct"], 58)
+        self.assertEqual(rec["conf_mark"], "🟡 保留・検討")
+        # スコアはそのモードの比率で組み直す
+        self.assertAlmostEqual(rec["score"], round(F.clamp(
+            F.TECH_W * -0.30 + F.FUND_W * 0.40), 3), places=3)
+
+    def test_falls_back_to_current_values_without_entry_context(self):
+        """アプリ以外から登録された建玉は、従来どおり現在値で記録する。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        self.assertEqual(F.stamp_new_entries({"positions": [self._pos()]}), 1)
+        rec = self.read(F.ENTRY_LOG_FILE)["entries"][-1]
+        self.assertEqual(rec["ctx_src"], "logged")
+        self.assertIsNotNone(rec["rsi"])
+
+    def test_mtf_strength_measures_the_pullback_not_the_score(self):
+        """mtfの強弱は押し目/戻りの深さで測ること。
+
+        スコア基準だと RSI8.9 の深い戻り売りが「強」、RSI36.9 が「弱」と、
+        押し目の深さと逆の記録になっていた。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        th = F.P["th"]
+        # 売り: 基準60を大きく超えるほど深く引きつけている
+        self.assertEqual(F._entry_strength(-0.9, 72.0, "short", th), "強")
+        self.assertEqual(F._entry_strength(-0.9, 64.0, "short", th), "標準")
+        self.assertEqual(F._entry_strength(-0.9, 60.5, "short", th), "弱")
+        # 買い: 基準40を大きく下回るほど深い
+        self.assertEqual(F._entry_strength(0.9, 28.0, "long", th), "強")
+        self.assertEqual(F._entry_strength(0.9, 39.5, "long", th), "弱")
+        # スコアが大きくても、浅い戻りなら「弱」であること
+        self.assertEqual(F._entry_strength(-0.95, 60.2, "short", th), "弱")
+
+    def test_other_modes_keep_the_score_based_strength(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        th = F.P["th"]
+        self.assertEqual(F._entry_strength(-0.75, 20.0, "short", th), "強")
+        self.assertEqual(F._entry_strength(-0.45, 20.0, "short", th), "標準")
+        self.assertEqual(F._entry_strength(-0.10, 20.0, "short", th), "弱")
+        self.assertEqual(F._entry_strength(None, 20.0, "short", th), "不明")
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 

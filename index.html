@@ -866,7 +866,18 @@ async function addPos(){const c=needCfg();if(!c)return;
 
 function computeClose(p,price){const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000);
   const diff=side==='long'?(price-entry):(entry-price);return{pips:+(diff/PS).toFixed(1),yen:Math.round(diff*lot),reason:diff>=0?'利確':'損切り'};}
-function toggleClose(id){const b=document.getElementById('cb_'+id);if(b)b.classList.toggle('hide');}
+function toggleClose(id){const b=document.getElementById('cb_'+id);if(!b)return;
+  b.classList.toggle('hide');
+  // 現在値を入れておく。GMOで成行決済した直後ならほぼこの値なので、
+  // 「入力が面倒だから削除」を減らす（実際そうなっていた）。
+  if(!b.classList.contains('hide')){
+    const inp=document.getElementById('cp_'+id);
+    if(inp&&!inp.value){
+      const p=((S&&S.open_positions)||[]).find(x=>x.id===id);
+      if(p&&p.current!=null)inp.value=p.current;
+    }
+    if(inp)inp.focus();
+  }}
 async function doClose(id){const c=needCfg();if(!c)return;const price=parseFloat(document.getElementById('cp_'+id).value);
   if(!isFinite(price)){toast('実際の約定価格を入力してください');return;}
   POS_BUSY=true;
@@ -880,10 +891,28 @@ async function doClose(id){const c=needCfg();if(!c)return;const price=parseFloat
     // フラッシュを見せてから再描画（プラス決済時のみ少し待つ）
     if(pachiOn() && r.yen>=0){ await new Promise(rs=>setTimeout(rs,900)); }
     render();toast(`決済しました：${r.reason} ${r.yen>=0?'+':''}${r.yen}円`);}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
-async function delPos(id){const c=needCfg();if(!c)return;if(!confirm('このポジション/履歴を削除しますか？'))return;
+/* 保有中の建玉を「削除」すると結果が一切残らない。
+   実際、これまでの登録8件はすべて削除で消されており、決済として記録された
+   ものは0件だった。そのため決済品質・現状診断・マーク別成績・時間帯別・
+   連敗サーキットブレーカーは、どれも一度もデータを持てていない。
+   エントリーの記録簿は93件貯まっているのに、突き合わせる結果が無い状態。
+   削除する前に、結果を残す道を必ず提示する。 */
+async function delPos(id){const c=needCfg();if(!c)return;
+  const p=(POS.positions||[]).find(x=>x.id===id);
+  const isOpen=p&&(p.status||'open')==='open';
+  if(isOpen){
+    if(!confirm('この建玉を削除すると、結果（損益）が記録に残りません。\n\n'
+      +'決済済みなら「キャンセル」→「決済」から約定価格を入れてください。\n'
+      +'成績の集計・連敗の検知・判定の検証は、すべてこの記録が元になっています。\n\n'
+      +'それでも記録を残さずに削除しますか？'))return;
+  }else{
+    if(!confirm('この履歴を削除しますか？'))return;
+  }
   POS_BUSY=true;
   try{const{data,sha}=await ghGet(c);data.positions=(data.positions||[]).filter(x=>x.id!==id);
-    await ghPut(c,data,sha,'delete '+id);POS=data;render();toast('削除しました');}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
+    await ghPut(c,data,sha,'delete '+id);POS=data;render();
+    toast(isOpen?'削除しました（結果は記録されていません）':'削除しました');}
+  catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
 /* ---------- 計算/描画 ---------- */
 function tpsl(p){const side=p.side||'long',entry=+p.entry;let tp=(p.tp!=null)?+p.tp:null,sl=(p.sl!=null)?+p.sl:null;
@@ -1591,7 +1620,8 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
   return`<div class="card" data-posid="${p.id}" style="animation-delay:${i*60}ms"><div class="pcard-winflash" id="pwf_${p.id}"></div><div class="row"><span class="sym">${p.symbol.replace('_','/')} <span class="pside ${p.side}">${sideTxt}</span></span><span class="tag">建値 ${p.entry}</span></div>
     <div class="row" style="margin-top:10px"><span class="pnl ${cls}">${yen(p.yen)}</span><span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span></div>
     ${pp.html}${bar}${ocoBox}${advBox}${_tsBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
-    <div class="pact"><button class="btn sm" onclick="toggleClose('${p.id}')">決済</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
+    <div class="pact"><button class="btn up sm" onclick="toggleClose('${p.id}')">決済して記録</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
+    <div class="reasons" style="opacity:.7;font-size:11px">GMOで決済したら「決済して記録」で残してください。削除すると結果が集計に入りません</div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
 function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
   e.innerHTML=MODES.map(x=>`<button class="hbtn" onclick="setMode('${x}')" style="${x===m?'background:#cda86a;color:#1a1206;font-weight:700':''}">${MODE_LABEL[x]}</button>`).join('');}
