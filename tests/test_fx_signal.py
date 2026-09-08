@@ -1461,6 +1461,76 @@ class PairBiasTest(RunTestCase):
                              "mtfのカードにスコア基準の文言が残っている")
 
 
+class ModeAwareWordingTest(RunTestCase):
+    """モードで意味が変わるのに、表示だけスコア基準のまま残っていた箇所。
+
+    mtfを後から足したため、スコアを根拠にした文言・区分があちこちに
+    残っていた。判定は上位足や押し目の深さで行っているのに、
+    理由には無関係なスコアが書かれていた。
+    """
+
+    def test_hold_reason_cites_what_the_decision_used(self):
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        self.assertEqual(F._hold_basis(-0.31, -1), "上位足は下降のまま")
+        self.assertEqual(F._hold_basis(0.53, 1), "上位足は上昇のまま")
+        self.assertIn("レンジ", F._hold_basis(0.53, 0))
+        for b in (F._hold_basis(-0.31, -1), F._hold_basis(0.53, 0)):
+            self.assertNotIn("スコア", b, "判定に使っていないスコアを理由にしている")
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        self.assertEqual(F._hold_basis(-0.31, None), "スコア-0.31")
+
+    def test_bands_split_by_the_actual_entry_criterion(self):
+        """mtfの帯は押し目/戻りの深さで分けること。
+
+        スコアで分けると1年分が 弱693/中18/強6 と96%が1つの帯に落ち、
+        何も比較できなかった。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        th = F.P["th"]
+        # 売り: 基準60をどれだけ超えたか
+        self.assertTrue(F._score_band(0.9, th, 71.0, "売り").startswith("強"))
+        self.assertTrue(F._score_band(0.9, th, 64.0, "売り").startswith("中"))
+        self.assertTrue(F._score_band(0.9, th, 60.5, "売り").startswith("弱"))
+        # 買い: 基準40をどれだけ下回ったか
+        self.assertTrue(F._score_band(0.9, th, 29.0, "買い").startswith("強"))
+        self.assertTrue(F._score_band(0.9, th, 39.5, "買い").startswith("弱"))
+        # スコアが大きくても浅ければ「弱」
+        self.assertTrue(F._score_band(0.99, th, 60.1, "売り").startswith("弱"))
+
+    def test_other_modes_keep_the_score_bands(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        th = F.P["th"]
+        self.assertTrue(F._score_band(th*1.6, th, 20.0, "売り").startswith("強"))
+        self.assertTrue(F._score_band(th*1.3, th, 20.0, "売り").startswith("中"))
+        self.assertTrue(F._score_band(th*1.0, th, 20.0, "売り").startswith("弱"))
+
+    def test_stats_declare_how_the_bands_were_split(self):
+        """画面が説明文を出し分けられるよう、分け方を結果に残すこと。"""
+        for mode, want in (("mtf", "pullback"), ("day", "score")):
+            self.reset_caches()
+            F.MODE = mode; F.P = F.PARAMS[mode]
+            st = F.compute_signal_stats("USD_JPY")
+            if st is None or not st.get("bands"):
+                continue
+            self.assertEqual(st["band_by"], want)
+
+    def test_position_messages_never_cite_score_in_mtf(self):
+        """保有中の通知文にスコア基準の文言が残っていないこと。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F._OHLC_CACHE.clear()
+        # 差し替える前に本物を保存する（保存を後にすると差し替えが他のテストへ漏れる）
+        self.addCleanup(setattr, F, "mtf_view", F.mtf_view)
+        self.addCleanup(self.reset_caches)
+        F.mtf_view = lambda s: {"aligned": -1, "label": "1h↓下降 / 4h↓下降"}
+        adv = F.position_advice(
+            {"id": "z", "symbol": "USD_JPY", "side": "short", "entry": 153.9,
+             "lot": 1000, "tp_pips": 35.6, "sl_pips": 22.2},
+            {"USD_JPY": {"bid": 153.80, "ask": 153.805}},
+            {"atr": 0.09, "score": -0.31, "rsi": 45, "adx": 30}, None)
+        self.assertIsNotNone(adv)
+        self.assertNotIn("スコア", adv["reason"],
+                         f'判定に使っていないスコアが理由に出ている: {adv["reason"]}')
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 
