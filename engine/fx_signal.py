@@ -1243,6 +1243,26 @@ def load_entry_log():
     return {"entries": []}
 
 
+def pair_bias(score, rsi, aligned):
+    """シグナルが出ていない時にカードへ出す『今どんな状態か』。
+
+       mtf は「上位足の方向へ、短期が逆行しきったところ」で入る設計なので、
+       売りの直前は必ず短期スコアがプラスになる。それを『買い優勢』と出すと、
+       同じ瞬間に売りシグナルが出ていても矛盾しているようにしか読めない
+       （実際そう見えていた）。何を待っているのかをそのまま書く。"""
+    if P.get("rule") == "mtf_pullback":
+        if aligned == 1:
+            lo = MTF_PULLBACK_RSI[0]
+            return (f"押し目待ち RSI{rsi:.1f}→{lo}以下で買い" if rsi is not None
+                    else f"押し目待ち（RSI{lo}以下で買い）")
+        if aligned == -1:
+            hi = MTF_PULLBACK_RSI[1]
+            return (f"戻り待ち RSI{rsi:.1f}→{hi}以上で売り" if rsi is not None
+                    else f"戻り待ち（RSI{hi}以上で売り）")
+        return "対象外（上位足がレンジ）"
+    return "買い優勢" if (score or 0) >= 0 else "売り優勢"
+
+
 def _entry_strength(score, rsi, side, th):
     """記録簿に残す『強さ』。モードによって根拠が違うので判定も変える。
 
@@ -1638,7 +1658,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             sig = None; skip_reason = "同じ方向を既に保有中（重複を回避）"
         if sig and risk_full:
             sig = None; skip_reason = "合計リスクが上限のため見送り"
-        bias = "買い優勢" if sc["score"] >= 0 else "売り優勢"
+        bias = pair_bias(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
 
         entry = {}
         if market_open and sig:
