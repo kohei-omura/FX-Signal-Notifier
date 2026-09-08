@@ -1230,8 +1230,10 @@ class MtfNotificationTest(RunTestCase):
         # 「元の値」として残り、この差し替えが他のテストへ漏れる）
         self.addCleanup(setattr, F, "entry_side", F.entry_side)
         self.addCleanup(setattr, F, "mtf_view", F.mtf_view)
+        # USD_JPY は基底のテスト建玉（買い）があるので、両建て回避で止まる。
+        # 保有していない通貨でシグナルを立てる。
         F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: (
-            "売り" if sym == "USD_JPY" else None)
+            "売り" if sym == "EUR_JPY" else None)
         F.mtf_view = lambda sym: {"1hour": -1, "4hour": -1,
                                   "label": "1h↓下降 / 4h↓下降", "aligned": -1}
 
@@ -1529,6 +1531,48 @@ class ModeAwareWordingTest(RunTestCase):
         self.assertIsNotNone(adv)
         self.assertNotIn("スコア", adv["reason"],
                          f'判定に使っていないスコアが理由に出ている: {adv["reason"]}')
+
+
+class DuplicateAndHedgeTest(RunTestCase):
+    """同じ通貨を重ねて持たないための見送り。
+
+    同じ方向は同じ値動きへのリスクが倍になる。逆方向は両建てになり、
+    建玉が打ち消し合ってスプレッドだけ二重に払う。
+    モードを切り替えた直後に「デイの買いを持ったまま mtf の売り」が
+    実際に起こりうるため、どちらも止める。
+    """
+
+    def _run_with_signal(self, sym, sig, held_side):
+        self.write(F.POSITIONS_FILE, {"positions": [
+            {"id": "h1", "symbol": "GBP_JPY", "side": held_side, "entry": 208.3,
+             "lot": 1000, "tp_pips": 48.9, "sl_pips": 30.5, "status": "open",
+             "mode": "day", "auto_set": True}]})
+        self.addCleanup(setattr, F, "entry_side", F.entry_side)
+        F.entry_side = lambda s_, t_, r_, th_, aligned=None, pullback=None: (
+            sig if s_ == sym else None)
+        F.main()
+        st = self.status()
+        return next(p for p in st["pairs"] if p["symbol"] == sym)
+
+    def test_same_direction_is_skipped(self):
+        p = self._run_with_signal("GBP_JPY", "買い", "long")
+        self.assertIsNone(p["signal"])
+        self.assertIn("同じ方向", p["skip_reason"])
+
+    def test_opposite_direction_is_skipped_as_a_hedge(self):
+        p = self._run_with_signal("GBP_JPY", "売り", "long")
+        self.assertIsNone(p["signal"], "買いを持ったまま売りシグナルを通している")
+        self.assertIn("両建て", p["skip_reason"])
+
+    def test_other_pairs_are_unaffected(self):
+        p = self._run_with_signal("AUD_JPY", "売り", "long")
+        self.assertEqual(p["signal"], "売り", "保有していない通貨まで止めている")
+
+    def test_can_be_turned_off(self):
+        self.addCleanup(setattr, F, "BLOCK_DUPLICATE", F.BLOCK_DUPLICATE)
+        F.BLOCK_DUPLICATE = False
+        p = self._run_with_signal("GBP_JPY", "売り", "long")
+        self.assertEqual(p["signal"], "売り")
 
 
 class EntryRuleParityTest(unittest.TestCase):

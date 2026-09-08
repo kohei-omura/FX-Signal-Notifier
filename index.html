@@ -1691,18 +1691,23 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
     <div class="reasons" style="opacity:.7;font-size:11px">GMOで決済したら「決済して記録」で残すか、あとでツール画面にCSVを取り込んでください</div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
 function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
-  e.innerHTML=MODES.map(x=>`<button class="hbtn" onclick="setMode('${x}')" style="${x===m?'background:#cda86a;color:#1a1206;font-weight:700':''}">${MODE_LABEL[x]}</button>`).join('');}
+  // 表示中(色付き)と運用中(●)を区別する。切替が表示だけであることを見て分かるように。
+  e.innerHTML=MODES.map(x=>`<button class="hbtn" onclick="setMode('${x}')" title="${x===MODEJSON?'運用中のモード':'表示のみ切り替わります'}" style="${x===m?'background:#cda86a;color:#1a1206;font-weight:700':''}">${MODE_LABEL[x]}${x===MODEJSON?' ●':''}</button>`).join('');}
 function applyModeOverride(){try{const o=localStorage.getItem('fxnavi_mode');if(o&&MODES.includes(o))S.mode=o;}catch(e){}}
+/* スタイルボタンは【表示だけ】を切り替える。
+   以前はここで mode.json も書き換えていたため、「他のモードがどうなっているか
+   見てみる」だけのつもりでシステム全体の運用が切り替わっていた。
+   実際、mtf運用中に画面を触っただけで運用がデイに変わり、
+   期待値がマイナス確定のモードでエントリー通知が出る状態になっていた。
+   運用の切替は不一致の警告から明示的に行う（syncModeJson）。 */
 async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
   try{localStorage.setItem('fxnavi_mode',m);}catch(e){}
   S.mode=m;render();liveSignals();refreshStats(true);
-  const c=cfg();
-  if(c&&c.token&&c.owner&&c.repo){
-    try{await ghPutFile(c,'data/mode.json',{mode:m,updated_at:new Date().toISOString()},'auto: set mode '+m+' [skip ci]');
-      MODEJSON=m;renderModeWarn();
-      toast('通知スタイルも'+MODE_LABEL[m]+'に切替（次回実行から反映）');}
-    catch(e){toast('画面は切替。通知反映は保存失敗: '+e.message);}
-  }else{toast('画面のみ切替。通知にも反映するには⚙でGitHub設定を');}
+  if(MODEJSON&&MODEJSON!==m){
+    toast('表示のみ'+MODE_LABEL[m]+'に切替（運用は'+(MODE_LABEL[MODEJSON]||MODEJSON)+'のまま）');
+  }else{
+    toast(MODE_LABEL[m]+'を表示中');
+  }
 }
 /* 端末に残った古い指定を捨てて、実際に運用しているモードへ戻す。
    mode.json をファイルごと差し替えて切り替えた場合、端末の localStorage には
@@ -1719,6 +1724,12 @@ function adoptServerMode(){
 async function syncModeJson(){
   const m=S.mode||'scalp',c=cfg();
   if(!(c&&c.token&&c.owner&&c.repo)){toast('⚙でGitHub設定をすると同期できます');togglePanel('setPanel');return;}
+  // 運用の切替はエントリー通知の戦略そのものが変わる。取り違えると
+  // 期待値の違うモードで売買することになるので、明示的に確認する。
+  if(!confirm('運用モードを「'+(MODE_LABEL[m]||m)+'」に変更します。\n\n'
+    +'エントリー通知の判定がこのモードのものに変わります。\n'
+    +'保有中の建玉は登録時のモードで評価され続けるため影響しません。\n\n'
+    +'変更しますか？'))return;
   try{await ghPutFile(c,'data/mode.json',{mode:m,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
     MODEJSON=m;renderModeWarn();toast('通知モードを'+(MODE_LABEL[m]||m)+'に同期しました（次回実行から反映）');}
   catch(e){toast('同期失敗: '+e.message);}
@@ -1729,11 +1740,12 @@ function renderModeWarn(){
   const screen=S.mode||'scalp';
   if(MODEJSON && MODES.includes(MODEJSON) && MODEJSON!==screen){
     el.innerHTML=`<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--down);border-radius:10px;background:rgba(255,122,138,.08);font-size:12.5px;color:var(--ink)">
-      ⚠️ 通知モードが画面と違います — 通知=<b>${MODE_LABEL[MODEJSON]||MODEJSON}</b> ／ 画面=<b>${MODE_LABEL[screen]||screen}</b>。
-      このままだと通知のTP/SL幅が画面とズレるため、<b>⚡ライブ通知は停止中</b>です。
+      👁 いま<b>表示だけ</b>${MODE_LABEL[screen]||screen}に切り替えています。<b>運用は${MODE_LABEL[MODEJSON]||MODEJSON}のまま</b>です。
+      表示中は⚡ライブ通知を止めています（運用していない戦略の合図を送らないため）。
+      運用そのものを切り替える場合のみ、下のボタンを押してください。
       <div style="margin-top:6px">
-        <button class="btn sm" onclick="adoptServerMode()">画面を通知に合わせる</button>
-        <button class="btn ghost sm" style="margin-left:6px" onclick="syncModeJson()">通知を画面に合わせる</button>
+        <button class="btn sm" onclick="adoptServerMode()">表示を運用モードに戻す</button>
+        <button class="btn ghost sm" style="margin-left:6px" onclick="syncModeJson()">運用を${MODE_LABEL[screen]||screen}に変更する</button>
       </div></div>`;
   }else{el.innerHTML='';}
 }

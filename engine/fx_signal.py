@@ -1690,9 +1690,15 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                 sig = None; skip_reason = "上位足が順張りでない"
         if sig and HOUR_FILTER_ON and now.hour in BAD_HOURS:
             sig = None; skip_reason = f"{now.hour}時台は除外設定のため見送り"
-        # 併用時、同じ通貨・同じ方向を重ねると同じ値動きへのリスクが倍になる
-        if sig and (sym, sig) in held:
-            sig = None; skip_reason = "同じ方向を既に保有中（重複を回避）"
+        # 併用時の重複。同じ方向はリスクが倍になり、逆方向は両建てになる。
+        # 逆方向は以前止めていなかったが、モードを切り替えた直後などに
+        # 「デイの買いを持ったまま mtf の売りシグナル」が実際に起こりうる。
+        # 建玉同士が打ち消し合ってスプレッドだけ二重に払うので、どちらも止める。
+        if sig and BLOCK_DUPLICATE:
+            if (sym, sig) in held:
+                sig = None; skip_reason = "同じ方向を既に保有中（重複を回避）"
+            elif any(hs == sym for hs, _ in held):
+                sig = None; skip_reason = "同じ通貨を逆方向で保有中（両建てを回避）"
         if sig and risk_full:
             sig = None; skip_reason = "合計リスクが上限のため見送り"
         bias = pair_bias(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
