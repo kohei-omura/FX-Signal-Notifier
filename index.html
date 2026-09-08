@@ -901,10 +901,11 @@ async function delPos(id){const c=needCfg();if(!c)return;
   const p=(POS.positions||[]).find(x=>x.id===id);
   const isOpen=p&&(p.status||'open')==='open';
   if(isOpen){
-    if(!confirm('この建玉を削除すると、結果（損益）が記録に残りません。\n\n'
-      +'決済済みなら「キャンセル」→「決済」から約定価格を入れてください。\n'
-      +'成績の集計・連敗の検知・判定の検証は、すべてこの記録が元になっています。\n\n'
-      +'それでも記録を残さずに削除しますか？'))return;
+    if(!confirm('この建玉を削除します。\n\n'
+      +'結果を残す方法は2つあります。\n'
+      +'　・「決済して記録」で約定価格を入れる（すぐ集計に入ります）\n'
+      +'　・GMOの約定履歴CSVをツール画面で取り込む（あとでまとめて集計）\n\n'
+      +'どちらもしないと、この取引は成績の集計に入りません。削除しますか？'))return;
   }else{
     if(!confirm('この履歴を削除しますか？'))return;
   }
@@ -954,9 +955,35 @@ function atrRegime(o,P){var a=atrSeries(o,P.atr);if(!a||a.length<50)return null;
   var cls,ic,lab;if(pct<20){cls='weak';ic='⚪';lab='閑散';}else if(pct<=80){cls='ok';ic='🟢';lab='適正';}else if(pct<=95){cls='';ic='🔵';lab='拡大';}else{cls='warn';ic='🟡';lab='クライマックス';}
   return{pct:pct,cls:cls,ic:ic,lab:lab};}
 // 機能4: 連敗サーキットブレーカー（決済履歴からモード別直近連敗を集計・表示のみ）
-function modeStreak(mode){try{var cp=(POS.positions||[]).filter(function(p){return (p.status||'')==='closed';});
-  cp.sort(function(a,b){return String(b.closed_at||'').localeCompare(String(a.closed_at||''));});
-  var s=0;for(var i=0;i<cp.length;i++){var pm=cp[i].mode||mode;if(pm!==mode)continue;if((cp[i].close_yen||0)<0)s++;else break;}return s;}catch(e){return 0;}}
+/* 直近の連敗数。アプリで決済した記録と、ツールに取り込んだCSVの決済履歴の
+   両方を見る。アプリ決済は0件でCSVだけ、という運用が普通なので、
+   片方しか見ないと連敗を一度も検知できない（実際そうなっていた）。
+   localStorage は同一オリジンなのでツール画面の記録もそのまま読める。 */
+function closedTrades(){
+  var out=[];
+  try{(POS.positions||[]).forEach(function(p){
+    if((p.status||'')!=='closed')return;
+    out.push({at:String(p.closed_at||''),mode:p.mode||'',yen:+(p.close_yen||0),src:'app'});
+  });}catch(e){}
+  try{
+    var t=JSON.parse(localStorage.getItem('fxnavi_trades')||'[]')||[];
+    t.forEach(function(x){
+      if(x==null||x.yen==null)return;
+      out.push({at:String(x.closed_at||''),mode:x.mode||'',yen:+x.yen,src:'csv'});
+    });
+  }catch(e){}
+  out.sort(function(a,b){return b.at.localeCompare(a.at);});
+  return out;
+}
+function modeStreak(mode){try{
+  var cp=closedTrades(),s=0;
+  for(var i=0;i<cp.length;i++){
+    // モード不明の記録で連敗が途切れたことにしない（判定できないものは飛ばす）
+    if(cp[i].mode&&cp[i].mode!==mode)continue;
+    if(!cp[i].mode)continue;
+    if(cp[i].yen<0)s++;else break;
+  }
+  return s;}catch(e){return 0;}}
 function lossStopOn(){try{return localStorage.getItem('fxnavi_lossstop')==='1';}catch(e){return false;}}
 // 機能5: ケリー推奨リスク% — f*=(b·p−(1−p))/b の1/4（フルケリーは破産リスクが高いため1/4採用）・上限2.0%
 function kellyF(p,b){return b>0?(b*p-(1-p))/b:0;}
@@ -1621,7 +1648,7 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
     <div class="row" style="margin-top:10px"><span class="pnl ${cls}">${yen(p.yen)}</span><span class="pnl ${cls}" style="font-size:15px">${pips(p.pips)}</span></div>
     ${pp.html}${bar}${ocoBox}${advBox}${_tsBox}<div class="pmeta"><span>現在 <b>${fmt(p.current)}</b></span><span>数量 <b>${p.lot.toLocaleString()}</b></span></div>
     <div class="pact"><button class="btn up sm" onclick="toggleClose('${p.id}')">決済して記録</button><button class="btn ghost sm" onclick="delPos('${p.id}')">削除</button></div>
-    <div class="reasons" style="opacity:.7;font-size:11px">GMOで決済したら「決済して記録」で残してください。削除すると結果が集計に入りません</div>
+    <div class="reasons" style="opacity:.7;font-size:11px">GMOで決済したら「決済して記録」で残すか、あとでツール画面にCSVを取り込んでください</div>
     <div class="closebox hide" id="cb_${p.id}"><input class="inp" id="cp_${p.id}" inputmode="decimal" placeholder="実際の約定価格（買→売値/売→買値）"><button class="btn up sm" onclick="doClose('${p.id}')">確定</button></div></div>`;}
 function renderModeSw(){const m=S.mode||'scalp';const e=$('#modesw');if(!e)return;
   e.innerHTML=MODES.map(x=>`<button class="hbtn" onclick="setMode('${x}')" style="${x===m?'background:#cda86a;color:#1a1206;font-weight:700':''}">${MODE_LABEL[x]}</button>`).join('');}
