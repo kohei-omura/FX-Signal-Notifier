@@ -287,7 +287,13 @@ function csvImport(){
     (withDate?('<br><span class="good">日時あり: '+withDate+'件 → 時間帯別・セッション別を集計しました</span>')
              :'<br><span class="warn">日時が取り込めませんでした。「決済日時の列」を選び直して再取込してください</span>')
     +(_openFixed?('<br><span class="good">エントリー時刻を新規約定から復元: '+_openFixed+'件（時間帯別・セッション別・マーク別が“建てた時点”の集計になります）</span>'):'');
+  /* 記録簿(サーバーが全件残している)を先に当てる。スナップショットは
+     画面を開いていた時しか無い推測値なので、順番を逆にすると精度が落ちる。 */
+  var _el=null; try{ _el=entryLogAttach(); }catch(e){}
   try{attachSnapScores();}catch(e){}
+  if(_el&&_el.filled) $('#impmsg').innerHTML+='<br><span class="good">記録簿と突合: '
+    +_el.filled+'件にモード・判定・エントリー時点の指標を付与しました</span>';
+  try{ $('#impmsg').innerHTML+='<br>'+coverageNote(); }catch(e){}
   try{var _mg=mergeTradeSources(); if(_mg.merged||_mg.dropped){ $('#impmsg').innerHTML+='<br><span class="good">アプリ決済と突合: '+_mg.merged+'件を統合 / '+_mg.dropped+'件の重複を削除</span>'; }}catch(e){}
   renderJournal();
 }
@@ -655,10 +661,42 @@ function entryLogAttach(){
     if(x.adx==null&&e.adx!=null) x.adx=e.adx;
     if(x.newsNear==null&&e.news_near!=null) x.newsNear=e.news_near;
     if(!x.opened_at&&e.logged_at) x.opened_at=e.logged_at.slice(0,16)+' JST';
+    /* ★モードは記録簿からしか取れない。GMOのCSVには当然入っていないし、
+       ブラウザのスナップショットは画面を開いていた時しか残らない。
+       これが欠けると、期待値が確定でマイナスのデイ(-0.079R)と
+       mtf(+0.065R)が同じ集計に混ざり、どの数字も意味を失う。 */
+    if(!x.mode&&e.mode) x.mode=e.mode;
+    // 総合判定（マーク別成績の元）。スナップショットと同じ意味で入れる。
+    if((x.score==null||x.score==='')&&e.conf_pct!=null) x.score=e.conf_pct;
+    if(!x.smark&&e.conf_mark) x.smark=e.conf_mark;
+    if((x.rsi==null||x.rsi==='')&&e.rsi!=null) x.rsi=e.rsi;
+    if((x.tech==null||x.tech==='')&&e.tech!=null) x.tech=e.tech;
+    if((x.fund==null||x.fund==='')&&e.fund!=null) x.fund=e.fund;
+    // entry=エントリー時点の値 / logged=記録した時の値（後者は参考値）
+    if(!x.ctxSrc&&e.ctx_src) x.ctxSrc=e.ctx_src;
     x.elSrc='entrylog'; filled++;
   });
   if(filled) saveTrades(t);
   return {filled:filled,total:t.length};
+}
+
+/* CSV取込だけで集計が成立しているかの自己診断。
+   決済結果はCSVから、モードや判断材料は記録簿から来る。
+   どちらかが欠けると集計は黙って壊れるので、割合を出して見えるようにする。 */
+function coverageNote(){
+  var t=loadTrades();
+  if(!t.length) return '<span class="warn">決済履歴がまだありません。GMOの約定履歴CSVを取り込んでください。</span>';
+  var n=t.length;
+  var mode=t.filter(function(x){return !!x.mode;}).length;
+  var mark=t.filter(function(x){return x.score!=null&&x.score!=='';}).length;
+  var open=t.filter(function(x){return x.openSrc==='gmo'||x.elSrc==='entrylog';}).length;
+  var bad=(mode<n);
+  return '<b>集計に使える状態</b>：決済 '+n+'件 ／ モード判明 <b class="'+(mode===n?'good':'warn')+'">'
+    +mode+'件</b> ／ 判定あり '+mark+'件 ／ エントリー時刻あり '+open+'件'
+    +(bad?'<br><span class="warn">モード不明の取引が'+(n-mode)+'件あります。'
+      +'アプリに登録していない建玉は記録簿に残らないため、デイとmtfを分けて集計できません。'
+      +'エントリー時にアプリの「＋追加」で登録しておいてください。</span>'
+      :'<br><span class="good">モードがすべて判明しています。デイとmtfを分けて集計できます。</span>');
 }
 
 async function entryLogSync(){
@@ -683,7 +721,8 @@ async function entryLogSync(){
   var el=document.getElementById('impmsg');
   if(el) el.innerHTML='<span class="good">記録簿を'+_elLoad().length+'件保持（新規'+added+'件）／ '
     +r.filled+'件の取引に判断材料を紐付けました</span>'
-    +(r.filled?'':'<br><span class="warn">建値が一致する取引がありませんでした。CSVを「建単価つき」で取り込んでいるかご確認ください。</span>');
+    +(r.filled?'':'<br><span class="warn">建値が一致する取引がありませんでした。CSVを「建単価つき」で取り込んでいるかご確認ください。</span>')
+    +'<br>'+coverageNote();
   try{ renderJournal(); }catch(e){}
 }
 
