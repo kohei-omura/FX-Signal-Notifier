@@ -1262,6 +1262,91 @@ class MtfNotificationTest(RunTestCase):
             self.assertNotIn("で入る設定", b, "day に mtf 用の文面が混ざっている")
 
 
+class TouchDetectionTest(RunTestCase):
+    """足の高安でTP/SLを拾う処理。
+
+    ローソク足は BID で取っている。買い建てはBIDで決済するのでそのままでよいが、
+    売り建てはASKで買い戻すため、BIDの高安をそのまま比べるとスプレッドのぶんずれる。
+    実際「TP到達」の通知が出たのに建玉が残っている（＝GMOのOCOが約定していない）
+    という報告があった。
+    """
+
+    ENTRY, TP, SL = 153.883, 153.527, 154.105   # 実際の建玉（売り・mtf）
+
+    def _pos(self, side="short"):
+        return {"id": "t9", "symbol": "USD_JPY", "side": side, "entry": self.ENTRY,
+                "lot": 3000, "tp_pips": 35.6, "sl_pips": 22.2, "status": "open"}
+
+    def _advice(self, bar_low, bar_high, bid, ask, side="short"):
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F._OHLC_CACHE.clear()
+        F._OHLC_CACHE[("USD_JPY", F.P["interval"],
+                       max(F.P["ema_s"], F.P["macd"][1], F.P["adx"]*2, F.P["atr"])
+                       + F.CHART_POINTS + 30)] = [(bar_high, bar_low, bid)]
+        return F.position_advice(self._pos(side), {"USD_JPY": {"bid": bid, "ask": ask}},
+                                 {"atr": 0.05, "score": -0.5, "rsi": 45, "adx": 25}, None)
+
+    def test_short_tp_needs_the_ask_to_reach_it(self):
+        """売り建ての利確はASKで決まる。BIDだけが届いた足では到達にしない。"""
+        # BIDの安値はTPちょうど。ASK(=BID+0.5pips)はまだ届いていない → 到達ではない
+        adv = self._advice(bar_low=self.TP, bar_high=153.60, bid=153.589, ask=153.594)
+        self.assertNotIn("TP", adv["reason"],
+                         "BIDだけが届いた足で「TP到達」と判定している")
+
+    def test_short_tp_fires_once_the_ask_reaches_it(self):
+        """ASK相当まで届いていれば拾うこと（救済そのものは残す）。"""
+        adv = self._advice(bar_low=self.TP - 0.005, bar_high=153.60,
+                           bid=153.589, ask=153.594)
+        self.assertEqual(adv["level"], "take")
+        self.assertIn("TP", adv["reason"])
+
+    def test_short_sl_is_not_missed_by_the_spread(self):
+        """売り建ての損切りはASKで決まる。BIDの高値だけで見ると見落とす。"""
+        # BIDの高値はSLに0.3pips届かないが、ASKでは超えている → 損切り扱いにする
+        adv = self._advice(bar_low=153.90, bar_high=self.SL - 0.003,
+                           bid=153.95, ask=153.955)
+        self.assertEqual(adv["level"], "cut", "ASKでは刺さっている損切りを見落としている")
+
+    def test_long_side_is_unchanged(self):
+        """買い建てはBIDで決済するので、従来どおりそのまま比べること。"""
+        pos = {"id": "t9", "symbol": "USD_JPY", "side": "long", "entry": 153.0,
+               "lot": 3000, "tp_pips": 20.0, "sl_pips": 12.5, "status": "open"}
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        need = max(F.P["ema_s"], F.P["macd"][1], F.P["adx"]*2, F.P["atr"]) + F.CHART_POINTS + 30
+        F._OHLC_CACHE.clear()
+        F._OHLC_CACHE[("USD_JPY", F.P["interval"], need)] = [(153.20, 153.0, 153.1)]
+        adv = F.position_advice(pos, {"USD_JPY": {"bid": 153.1, "ask": 153.105}},
+                                {"atr": 0.05, "score": 0.5, "rsi": 55, "adx": 25}, None)
+        self.assertEqual(adv["level"], "take", "買い建てのTP判定が変わっている")
+
+    def test_touched_but_retraced_asks_to_verify_instead_of_closing(self):
+        """すでに戻している場合は、決済を促さず約定確認を促すこと。
+
+        本当に到達していればGMOのOCOが自動で約定している。
+        戻している足を根拠に「利確推奨」と出すと、約定済みか未約定かを
+        取り違えたまま手動で決済してしまう。"""
+        adv = self._advice(bar_low=self.TP - 0.010, bar_high=153.70,
+                           bid=153.589, ask=153.594)
+        self.assertTrue(adv["touched"], "足の高安で拾ったことが記録されていない")
+        self.assertIn("接触", adv["label"] + adv["reason"])
+        self.assertIn("確認", adv["reason"])
+        self.assertIn("153.594", adv["reason"], "現在値が書かれていない")
+
+    def test_subject_distinguishes_touch_from_a_real_fill(self):
+        """件名でも区別すること。スマホでは件名しか見ないことが多い。"""
+        F.MODE = "mtf"
+        self.assertIn("🎯利確 USD/JPY", F.mail_subject([], [("take", "USD_JPY")], 0))
+        sub = F.mail_subject([], [("touch", "USD_JPY")], 0)
+        self.assertIn("要確認", sub)
+        self.assertNotIn("🎯利確 USD/JPY", sub, "接触なのに利確済みに見える件名になっている")
+
+    def test_current_price_hit_still_says_reached(self):
+        """現在値そのものが到達している場合は従来どおり「到達」と書くこと。"""
+        adv = self._advice(bar_low=153.50, bar_high=153.70, bid=153.515, ask=153.520)
+        self.assertFalse(adv["touched"])
+        self.assertEqual(adv["reason"], "TP到達")
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 

@@ -1386,27 +1386,49 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     tp_pr, sl_pr = _tp_sl_prices(p)
     hit_tp = tp_pr is not None and ((side == "long" and bid >= tp_pr) or (side == "short" and ask <= tp_pr))
     hit_sl = sl_pr is not None and ((side == "long" and bid <= sl_pr) or (side == "short" and ask >= sl_pr))
+    touched = False          # 現在値ではなく、足の高安で拾った（＝すでに戻している）
     # B: cron実行の合間にTP/SLへ「タッチ」していたかを直近の足の高値/安値で救済（現在値が戻っていても拾う）
+    #
+    # ローソク足は BID で取っている（PRICE_TYPE="BID"）。
+    # 買い建ては BID で決済するのでそのまま比べてよいが、
+    # 売り建ては ASK で買い戻すため、BIDの高安をそのまま使うとスプレッドのぶんずれる。
+    #   ・利確 … 実際より早く「到達」と出る（届いていないのにTP到達の通知が出る）
+    #   ・損切り … 実際より遅くなり、本当に刺さった損切りを見落とす
+    # そこで売り建てでは BID の値にスプレッドを足して ASK 相当に直してから比べる。
+    spread = max(0.0, ask - bid)
     bm = BARMIN.get(P["interval"], 1)
     nb = max(1, -(-TOUCH_LOOKBACK_MIN // bm))
     rec = (get_ohlc(sym) or [])[-nb:]
     if rec:
         hi = max(b[0] for b in rec); lo = min(b[1] for b in rec)
         if side == "long":
-            if tp_pr is not None and hi >= tp_pr: hit_tp = True
-            if sl_pr is not None and lo <= sl_pr: hit_sl = True
+            tp_touch = tp_pr is not None and hi >= tp_pr
+            sl_touch = sl_pr is not None and lo <= sl_pr
         else:
-            if tp_pr is not None and lo <= tp_pr: hit_tp = True
-            if sl_pr is not None and hi >= sl_pr: hit_sl = True
+            tp_touch = tp_pr is not None and (lo + spread) <= tp_pr
+            sl_touch = sl_pr is not None and (hi + spread) >= sl_pr
+        if tp_touch and not hit_tp: hit_tp = touched = True
+        if sl_touch and not hit_sl: hit_sl = touched = True
     rsi_against = (side == "long" and rsi_v >= 70) or (side == "short" and rsi_v <= 30)
     nw = upcoming_news(sym)   # このペアに効く重要指標が接近していれば手仕舞い検討
 
+    # GMOにOCOを入れてあれば、本当に到達したなら自動で約定している。
+    # 「すでに戻している足の高安で拾った」場合は、決済を促すのではなく
+    # 約定したかどうかの確認を促すのが正しい（未約定なら建玉は続いている）。
+    def _reached(kind, price):
+        if not touched:
+            return f"{kind}到達"
+        return (f"{kind}に接触（{price:.3f}）— 現在値は{cur:.3f}まで戻しています。"
+                f"GMOのOCOが約定済みか確認してください")
+
     if hit_sl:
-        level, label, reason = "cut", "🛑 損切り推奨", "SL到達"
+        level, label, reason = "cut", "🛑 損切り推奨", _reached("SL", sl_pr)
     elif aligned <= -ADV_OPP and profit <= 0:
         level, label, reason = "cut", "🛑 損切り推奨", f"逆シグナル（スコア{score:+.2f}）で含み損"
     elif hit_tp:
-        level, label, reason = "take", "🎯 利確推奨", "TP到達"
+        level = "take"
+        label = "🎯 利確推奨" if not touched else "🎯 TP接触（要確認）"
+        reason = _reached("TP", tp_pr)
     elif nw is not None:
         when = f"約{int(nw[3])}分後" if nw[3] >= 0 else f"発表中(±{BLACKOUT_MIN}分)"
         level, label, reason = "watch", "🟡 利確検討", f"まもなく重要指標（{nw[2]}/{when}）"
@@ -1424,7 +1446,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
         level, label, reason = "hold", "🟢 ホールド", f"シグナル順方向（スコア{score:+.2f}）"
     else:
         level, label, reason = "watch", "🟡 様子見", "明確なサインなし"
-    return {"level": level, "label": label, "reason": reason,
+    return {"level": level, "label": label, "reason": reason, "touched": touched,
             "score": round(score, 3), "rsi": rsi_v, "adx": adx_v,
             "profit_atr": round(profit_atr, 2), "retrace_atr": round(retrace_atr, 2), "mfe": round(mfe, 3)}
 
@@ -1496,11 +1518,18 @@ def check_positions(data, ticker, prev_state=None):
                 body = (f"{adv['label']} {mtag}{info['symbol']} ({'買い' if side=='long' else '売り'})\n"
                         f"  {adv['reason']}\n"
                         f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円")
-                tail = ("\n  ※GMOで決済後、アプリに実際の結果を登録してください"
-                        if adv["level"] in ("take", "cut") else "")
+                if adv.get("touched"):
+                    # 現在値では届いていない。OCOを入れてあるなら約定済みのはずなので、
+                    # 「決済してください」ではなく「約定したか確認してください」が正しい。
+                    tail = ("\n  ※現在値では届いていません。GMOでOCOが約定済みかを先に確認し、"
+                            "約定していればアプリに結果を登録してください")
+                else:
+                    tail = ("\n  ※GMOで決済後、アプリに実際の結果を登録してください"
+                            if adv["level"] in ("take", "cut") else "")
                 # メールには全部（利確/損切り/利確検討）
                 mail_msgs.append(body + tail)
-                pos_events.append((adv["level"], info["symbol"]))
+                pos_events.append(("touch" if adv.get("touched") else adv["level"],
+                                   info["symbol"]))
                 # LINEには最重要(take/cut)だけ
                 if adv["level"] in ("take", "cut"):
                     line_msgs.append(body + tail)
@@ -1748,7 +1777,7 @@ def mail_subject(sig_events, pos_events, level_count):
     def pick(lv):
         return [s for l, s in pos_events if l == lv]
     bits = []
-    for lv, mark in (("cut", "🛑損切り"), ("take", "🎯利確")):
+    for lv, mark in (("cut", "🛑損切り"), ("take", "🎯利確"), ("touch", "🎯TP/SL接触・要確認")):
         got = pick(lv)
         if got:
             bits.append(f"{mark} " + "・".join(f(x) for x in got))
