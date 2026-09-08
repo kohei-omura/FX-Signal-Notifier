@@ -861,7 +861,12 @@ async function addPos(){const c=needCfg();if(!c)return;
   }
   POS_BUSY=true;
   try{toast('保存中…');const{data,sha}=await ghGet(c);data.positions=data.positions||[];data.positions.push(pos);
-    await ghPut(c,data,sha,'add '+sym+' [skip ci]');POS=data;render();toast('追加しました'+autoNote);togglePanel('addPanel');
+    /* [skip ci] を付けない。ワークフローは data/positions.json の push で
+       即実行する設定（自動でTP/SLを確定し監視を開始する）なのに、
+       [skip ci] が付いていたため登録しても起動せず、次の5分実行まで
+       何も始まらなかった。逆に delete には付いておらず、不要な実行だけ
+       起きていた。 */
+    await ghPut(c,data,sha,'add '+sym);POS=data;render();toast('追加しました'+autoNote);togglePanel('addPanel');
     $('#f_entry').value='';}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
 function computeClose(p,price){const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000);
@@ -911,7 +916,8 @@ async function delPos(id){const c=needCfg();if(!c)return;
   }
   POS_BUSY=true;
   try{const{data,sha}=await ghGet(c);data.positions=(data.positions||[]).filter(x=>x.id!==id);
-    await ghPut(c,data,sha,'delete '+id);POS=data;render();
+    // 削除は監視対象が減るだけなので即時実行は不要
+    await ghPut(c,data,sha,'delete '+id+' [skip ci]');POS=data;render();
     toast(isOpen?'削除しました（結果は記録されていません）':'削除しました');}
   catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
@@ -1087,10 +1093,36 @@ try{const _le=JSON.parse(localStorage.getItem('fxnavi_longenv')||'{}');Object.as
 function pairSig(sym){return (S.pairs||[]).find(x=>x.symbol===sym);}
 function loadMfe(){try{return JSON.parse(localStorage.getItem('fxnavi_mfe'))||{}}catch(e){return{}}}
 function saveMfe(o){try{localStorage.setItem('fxnavi_mfe',JSON.stringify(o));}catch(e){}}
+/* 保有中に『入った根拠がまだ生きているか』。fx_signal.py の hold_alignment() と同じ。
+   mtfは押し目/戻りで入るので短期スコアは構造的に逆向きになる。売り建てなら
+   RSIが60まで戻った＝スコアはプラス、が正常な入り方。それを score*dir で見ると
+   入った瞬間に aligned<=-0.25 となり「利益中に逆シグナル」が即座に出る。
+   サーバー側は先に直していたが、画面側の実装が取り残されていた。 */
+function holdAligned(p,ps,dir){
+  const md=(p.mode||p.entry_mode||(S&&S.mode)||'scalp');
+  const PP=JS_PARAMS[md]||JS_PARAMS.scalp;
+  if(PP.rule==='mtf_pullback'){
+    const al=(MTF_BY_SYM[p.symbol]||{}).aligned;
+    return (al||0)*dir;
+  }
+  return (ps.score!=null?ps.score:0)*dir;
+}
+function holdBasis(p,ps){
+  const md=(p.mode||p.entry_mode||(S&&S.mode)||'scalp');
+  const PP=JS_PARAMS[md]||JS_PARAMS.scalp;
+  if(PP.rule==='mtf_pullback'){
+    const al=(MTF_BY_SYM[p.symbol]||{}).aligned;
+    if(al===1)return '上位足は上昇のまま';
+    if(al===-1)return '上位足は下降のまま';
+    return '上位足が揃わなくなった＝レンジ化';
+  }
+  const sc=(ps.score!=null?ps.score:0);
+  return 'スコア'+(sc>=0?'+':'')+sc.toFixed(2);
+}
 function posAdvice(p){
   const ps=pairSig(p.symbol); if(!ps||p.current==null)return null;
   const dir=p.side==='long'?1:-1, a=ps.atr||0, score=(ps.score!=null?ps.score:0), rsi=(ps.rsi!=null?ps.rsi:50), adx=(ps.adx!=null?ps.adx:0);
-  const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=score*dir;
+  const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=holdAligned(p,ps,dir), basis=holdBasis(p,ps);
   // 初回は建値だけで初期化せず現在値も取り込む（含み益ピークの取りこぼし＝トレール判定のズレを防ぐ）
   const m=loadMfe(); let mfe=m[p.id]; if(mfe==null)mfe=p.entry; mfe=(p.side==='long'?Math.max(mfe,p.current):Math.min(mfe,p.current)); m[p.id]=+mfe.toFixed(3); saveMfe(m);
   const retrace=(p.side==='long'?(mfe-p.current):(p.current-mfe)), retraceAtr=a?retrace/a:0;
@@ -1100,12 +1132,15 @@ function posAdvice(p){
   const sTxt=(score>=0?'+':'')+score.toFixed(2);
   let level,label,reason;
   if(hitSl){level='cut';label='🛑 損切り推奨';reason='SL到達';}
-  else if(aligned<=-ADV_OPP&&profit<=0){level='cut';label='🛑 損切り推奨';reason=`逆シグナル(スコア${sTxt})で含み損`;}
+  else if(aligned<=-ADV_OPP&&profit<=0){level='cut';label='🛑 損切り推奨';reason=`入った根拠が消えた（${basis}）のに含み損`;}
   else if(hitTp){level='take';label='🎯 利確推奨';reason='TP到達';}
   else if(profitAtr>=PROFIT_ATR&&retraceAtr>=TRAIL_ATR){level='take';label='🎯 利確推奨';reason=`高値から${retraceAtr.toFixed(1)}ATR押し戻し（トレール）`;}
-  else if(profit>0&&aligned<=-ADV_OPP){level='take';label='🎯 利確推奨';reason=`利益中に逆シグナル(スコア${sTxt})`;}
-  else if(profit>0&&(Math.abs(score)<ADV_DECAY||rsiAgainst||adx<ADX_WEAK)){level='watch';label='🟡 利確検討';reason=Math.abs(score)<ADV_DECAY?'勢い減衰':(rsiAgainst?'RSI過熱':'ADX低下');}
-  else if(aligned>=ADV_SUPP){level='hold';label='🟢 ホールド';reason=`シグナル順方向(スコア${sTxt})`;}
+  else if(profit>0&&aligned<=-ADV_OPP){level='take';label='🎯 利確推奨';reason=`利益が出ている間に根拠が反転（${basis}）`;}
+  else if(profit>0&&(aligned<((JS_PARAMS[(p.mode||p.entry_mode||(S&&S.mode)||'scalp')]||JS_PARAMS.scalp).th)||rsiAgainst||adx<ADX_WEAK)){
+    level='watch';label='🟡 利確検討';
+    reason=(aligned<((JS_PARAMS[(p.mode||p.entry_mode||(S&&S.mode)||'scalp')]||JS_PARAMS.scalp).th))
+      ?`根拠が弱まった（${basis}）`:(rsiAgainst?'RSI過熱':'ADX低下');}
+  else if(aligned>=ADV_SUPP){level='hold';label='🟢 ホールド';reason=`入った根拠が続いている（${basis}）`;}
   else{level='watch';label='🟡 様子見';reason='明確なサインなし'}
   return {level,label,reason,cls:(level==='cut'?'down':(level==='take'||level==='hold')?'up':'')};
 }
@@ -1114,7 +1149,12 @@ function checkPosNotify(){
   let ch=false;
   computeOpen().forEach(p=>{const a=posAdvice(p);if(!a)return;
     if((a.level==='take'||a.level==='cut')&&adv0[p.id]!==a.level){
-      notifyLive(`${a.label} ${p.symbol.replace('_','/')}（${p.side==='long'?'買い':'売り'}）\n${a.reason}\n建値${p.entry} → 現在${p.current} / ${pips(p.pips)} / ${yen(p.yen)}\n※GMOで決済後アプリに結果を登録`);
+      /* 保有中サインのLINE送信はしない。
+         サーバー側は NOTIFY_POSITION_TO_LINE=False（メールのみ）と決めているのに、
+         画面側だけがWorker経由でLINEへ送っていて設定を素通りしていた。
+         しかも画面とサーバーで別実装のため判定が食い違い、同じ建玉に対して
+         短時間に何通も届く原因になっていた（実際4通連続で届いた）。
+         判定はカードに出す。LINE/メールはサーバーの通知に一本化する。 */
       adv0[p.id]=a.level;ch=true;
     }else if(a.level!=='take'&&a.level!=='cut'&&(adv0[p.id]==='take'||adv0[p.id]==='cut')){adv0[p.id]=a.level;ch=true;}
   });
