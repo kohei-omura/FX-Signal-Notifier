@@ -1417,6 +1417,50 @@ class EntryLogContextTest(RunTestCase):
         self.assertEqual(F._entry_strength(None, 20.0, "short", th), "不明")
 
 
+class PairBiasTest(RunTestCase):
+    """シグナルが出ていない時の表示。
+
+    mtfは売りの直前に必ず短期スコアがプラスになる（RSIが60まで戻るため）。
+    それを「買い優勢」と出していたので、同じ瞬間に売りシグナルが出ていても
+    矛盾しているようにしか読めなかった。実際そう見えたという報告があった。
+    """
+
+    def test_mtf_says_what_it_is_waiting_for(self):
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        down = F.pair_bias(0.53, 42.2, -1)
+        self.assertIn("戻り待ち", down)
+        self.assertIn("60", down)
+        self.assertNotIn("買い優勢", down, "売りを待っているのに買い優勢と出している")
+        up = F.pair_bias(-0.53, 58.0, 1)
+        self.assertIn("押し目待ち", up)
+        self.assertNotIn("売り優勢", up)
+        self.assertIn("上位足", F.pair_bias(0.1, 50.0, 0))
+
+    def test_mtf_never_contradicts_the_signal_direction(self):
+        """スコアがプラスでも、下降揃いなら『売りを待っている』と出ること。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        for score in (-0.9, 0.0, 0.53, 0.9):
+            self.assertIn("売り", F.pair_bias(score, 55.0, -1))
+            self.assertIn("買い", F.pair_bias(score, 45.0, 1))
+
+    def test_other_modes_keep_the_score_based_wording(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        self.assertEqual(F.pair_bias(0.53, 42.2, -1), "買い優勢")
+        self.assertEqual(F.pair_bias(-0.20, 42.2, -1), "売り優勢")
+        self.assertEqual(F.pair_bias(0.0, None, None), "買い優勢")
+
+    def test_status_json_carries_the_new_wording(self):
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        F.main()
+        st = self.status()
+        self.assertEqual(st["mode"], "mtf")
+        for p in st["pairs"]:
+            if p.get("signal"):
+                continue
+            self.assertNotIn("優勢", p.get("bias") or "",
+                             "mtfのカードにスコア基準の文言が残っている")
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 

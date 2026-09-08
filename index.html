@@ -2367,6 +2367,19 @@ const MTF_PULLBACK_RSI=[40,60];
    ここを分岐させないと、mtfモードでは画面がスコア方式で判定してしまい、
    サーバーの通知とライブ通知が別のルールで動くことになる。
    aligned: 上位足の一致方向(1/-1/0)。null/undefined は「不明」でシグナルなし。 */
+/* シグナルが出ていない時にカードへ出す『今どんな状態か』。
+   fx_signal.py の pair_bias() と1対1で対応させる。
+   mtfは売りの直前に必ず短期スコアがプラスになるため、
+   「買い優勢」と出すと売りシグナルと矛盾して見える。 */
+function pairBias(score,rsi,P,aligned){
+  if(P&&P.rule==='mtf_pullback'){
+    const lo=MTF_PULLBACK_RSI[0],hi=MTF_PULLBACK_RSI[1];
+    if(aligned===1)return rsi!=null?`押し目待ち RSI${rsi.toFixed(1)}→${lo}以下で買い`:`押し目待ち（RSI${lo}以下で買い）`;
+    if(aligned===-1)return rsi!=null?`戻り待ち RSI${rsi.toFixed(1)}→${hi}以上で売り`:`戻り待ち（RSI${hi}以上で売り）`;
+    return '対象外（上位足がレンジ）';
+  }
+  return (score||0)>=0?'買い優勢':'売り優勢';
+}
 function entrySide(total,rv,P,aligned){
   if(P&&P.rule==='mtf_pullback'){
     if(aligned==null||rv==null)return null;
@@ -2599,7 +2612,7 @@ async function liveSignals(){
       if(sig&&inBadHour())sig=null;
       const pair={symbol:sym,bid:(PRICE[sym]?PRICE[sym].bid:r3(sc.price)),ask:(PRICE[sym]?PRICE[sym].ask:null),
         rsi:sc.rsi,adx:sc.adx,ema_f:r3(sc.ef),ema_s:r3(sc.es),atr:r4(sc.atr),tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
-        score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:sc.score>=0?'買い優勢':'売り優勢',reasons:sc.reasons,
+        score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:pairBias(sc.score,sc.rsi,P,(MTF_BY_SYM[sym]||{}).aligned),reasons:sc.reasons,
         closes:sc.closes,ema_f_series:sc.ef_series,ema_s_series:sc.es_series};
       pair.theo=theoPrice(sym,oh.map(r=>r[2]));pair.dow=dowStructure(oh);pair.grv=granville(oh,P);pair.longEnv=LONGENV[sym]||null;pair.regime=atrRegime(oh,P);
       if(sig){const ref=PRICE[sym]?PRICE[sym].bid:sc.price,mc=Math.round(sc.sl_pips*MAX_CHASE_RATIO*10)/10;
