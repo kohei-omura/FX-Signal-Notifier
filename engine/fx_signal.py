@@ -823,7 +823,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         cost = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS) / sl_pips if sl_pips else 0.0
         for name, r in sim.items():
             policy_r.setdefault(name, []).append((r, cost))
-        band_r.setdefault(_score_band(abs(total), th), []).append((sim, cost))
+        band_r.setdefault(_score_band(abs(total), th, rsi_s[i], side), []).append((sim, cost))
         # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す。
         # 期間の頭は順位を出すだけの本数が無く区分が付かない。黙って落とすと
         # 帯の合計が採用数と合わなくなるので、件数を数えて表に出せるようにする。
@@ -859,6 +859,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                 bands[band][name] = round(sum(nets)/len(nets), 3)   # スプレッド控除後
     if bands:
         out["bands"] = bands
+        out["band_by"] = "pullback" if P.get("rule") == "mtf_pullback" else "score"
     atr_bands = {}
     for band, per in atr_r.items():
         row = {"n": max(len(v) for v in per.values())}
@@ -909,7 +910,22 @@ def _atr_band(pct):
     return ATR_REGIME_BANDS[-1][1]
 
 
-def _score_band(abs_score, th):
+# mtf は押し目/戻りの深さで入るので、スコアで分けても意味が無い。
+# 実際 mtf の1年分は 弱693 / 中18 / 強6 と96%が1つの帯に落ち、何も分からなかった。
+# 基準(RSI40/60)をどれだけ超えたかで分ける。先頭の文字は並び順に使われるので揃える。
+PULLBACK_BANDS = ((10.0, "強(基準+10pt〜)"), (3.0, "中(基準+3〜10pt)"), (-1e9, "弱(基準〜+3pt)"))
+
+
+def _score_band(abs_score, th, rsi=None, side=None):
+    if P.get("rule") == "mtf_pullback":
+        if rsi is None:
+            return PULLBACK_BANDS[-1][1]
+        lo, hi = MTF_PULLBACK_RSI
+        over = (lo - rsi) if side == "買い" else (rsi - hi)
+        for need, label in PULLBACK_BANDS:
+            if over >= need:
+                return label
+        return PULLBACK_BANDS[-1][1]
     for mult, label in SCORE_BANDS:
         if abs_score >= th * mult:
             return label
@@ -1243,6 +1259,22 @@ def load_entry_log():
     return {"entries": []}
 
 
+def _hold_basis(score, aligned_raw):
+    """保有中の判定の『根拠』を、実際に使った値で書く。
+
+       判定は hold_alignment() を通していて、mtf では上位足の向き(±1)、
+       他モードではスコアを見ている。ところが理由文はどのモードでも
+       スコアを書いていたため、mtf では判定と無関係な数字が理由として
+       表示されていた（売り建てなのに「シグナル順方向（スコア-0.31）」など）。"""
+    if P.get("rule") == "mtf_pullback":
+        if aligned_raw == 1:
+            return "上位足は上昇のまま"
+        if aligned_raw == -1:
+            return "上位足は下降のまま"
+        return "上位足が揃わなくなった＝レンジ化"
+    return f"スコア{score:+.2f}"
+
+
 def pair_bias(score, rsi, aligned):
     """シグナルが出ていない時にカードへ出す『今どんな状態か』。
 
@@ -1435,6 +1467,10 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     profit = (cur - entry) * d
     profit_atr = (profit / a) if a else 0.0
     aligned = hold_alignment(sym, sc, d)
+    # 理由文に書く根拠。mtfは上位足の向きで判定しているので、その値を書く。
+    aligned_raw = ((mtf_view(sym) or {}).get("aligned")
+                   if P.get("rule") == "mtf_pullback" else None)
+    basis = _hold_basis(score, aligned_raw)
     # 最高益(MFE)を更新（保存先はstatus.json側）。
     # 初回は建値だけで初期化すると、その回すでに乗っていた含み益のピークを取りこぼす
     # （＝トレール利確の押し戻し量を過小評価する）ので、現在値も必ず取り込む。
@@ -1483,7 +1519,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     if hit_sl:
         level, label, reason = "cut", "🛑 損切り推奨", _reached("SL", sl_pr)
     elif aligned <= -ADV_OPP and profit <= 0:
-        level, label, reason = "cut", "🛑 損切り推奨", f"逆シグナル（スコア{score:+.2f}）で含み損"
+        level, label, reason = "cut", "🛑 損切り推奨", f"入った根拠が消えた（{basis}）のに含み損"
     elif hit_tp:
         level = "take"
         label = "🎯 利確推奨" if not touched else "🎯 TP接触（要確認）"
@@ -1494,15 +1530,16 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     elif profit_atr >= PROFIT_ATR and retrace_atr >= TRAIL_ATR:
         level, label, reason = "take", "🎯 利確推奨", f"高値から{retrace_atr:.1f}ATR押し戻し（トレール）"
     elif profit > 0 and aligned <= -ADV_OPP:
-        level, label, reason = "take", "🎯 利確推奨", f"利益中に逆シグナル（スコア{score:+.2f}）"
+        level, label, reason = "take", "🎯 利確推奨", f"利益が出ている間に根拠が反転（{basis}）"
     elif profit > 0 and (aligned < th or rsi_against or adx_v < ADX_WEAK):
         rs = []
-        if aligned < th: rs.append(f"シグナル弱化(スコア{score:+.2f}/新規基準{th}未満)")
+        if aligned < th: rs.append(f"根拠が弱まった（{basis}）" if P.get("rule") == "mtf_pullback"
+                                else f"シグナル弱化(スコア{score:+.2f}/新規基準{th}未満)")
         if rsi_against: rs.append("RSI過熱")
         if adx_v < ADX_WEAK: rs.append("ADX低下")
         level, label, reason = "watch", "🟡 利確検討", "・".join(rs)
     elif aligned >= ADV_SUPP:
-        level, label, reason = "hold", "🟢 ホールド", f"シグナル順方向（スコア{score:+.2f}）"
+        level, label, reason = "hold", "🟢 ホールド", f"入った根拠が続いている（{basis}）"
     else:
         level, label, reason = "watch", "🟡 様子見", "明確なサインなし"
     return {"level": level, "label": label, "reason": reason, "touched": touched,

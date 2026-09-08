@@ -236,6 +236,7 @@ def run_mode(mode):
     return {"days": days, "days_covered": covered, "n": n_all, "mtf_blocked": blocked,
             "current_th": F.PARAMS[mode]["th"],
             "policies": pol, "bands": band, "atr_bands": atr_band,
+            "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
             "atr_bands_warmup": atr_warm,
             **(({"pullback_sweep": sweep_pullback(mode),
                  "pullback_holdout": holdout_pullback(mode),
@@ -264,9 +265,10 @@ def main():
             v = r["policies"].get(k)
             if v:
                 print(f"      {k:14} 勝率{v['winrate']:3}% 期待R{v['avg_r']:+.3f}")
+        _bl = "戻り/押し目の深さ" if r.get("band_by") == "pullback" else "スコア"
         for bn in sorted(r["bands"], key=lambda x: {"弱": 0, "中": 1, "強": 2}.get(x[0], 9)):
             b = r["bands"][bn]
-            print(f"      スコア{bn:16} n={b['n']:4} " +
+            print(f"      {_bl}{bn:16} n={b['n']:4} " +
                   "  ".join(f"{k}={b.get(k, 0):+.3f}" for k in F.EXIT_POLICIES))
         _order = {lab: i for i, (_, lab) in enumerate(F.ATR_REGIME_BANDS)}
         for bn in sorted(r.get("atr_bands") or {}, key=lambda x: _order.get(x, 9)):

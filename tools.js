@@ -1120,8 +1120,16 @@ function renderExitPolicies(status, backtest){
   var keys=Object.keys(lab).filter(function(k){return agg[k];});
   if(!keys.length){ el.innerHTML='<div class="note">サーバー側の統計がまだありません（次回の統計更新後に出ます）。</div>'; return; }
   var best=keys.reduce(function(a,b){ return (agg[a].sum/agg[a].n)>=(agg[b].sum/agg[b].n)?a:b; });
-  // スコアの強さ別（しきい値の何倍か）。ここが右肩上がりならスコアに予測力がある＝
-  // しきい値を上げれば直る。横ばい・逆なら、出口をどういじっても直らない。
+  /* エントリーの「強さ」別。ここが右肩上がりなら、強い場面を選べば直る。
+     横ばい・逆なら、出口をどういじっても直らない。
+     何を強さとするかはモードで違う（mtfは押し目/戻りの深さ、他はスコア）ので、
+     サーバーが band_by で教えてくる。 */
+  var bandBy=(deep&&deep.band_by)||'score';
+  var bandTitle=(bandBy==='pullback')?'戻り／押し目の深さ別':'スコアの強さ別';
+  var bandNote=(bandBy==='pullback')
+    ? 'このモードは上位足の方向へRSIが基準(40/60)まで戻ったところで入ります。'
+      +'基準をどれだけ超えて引きつけたかで分けています。深いほど良ければ、基準を厳しくする余地があります。'
+    : 'しきい値の何倍のスコアだったかで分けています。右肩上がりならスコアに予測力があります。';
   var bagg={};
   pairs.forEach(function(p){
     Object.keys(p.bands||{}).forEach(function(bn){
@@ -1178,13 +1186,13 @@ function renderExitPolicies(status, backtest){
         +'そこも横ばい／マイナスなら、いまの判定そのものに優位性が無いということです。</div>'
       : '')
     +(bandRows
-      ? '<div class="sec" style="font-size:12px;margin:12px 2px 6px">スコアの強さ別（期待R/回）</div>'
-        +'<table><thead><tr><th>スコア帯</th><th>件数</th>'
+      ? '<div class="sec" style="font-size:12px;margin:12px 2px 6px">'+bandTitle+'（期待R/回）</div>'
+        +'<table><thead><tr><th>'+(bandBy==='pullback'?'引きつけ':'スコア帯')+'</th><th>件数</th>'
         +keys.map(function(k){return '<th>'+({tp_sl:'TPまで',advice:'推奨で',advice_watch:'検討でも'}[k]||k)+'</th>';}).join('')
         +'</tr></thead><tbody>'+bandRows+'</tbody></table>'
-        +'<div class="note">しきい値の何倍のスコアで入ったかで分けています。'
-        +'強いほど成績が良い（右肩上がり）ならスコアに予測力があり、しきい値を上げれば改善します。'
-        +'横ばい・逆なら、しきい値を動かしても効きません。</div>'
+        +'<div class="note">'+bandNote
+        +'<br>強いほど成績が良い（右肩上がり）なら、条件を厳しくすれば改善します。'
+        +'横ばい・逆なら、そこを動かしても効きません。</div>'
       : '');
 }
 
