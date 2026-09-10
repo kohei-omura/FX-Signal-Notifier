@@ -762,7 +762,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         _SERIES_CACHE[ck] = cached
     ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s, atrpct_s = cached
     wins, losses = [], []
-    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]; fast_r = {}
+    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]; fast_r = {}; filt_r = {}
     n = len(oh); i = warm
     i_end = n - 1
     if entry_range:
@@ -832,6 +832,15 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         mfe = early_excursion(oh, i, side, entry, tp, sl, sl_pips * PIP_SIZE)
         if mfe is not None:
             adv = sim.get("advice")
+            ctx_f = {"adx": adx_s[i][0] if adx_s[i] else None,
+                     "aligned": al, "want": want, "rsi": rsi_s[i]}
+            for fname, fn in DAY_FILTERS.items():
+                try:
+                    ok = fn(ctx_f)
+                except Exception:
+                    ok = False
+                if ok and adv is not None:
+                    filt_r.setdefault(fname, []).append((adv, cost))
             etp = early_tp_r(oh, i, side, entry, sl, sl_pips * PIP_SIZE)
             row = (mfe, 1 if mfe >= FAST_NEED_R else 0, adv, cost, etp)
             _ef = ef_s[i] if i < len(ef_s) else None
@@ -914,6 +923,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
             slot[band] = cell
         if slot:
             fast[kind] = slot
+    if filt_r:
+        out["filters"] = {k: _r_summary(v) for k, v in filt_r.items() if v}
     if fast:
         fast["bars"] = FAST_BARS
         fast["bar_min"] = bar_min
@@ -998,6 +1009,18 @@ def early_excursion(oh, i, side, entry, tp, sl, risk, bars=None):
 # 速いだけで最終的に負ける型は、その型で入るのではなく早く降りるべきなので、
 # その差をここで測る。
 FAST_TP_TARGETS = (0.6, 0.8, 1.0, 1.2)
+
+# 「デイの中に、通知する価値のある部分集合はあるか」を確かめるための絞り込み。
+# 後から良さそうな条件を探すと、約90区分もあれば必ず何か当たってしまう
+# （実際 早利確の検証では、偶然に期待される数を下回る1区分しか出なかった）。
+# そこで条件は3つだけに固定し、しかも前半で測って後半で当てる。
+# 仕組みから説明が付くものだけを選んである。
+DAY_FILTERS = {
+    "ADX40以上": lambda c: (c["adx"] or 0) >= 40,
+    "上位足と一致": lambda c: c["aligned"] == c["want"],
+    "ADX40以上かつ上位足と一致": lambda c: ((c["adx"] or 0) >= 40
+                                    and c["aligned"] == c["want"]),
+}
 
 
 def early_tp_r(oh, i, side, entry, sl, risk):

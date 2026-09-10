@@ -167,6 +167,32 @@ def holdout(mode, policy="advice"):
             "candidates": {str(t): first[t]["avg_r"] for t in first}}
 
 
+def filter_holdout(mode):
+    """前半で測った絞り込みが、後半でも通用するかを確かめる。
+
+       条件を後から探すと必ず何か当たるので、条件は DAY_FILTERS に固定し、
+       前半(0〜50%)と後半(50〜100%)を別々に測って並べるだけにする。
+       前半だけ良くて後半で消えるものは、採用してはいけない。"""
+    out = {}
+    for lab, rng in (("first_half", (0.0, 0.5)), ("second_half", (0.5, 1.0))):
+        parts = {}
+        for sym in F.SYMBOLS:
+            try:
+                st = F.compute_signal_stats(sym, entry_range=rng)
+            except Exception as e:
+                print(f"[WARN] {mode}/{sym} 絞り込み検証 失敗: {e}", file=sys.stderr)
+                continue
+            if not st:
+                continue
+            for k, v in (st.get("filters") or {}).items():
+                parts.setdefault(k, []).append(v)
+            base = (st.get("policies") or {}).get("advice")
+            if base:
+                parts.setdefault("絞り込みなし", []).append(base)
+        out[lab] = {k: pool_summary(v) for k, v in parts.items() if v}
+    return out
+
+
 def run_mode(mode):
     days, cap = WINDOWS.get(mode, (60, 6000))
     F.MODE = mode
@@ -271,6 +297,7 @@ def run_mode(mode):
             "policies": pol, "bands": band, "atr_bands": atr_band,
             "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
             "atr_bands_warmup": atr_warm, "fast": fast,
+            "filter_holdout": filter_holdout(mode),
             **(({"pullback_sweep": sweep_pullback(mode),
                  "pullback_holdout": holdout_pullback(mode),
                  "pullback": list(F.MTF_PULLBACK_RSI)}
@@ -328,6 +355,16 @@ def main():
                           f"速攻{b['fast_rate']:3}% 平均初動{b['mfe']:+.2f}R "
                           f"最終R{adv.get('avg_r', 0):+.3f} "
                           f"[{adv.get('ci_lo', 0):+.3f}〜{adv.get('ci_hi', 0):+.3f}]  {es}")
+        fh = r.get("filter_holdout") or {}
+        if fh.get("second_half"):
+            print("      ── 絞り込み（前半で測り、後半で当てる）")
+            for k in (fh.get("first_half") or {}):
+                a = (fh["first_half"] or {}).get(k) or {}
+                b = (fh["second_half"] or {}).get(k) or {}
+                print(f"        {k:26} 前半 n={a.get('n',0):4} {a.get('avg_r',0):+.3f}"
+                      f"[{a.get('ci_lo',0):+.3f},{a.get('ci_hi',0):+.3f}]"
+                      f"  →  後半 n={b.get('n',0):4} {b.get('avg_r',0):+.3f}"
+                      f"[{b.get('ci_lo',0):+.3f},{b.get('ci_hi',0):+.3f}]")
         for row in r.get("sweep") or []:
             v = row.get("advice") or {}
             if v:
