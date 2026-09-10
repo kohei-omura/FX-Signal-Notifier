@@ -762,7 +762,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         _SERIES_CACHE[ck] = cached
     ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s, atrpct_s = cached
     wins, losses = [], []
-    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]
+    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]; fast_r = {}
     n = len(oh); i = warm
     i_end = n - 1
     if entry_range:
@@ -827,6 +827,22 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す。
         # 期間の頭は順位を出すだけの本数が無く区分が付かない。黙って落とすと
         # 帯の合計が採用数と合わなくなるので、件数を数えて表に出せるようにする。
+        # 初動（短時間でどこまで含み益が伸びたか）を、型ごとに残す。
+        # 期待値と別に持つ理由は FAST_BARS の定義のとおり。
+        mfe = early_excursion(oh, i, side, entry, tp, sl, sl_pips * PIP_SIZE)
+        if mfe is not None:
+            adv = sim.get("advice")
+            row = (mfe, 1 if mfe >= FAST_NEED_R else 0, adv, cost)
+            _ef = ef_s[i] if i < len(ef_s) else None
+            stretch = (((closes[i] - _ef) * want / a)
+                       if (_ef is not None and a) else None)
+            for kind, band in (
+                    ("adx", _band_of(ADX_BANDS, adx_s[i][0] if adx_s[i] else None)),
+                    ("stretch", _band_of(STRETCH_BANDS, stretch)),
+                    ("aligned", ALIGNED_LABEL.get(al)),
+                    ("rsi", _rsi_band(rsi_s[i], side))):
+                if band:
+                    fast_r.setdefault(kind, {}).setdefault(band, []).append(row)
         ab = _atr_band(atrpct_s[i] if i < len(atrpct_s) else None)
         if ab:
             slot = atr_r.setdefault(ab, {})
@@ -870,6 +886,27 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
     if atr_bands:
         out["atr_bands"] = atr_bands
         out["atr_bands_warmup"] = atr_skipped[0]   # 本数不足で区分が付かなかった件数
+    fast = {}
+    for kind, per in fast_r.items():
+        slot = {}
+        for band, rows in per.items():
+            if len(rows) < 8:
+                continue
+            nb = len(rows)
+            nets = [(r, c) for _m, _f, r, c in rows if r is not None]
+            slot[band] = {
+                "n": nb,
+                "mfe": round(sum(m for m, _f, _r, _c in rows) / nb, 3),
+                "fast_rate": round(sum(f for _m, f, _r, _c in rows) / nb * 100),
+                "advice": _r_summary(nets) if nets else None,
+            }
+        if slot:
+            fast[kind] = slot
+    if fast:
+        fast["bars"] = FAST_BARS
+        fast["bar_min"] = bar_min
+        fast["need_r"] = FAST_NEED_R
+        out["fast"] = fast
     return out
 
 
@@ -879,6 +916,70 @@ SCORE_BANDS = ((1.5, "強(1.5倍〜)"), (1.2, "中(1.2〜1.5倍)"), (1.0, "弱(1
 
 # 値幅（ATR）の状態別に分ける。画面の「レジーム」チップと同じ区切りにしてある。
 # 直近ATR_PCT_WINDOW本の中でのATRの順位(%)で見るので、通貨やモードが変わっても意味が保てる。
+# ===== 「短時間で大きく動くのはどういう型か」を測るための区分 =====
+# 期待値（最終的にいくら残るか）とは別に、初動の速さ・大きさを測る。
+# 勝率が悪い型でも初動だけは速い、ということが有り得る。その場合の使い道は
+# 「その型で入る」ではなく「その型では早めに利確する」なので、混同しないよう
+# 期待値とは別の指標として持つ。
+FAST_BARS = 4          # 「短時間」＝ 4本（day/mtfなら1時間、swingなら4時間）
+FAST_NEED_R = 1.0      # 「大きな金額」＝ 1R（損切り幅ぶん）
+# ADXは高ければ良いわけではない。区分を切って実測で確かめる。
+ADX_BANDS = ((50, "極端(50〜)"), (40, "強(40〜50)"), (30, "適正(30〜40)"),
+             (25, "弱め(25〜30)"), (20, "弱(20〜25)"), (0, "無風(〜20)"))
+# 短期EMAからどれだけ離れたところで入ったか（ATR倍）。
+# 大きいほど「すでに走った後を追いかけている」。
+STRETCH_BANDS = ((1.5, "追いかけ(1.5ATR〜)"), (0.8, "やや遅い(0.8〜1.5ATR)"),
+                 (0.3, "順当(0.3〜0.8ATR)"), (-0.3, "初動(-0.3〜0.3ATR)"),
+                 (-1e9, "逆張り(-0.3ATR〜)"))
+ALIGNED_LABEL = {1: "上位足と一致", 0: "上位足はレンジ", -1: "上位足と逆行"}
+
+
+def _rsi_band(rsi, side):
+    """RSIの位置を『その方向にとって行き過ぎているか』で区分する。
+
+       買いならRSIが高いほど行き過ぎ、売りなら低いほど行き過ぎ。
+       方向を揃えないと、買いと売りの数字が打ち消し合って何も見えなくなる。"""
+    if rsi is None:
+        return None
+    v = rsi if side == "買い" else 100.0 - rsi
+    for need, label in ((75, "行き過ぎ(75〜)"), (65, "強め(65〜75)"),
+                        (50, "順張り(50〜65)"), (35, "押し目/戻り(35〜50)"),
+                        (0, "逆張り(〜35)")):
+        if v >= need:
+            return label
+    return None
+
+
+def _band_of(bands, v):
+    if v is None:
+        return None
+    for need, label in bands:
+        if v >= need:
+            return label
+    return bands[-1][1]
+
+
+def early_excursion(oh, i, side, entry, tp, sl, risk, bars=None):
+    """建てた直後 bars 本のあいだに、含み益が最大どこまで行ったか（R倍）。
+
+       SLに触れた足より先は数えない（そこで建玉は死んでいるので、その後の
+       含み益は取りに行けない）。同じ足の中の順序は分からないので、
+       SLに触れた足の含み益は数えない側に倒す。"""
+    bars = FAST_BARS if bars is None else bars
+    if not risk:
+        return None
+    d = 1 if side == "買い" else -1
+    mfe = 0.0
+    for j in range(i + 1, min(len(oh), i + 1 + bars)):
+        h, l, _ = oh[j]
+        if (side == "買い" and l <= sl) or (side == "売り" and h >= sl):
+            break
+        fav = (h - entry) if side == "買い" else (entry - l)
+        if fav > mfe:
+            mfe = fav
+    return round(mfe / risk, 4)
+
+
 ATR_PCT_WINDOW = 200
 ATR_REGIME_BANDS = ((95, "クライマックス(95%〜)"), (80, "拡大(80〜95%)"),
                     (20, "適正(20〜80%)"), (0, "閑散(〜20%)"))

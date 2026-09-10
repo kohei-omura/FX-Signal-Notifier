@@ -277,6 +277,20 @@ def main():
             if v:
                 print(f"      値幅{bn:20} n={v['n']:4} 勝率{v['winrate']:3}% "
                       f"期待R{v['avg_r']:+.3f} [{v['ci_lo']:+.3f}〜{v['ci_hi']:+.3f}]")
+        fast = r.get("fast") or {}
+        if fast:
+            print(f"      ── 初動（建てて{fast['bars']}本={fast['bars']*fast['bar_min']}分の"
+                  f"あいだに含み益が{fast['need_r']}Rへ届いた割合）")
+            for kind in ("aligned", "adx", "stretch", "rsi"):
+                per = fast.get(kind)
+                if not per:
+                    continue
+                for band in sorted(per, key=lambda b: -per[b]["fast_rate"]):
+                    b = per[band]; adv = b.get("advice") or {}
+                    print(f"        {kind:8}{band:22} n={b['n']:5} "
+                          f"速攻{b['fast_rate']:3}% 平均初動{b['mfe']:+.2f}R "
+                          f"最終R{adv.get('avg_r', 0):+.3f} "
+                          f"[{adv.get('ci_lo', 0):+.3f}〜{adv.get('ci_hi', 0):+.3f}]")
         for row in r.get("sweep") or []:
             v = row.get("advice") or {}
             if v:
