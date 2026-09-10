@@ -1661,6 +1661,98 @@ class EntryTimeTouchTest(RunTestCase):
         self.assertEqual(kept, [], "建てる前の安値を今も使っている")
 
 
+class AdviceInputAuditTest(RunTestCase):
+    """保有判定に入る値の点検。
+
+    これまで「判定の対象範囲」で2件の誤報を出している。
+      9/08 売り建てのTP/SLをBIDの高安で見ていた（スプレッドのぶんズレ）
+      9/10 建てる前の値動きを接触判定に使っていた
+    どちらも勝っている建玉に決済を促す向きの誤りだった。
+    同じ種類が戻ってこないよう、成立すべき条件を固定する。
+    """
+
+    NEED = None
+
+    def _setup_bars(self, mode, bars):
+        F.MODE = mode; F.P = F.PARAMS[mode]
+        need = (max(F.P["ema_s"], F.P["macd"][1], F.P["adx"]*2, F.P["atr"])
+                + F.CHART_POINTS + 30)
+        F._OHLC_CACHE.clear()
+        F._OHLC_CACHE[("USD_JPY", F.P["interval"], need)] = bars
+
+    def _adv(self, pos, bid, ask, sc=None):
+        return F.position_advice(
+            pos, {"USD_JPY": {"bid": bid, "ask": ask}},
+            sc or {"atr": 0.05, "score": 0.0, "rsi": 50, "adx": 25}, None)
+
+    # --- 買い建ては BID、売り建ては ASK で決済する ---
+    def test_long_uses_bid_for_both_targets(self):
+        # TP/SLのどちらにも触れない足にする（触れると接触判定が先に効く）
+        self._setup_bars("day", [(157.60, 157.45, 157.55)])
+        pos = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 157.5,
+               "lot": 1000, "tp_pips": 20.0, "sl_pips": 12.5}
+        tp, sl = F._tp_sl_prices(pos)
+        # BIDがTPちょうど、ASKはその上 → 到達（買いはBIDで決済するので正しい）
+        self.assertEqual(self._adv(pos, tp, tp + 0.005)["level"], "take")
+        # BIDがSLちょうど → 損切り
+        self.assertEqual(self._adv(pos, sl, sl + 0.005)["level"], "cut")
+
+    def test_short_uses_ask_for_both_targets(self):
+        self._setup_bars("day", [(157.60, 157.35, 157.50)])
+        pos = {"id": "x", "symbol": "USD_JPY", "side": "short", "entry": 157.5,
+               "lot": 1000, "tp_pips": 20.0, "sl_pips": 12.5}
+        tp, sl = F._tp_sl_prices(pos)
+        # ASKがTPに届いていなければ到達にしない（BIDだけ届いていてもダメ）
+        a = self._adv(pos, tp - 0.005, tp + 0.001)
+        self.assertNotEqual(a["level"], "take", "ASKが届いていないのに利確扱い")
+        self.assertEqual(self._adv(pos, tp - 0.005, tp)["level"], "take")
+        # 損切りはASKが上抜けたら成立
+        self.assertEqual(self._adv(pos, sl - 0.005, sl)["level"], "cut")
+
+    # --- 建てる前の値動きを使わない ---
+    def test_no_touch_from_bars_before_entry(self):
+        """足の安値がSLを割っていても、建てる前の足なら反応しないこと。"""
+        self._setup_bars("day", [(158.5, 157.0, 158.2)])   # 安値157.0
+        opened = int(F.datetime.datetime.now(F.JST).timestamp() * 1000)
+        pos = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 158.2,
+               "lot": 1000, "tp_pips": 20.0, "sl_pips": 12.5,
+               "opened_at": F.datetime.datetime.fromtimestamp(
+                   opened / 1000, F.JST).strftime("%Y-%m-%d %H:%M")}
+        _, sl = F._tp_sl_prices(pos)
+        self.assertLess(157.0, sl, "前提: 足の安値はSLを割っている")
+        a = self._adv(pos, 158.2, 158.205)
+        self.assertNotEqual(a["level"], "cut",
+                            "建てる前の安値で損切り推奨を出している")
+
+    # --- 接触で拾った時は決済ではなく確認を促す ---
+    def test_touch_asks_to_verify(self):
+        self._setup_bars("day", [(158.5, 157.0, 158.2)])
+        pos = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 158.2,
+               "lot": 1000, "tp_pips": 20.0, "sl_pips": 12.5}   # 時刻なし＝絞り込まない
+        a = self._adv(pos, 158.2, 158.205)
+        self.assertEqual(a["level"], "cut")
+        self.assertTrue(a["touched"])
+        self.assertIn("確認", a["reason"])
+
+    # --- MFEは建値より手前に行かない ---
+    def test_mfe_never_precedes_entry(self):
+        self._setup_bars("day", [(157.60, 157.45, 157.55)])
+        pos = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 157.5,
+               "lot": 1000, "tp_pips": 20.0, "sl_pips": 12.5}
+        a = self._adv(pos, 157.40, 157.405)      # 含み損
+        self.assertGreaterEqual(a["mfe"], 157.5, "最高益が建値を下回っている")
+        pos["side"] = "short"
+        a = self._adv(pos, 157.60, 157.605)
+        self.assertLessEqual(a["mfe"], 157.5)
+
+    # --- 建玉は必ず自分のモードで評価される ---
+    def test_position_is_measured_in_its_own_mode(self):
+        for gm in ("day", "mtf", "swing"):
+            F.MODE = gm; F.P = F.PARAMS[gm]
+            self.assertEqual(F.pos_mode({"mode": "day"}), "day",
+                             f"運用が{gm}の時に建玉のモードが無視された")
+
+
 class EntryRuleParityTest(unittest.TestCase):
     """画面(index.html)の entrySide() と fx_signal.py の entry_side() が同じ答えを返すこと。
 
