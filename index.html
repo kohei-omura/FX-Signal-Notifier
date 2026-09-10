@@ -1120,6 +1120,18 @@ function holdBasis(p,ps){
   return 'スコア'+(sc>=0?'+':'')+sc.toFixed(2);
 }
 function posAdvice(p){
+  /* 画面のモードと建玉のモードが違うとき、pairSig() が返すのは【別の足】の指標。
+     例: 15分足で建てたものを、画面がスイングなら1時間足のATRで測ることになり、
+     profit_atr が約1/4になってトレール利確が発火しなくなる。RSI・ADX・スコアも
+     別の足のものになるので「弱化」「過熱」の判定も狂う。
+     サーバーは建玉のモードで評価している（use_mode）ので、その判定をそのまま出す。 */
+  const pm=(p.mode||p.entry_mode||(S&&S.mode)||'scalp');
+  if(pm!==((S&&S.mode)||pm)){
+    if(!p.adv_label)return null;          // 判定できないなら出さない（誤った表示より無表示）
+    return {level:p.adv_level||'watch',label:p.adv_label,reason:p.adv_reason||'',
+      cls:(p.adv_level==='cut'?'down':((p.adv_level==='take'||p.adv_level==='hold')?'up':'')),
+      src:'server'};
+  }
   const ps=pairSig(p.symbol); if(!ps||p.current==null)return null;
   const dir=p.side==='long'?1:-1, a=ps.atr||0, score=(ps.score!=null?ps.score:0), rsi=(ps.rsi!=null?ps.rsi:50), adx=(ps.adx!=null?ps.adx:0);
   const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=holdAligned(p,ps,dir), basis=holdBasis(p,ps);
@@ -1678,7 +1690,8 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
       <button class="qabtn" data-oco="${escHtml(_ocoTxt)}" onclick="copyTxt(this.dataset.oco)">📋 OCO価格をコピー</button></div>`;
   }
   const adv=posAdvice(p);
-  const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}</div></div>`:'';
+  const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}${
+    adv.src==='server'?`<br><span style="opacity:.7">※${MODE_LABEL[p.mode]||p.mode}の建玉です。画面は別のスタイルを表示中なので、サーバーの判定（約5分ごと）を出しています</span>`:''}</div></div>`:'';
   // 機能7: タイムストップ注意（想定保有中央値の2倍超で膠着警告・表示のみ）
   var _st7=STATS[((p.mode||S.mode)||'scalp')+p.symbol],_tsBox='';
   if(_st7&&_st7.tpMin){var _om=parseInt(String(p.id).replace(/^p/,''),10);
