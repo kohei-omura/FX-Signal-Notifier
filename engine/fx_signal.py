@@ -1518,21 +1518,68 @@ def fwd_touch_levels(side, tp, sl, spread):
     return tp - spread, sl - spread
 
 
-def fwd_bars_since(sym, mode, ts_ms, now_ms):
-    """記録した時刻より後に始まった足を (足の分数, [(時刻, (高,安,終))]) で返す。
+def fwd_window(sym, mode, ts_ms, now_ms):
+    """記録の判定に使う足の窓を返す: (足の分数, times, oh, i0, days)。
 
-       get_ohlc は直近ぶんしか持たないので、古い記録は日付を遡って取り直す。
-       klines_day のキャッシュを通るので、同じ日を二度は取りに行かない。"""
+       i0 は「記録した時刻を含む足」のindex。決着はこれより後の足だけで見る。
+       指標の助走ぶんも手前に含めて返すので、決済ポリシーの再現にも使える。
+       get_ohlc は直近ぶんしか持たないため、古い記録は日付を遡って取り直す
+       （klines_day のキャッシュを通るので同じ日は二度取らない）。"""
     with use_mode(mode):
         bar_min = BARMIN.get(P["interval"], 1)
+        warm = max(P["ema_s"], P["macd"][1], P["adx"]*2, P["atr"]) + 60
     span_min = max(1, (now_ms - ts_ms) // 60000)
-    days = int(span_min // 1440) + 2
-    cap = int(span_min // max(1, bar_min)) + 300
-    times, bars = get_ohlc_hist_timed(sym, days, cap)
+    days = int(span_min // 1440) + 3
+    cap = int(span_min // max(1, bar_min)) + warm + 200
+    times, oh = get_ohlc_hist_timed(sym, days, cap)
     bar_ms = max(1, bar_min) * 60000
     cur_start = (now_ms // bar_ms) * bar_ms        # 形成中の足は使わない
-    rows = [(t, b) for t, b in zip(times, bars) if ts_ms <= t < cur_start]
-    return bar_min, rows
+    cut = [k for k, t in enumerate(times) if t < cur_start]
+    if not cut:
+        return bar_min, [], [], None, days
+    end = cut[-1] + 1
+    times, oh = times[:end], oh[:end]
+    i0 = None
+    for k, t in enumerate(times):
+        if t <= ts_ms:
+            i0 = k
+        else:
+            break
+    return bar_min, times, oh, i0, days
+
+
+def fwd_policy_r(sym, mode, times, oh, i0, side, entry, tp, sl, sl_pips, days, cost):
+    """同じシグナルを別の決済ポリシーで回した時のRを返す。
+
+       前向き検証の本体は設計どおりの TP/SL 到達を測っているが、実際には
+       利確推奨を見て降りている。バックテストの実測では mtf で
+       tp_sl +0.034R に対し advice +0.069R と、出口の違いが期待値の半分を占める。
+       つまり TP/SL だけを測ると『運用していない戦略』の成績になる。
+       ここはバックテスト(_simulate_exit_policies)と同じ関数・同じコスト流儀
+       （往復スプレッドをRから引く）で出し、backtest.json の数字と直接比べられる
+       ようにしておく。本体のRは実約定ベースなので流儀が違う点に注意。"""
+    if i0 is None or i0 < 30 or not oh:
+        return None
+    closes = [r[2] for r in oh]
+    with use_mode(mode):
+        need = max(P["ema_s"], P["macd"][1], P["adx"]*2) + 5
+        if i0 < need:
+            return None
+        _atr = atr_series(oh, P["atr"])
+        aligned_s = (htf_aligned_series(sym, times, days)
+                     if P.get("rule") == "mtf_pullback" or MTF_MODE != "off" else None)
+        sim = _simulate_exit_policies(
+            sym, oh, closes, i0, "買い" if side == "long" else "売り",
+            entry, tp, sl, sl_pips,
+            ema_series(closes, P["ema_f"]), ema_series(closes, P["ema_s"]),
+            rsi_series(closes, P["rsi"]), macd_hist_series(closes, *P["macd"]),
+            bb_series(closes, P["bb"][0], P["bb"][1]), _atr,
+            adx_series(oh, P["adx"]), P["th"], aligned_s=aligned_s)
+    out = {}
+    for name in ("tp_sl", "advice", "advice_watch"):
+        if name in sim:
+            out[name] = round(sim[name] - cost, 4)
+    return out or None
 
 
 def resolve_forward_record(rec, now_ms=None):
@@ -1550,7 +1597,8 @@ def resolve_forward_record(rec, now_ms=None):
     mode = rec.get("mode") if rec.get("mode") in PARAMS else MODE
     if now_ms is None:
         now_ms = int(datetime.datetime.now(JST).timestamp() * 1000)
-    bar_min, rows = fwd_bars_since(sym, mode, int(ts), now_ms)
+    bar_min, times, oh, i0, days = fwd_window(sym, mode, int(ts), now_ms)
+    rows = list(zip(times[i0+1:], oh[i0+1:])) if i0 is not None else []
     if not rows:
         return None
     # 記録時に実測したスプレッドがあればそれを使う（既定値より実態に近い）。
@@ -1566,13 +1614,24 @@ def resolve_forward_record(rec, now_ms=None):
     tp_l, sl_l = fwd_touch_levels(side, tp, sl, spread)
     maxb = FWD_MAX_BARS.get(mode, 192)
     d = 1 if side == "long" else -1
+    sl_pips = risk / PIP_SIZE
 
     def close(result, exit_px, j, t):
-        return {"result": result, "R": round((exit_px - fill) * d / risk, 4),
-                "bars": j + 1, "held_min": (j + 1) * bar_min,
-                "fill": round(fill, 3), "exit": round(exit_px, 3),
-                "closed": int(t) + bar_min * 60000, "src": "server",
-                "mode": mode, "sym": sym, "side": side}
+        out = {"result": result, "R": round((exit_px - fill) * d / risk, 4),
+               "bars": j + 1, "held_min": (j + 1) * bar_min,
+               "fill": round(fill, 3), "exit": round(exit_px, 3),
+               "closed": int(t) + bar_min * 60000, "src": "server",
+               "mode": mode, "sym": sym, "side": side}
+        # 実運用の出口（利確推奨）でのRも併記する。落ちても本体の判定は止めない。
+        try:
+            pol = fwd_policy_r(sym, mode, times, oh, i0, side, entry, tp, sl,
+                               sl_pips, days, spread / risk)
+            if pol:
+                out["policies"] = pol
+        except Exception as e:
+            warn(f"前向き検証の決済ポリシー再現に失敗 {sym}: {e}",
+                 tag="fwd-policy", surface=False)
+        return out
 
     for j, (t, (hi, lo, c)) in enumerate(rows):
         if side == "long":

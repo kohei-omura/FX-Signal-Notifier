@@ -1101,7 +1101,7 @@ function fwdApplyCloses(map){
     // 旧ブラウザ判定で閉じた記録も、サーバの判定で上書きする（過去ぶんも直る）。
     if(e.src==='server'&&e.result===r.result&&e.R===r.R) continue;
     e.open=false;e.result=r.result;e.R=r.R;e.closed=r.closed||Date.now();
-    e.bars=r.bars;e.heldMin=r.held_min;e.fill=r.fill;e.exit=r.exit;e.src='server';ch++;
+    e.bars=r.bars;e.heldMin=r.held_min;e.fill=r.fill;e.exit=r.exit;e.policies=r.policies||null;e.src='server';ch++;
   }
   if(ch){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(f.slice(-300)));}catch(e){}}
   return ch;
@@ -1119,10 +1119,13 @@ async function fwdCloseLoad(){
 /* 学習補正が本当に効いているかの検証：記録時に補正ONだったものと、OFFだったものを別集計する。
    補正なしの方が成績が良ければ、補正は使わない方がよい、と後から判断できる。 */
 function _fwdEdgeSplit(closed){
-  if(!closed||!closed.length) return '—';
+  if(!closed||!closed.length) return null;
   var g={on:{n:0,w:0,R:0},off:{n:0,w:0,R:0}};
   closed.forEach(function(x){var k=x.edgeOn?'on':'off';g[k].n++;if(x.R>0)g[k].w++;g[k].R+=x.R;});
-  var fmt=function(lab,d){ return d.n?(lab+' '+Math.round(d.w/d.n*100)+'%('+d.n+'件・累積R'+(d.R>=0?'+':'')+Math.round(d.R*10)/10+')'):(lab+' —'); };
+  // 片側が空のうちは比較になっていない。「補正あり100%」だけが目に入って
+  // 補正が効いているように見えるので、両方揃うまで出さない。
+  if(!g.on.n||!g.off.n) return null;
+  var fmt=function(lab,d){ return lab+' '+Math.round(d.w/d.n*100)+'%('+d.n+'件・累積R'+(d.R>=0?'+':'')+Math.round(d.R*10)/10+')'; };
   return fmt('補正あり',g.on)+' ／ '+fmt('補正なし',g.off);
 }
 function fwdStats(){var f=loadFwd(),closed=f.filter(function(x){return !x.open&&x.R!=null;});
@@ -1132,20 +1135,61 @@ function fwdStats(){var f=loadFwd(),closed=f.filter(function(x){return !x.open&&
   var timed=closed.filter(function(x){return x.result==='time';}).length;
   var srv=closed.filter(function(x){return x.src==='server';}).length;
   return{n:n,wins:wins,wr:n?Math.round(wins/n*100):0,cum:Math.round(cum*100)/100,
-    curve:curve,closed:closed,open:open,timed:timed,srv:srv};}
+    curve:curve,closed:closed,open:open,timed:timed,srv:srv,pol:_fwdPolicies(closed)};}
+/* 実際に運用している出口（利確推奨＝advice）でのRも並べる。
+   本体のRは設計どおりのTP/SL到達を測っているが、実運用は利確推奨で降りている。
+   バックテスト実測では mtf で tp_sl +0.034R に対し advice +0.069R と、
+   出口の違いが期待値の半分を占める。ここが無いと運用していない戦略を測ることになる。
+   数字はバックテストと同じ流儀（往復スプレッドをRから控除）なので backtest.json と直接比べられる。 */
+var FWD_POLICY_LABEL={tp_sl:'TP/SL到達',advice:'利確推奨',advice_watch:'利確推奨(様子見込み)'};
+function _fwdPolicies(closed){
+  var acc={};
+  (closed||[]).forEach(function(x){var p=x.policies;if(!p)return;
+    for(var k in p){if(p[k]==null)continue;acc[k]=acc[k]||[];acc[k].push(p[k]);}});
+  var out=[];
+  ['tp_sl','advice','advice_watch'].forEach(function(k){var a=acc[k];if(!a||!a.length)return;
+    var m=a.reduce(function(s,v){return s+v;},0)/a.length;
+    out.push((FWD_POLICY_LABEL[k]||k)+' '+(m>=0?'+':'')+(Math.round(m*1000)/1000)+'R('+a.length+'件)');});
+  return out.length?out.join(' ／ '):null;
+}
+/* ===== 相関の補正：同時に持った同方向の記録を1つの賭けとして数える =====
+   4通貨すべてが対円なので、円が動けば同方向の記録は一斉に同じ結果になる。
+   実際 9/8 は3件が同じ時間帯に建って8分以内に一斉決済、9/10 も2件同時で、
+   「件数5」の中身は独立2回だった。これを件数のまま Wilson に入れると、
+   統計的にまるで足りていない段階で「✅ エッジ実証」と表示してしまう。
+   同方向で保有期間が重なるものをまとめ、まとまりのRは平均、
+   R>0でそのまとまりの勝ちとする。 */
+function fwdClusters(closed){
+  var rows=(closed||[]).slice().sort(function(a,b){return (a.ts||0)-(b.ts||0);}),cl=[];
+  rows.forEach(function(x){
+    var s=x.ts,e=(x.closed!=null?x.closed:x.ts);
+    for(var i=0;i<cl.length;i++){var c=cl[i];
+      // 期間を広げながら繋いでいくので、A-B-C と数珠つなぎでも1つにまとまる
+      if(c.side===x.side&&s<=c.end&&e>=c.start){
+        c.start=Math.min(c.start,s);c.end=Math.max(c.end,e);c.rows.push(x);return;}}
+    cl.push({side:x.side,start:s,end:e,rows:[x]});
+  });
+  return cl.map(function(c){
+    var R=c.rows.reduce(function(a,x){return a+x.R;},0)/c.rows.length;
+    return{side:c.side,start:c.start,end:c.end,n:c.rows.length,R:R,win:R>0};});
+}
 /* 損益分岐勝率は「実際の平均勝ちR / 平均負けR」から出す。
    以前は設計上の比率 b(=TP/SL) をそのまま使っていたが、
    ・買いは ask 約定なので勝ちRは b より小さく、負けRは 1 より大きい
    ・時間切れ決済は端数のRになる
    ので、b を使うと分岐点を低く見積もり「実証」と出やすくなる。 */
-function fwdEdge(){var s=fwdStats();if(s.n<30)return{status:'testing',n:s.n};
-  var w=s.closed.filter(function(x){return x.R>0;}),l=s.closed.filter(function(x){return x.R<=0;});
-  var aw=w.length?w.reduce(function(a,x){return a+x.R;},0)/w.length:null;
-  var al=l.length?l.reduce(function(a,x){return a+Math.abs(x.R);},0)/l.length:null;
+// 実証の判定は「件数」ではなく「独立イベント数」で行う（同時・同方向は1回と数える）
+function fwdEdge(){var s=fwdStats(),cl=fwdClusters(s.closed);
+  var ni=cl.length,wi=cl.filter(function(c){return c.win;}).length;
+  if(ni<30)return{status:'testing',n:s.n,ni:ni,wi:wi};
+  var w=cl.filter(function(c){return c.R>0;}),l=cl.filter(function(c){return c.R<=0;});
+  var aw=w.length?w.reduce(function(a,c){return a+c.R;},0)/w.length:null;
+  var al=l.length?l.reduce(function(a,c){return a+Math.abs(c.R);},0)/l.length:null;
   var be=(aw!=null&&al!=null&&(aw+al)>0)?al/(aw+al)
-        :1/(1+(s.closed.reduce(function(a,x){return a+(x.b||1.5);},0)/s.closed.length));
-  var wl=wilsonLower(s.wins,s.n,1.96);
-  return{status:(wl>be?'proven':'testing'),n:s.n,wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10};}
+        :1/(1+(s.closed.reduce(function(a,x){return a+(x.b||1.5);},0)/Math.max(1,s.closed.length)));
+  var wl=wilsonLower(wi,ni,1.96);
+  return{status:(wl>be?'proven':'testing'),n:s.n,ni:ni,wi:wi,
+    wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10};}
 // 機能5: 体感速度改善（stale-while-revalidate）。klines等の既存通信最適化は不変
 function saveCache(){try{localStorage.setItem('fxnavi_cache_v1',JSON.stringify({S:S,POS:POS,ts:Date.now()}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem('fxnavi_cache_v1')||'null');}catch(e){return null;}}
@@ -2470,19 +2514,24 @@ function renderFwdPanel(){
   var histEl=document.getElementById('history');if(!histEl)return;
   var fp=document.getElementById('fwdpanel');
   if(!fp){fp=document.createElement('div');fp.id='fwdpanel';fp.style.cssText='margin-top:16px';if(histEl.parentNode)histEl.parentNode.insertBefore(fp,histEl.nextSibling);}
-  var s=fwdStats(),edge=fwdEdge(),spark='';
+  var s=fwdStats(),edge=fwdEdge(),cl=fwdClusters(s.closed),spark='';
   if(s.curve.length>1){var mn=Math.min.apply(null,s.curve),mx=Math.max.apply(null,s.curve),rng=(mx-mn)||1,W=280,H=44;
     var pts=s.curve.map(function(v,i){return (i/(s.curve.length-1)*W).toFixed(1)+','+(H-(v-mn)/rng*H).toFixed(1);}).join(' ');
     spark='<svg width="'+W+'" height="'+H+'" style="display:block;margin:6px 0"><polyline points="'+pts+'" fill="none" stroke="var(--gold)" stroke-width="1.5"/></svg>';}
-  var em=edge.status==='proven'?'<b class="up">✅ エッジ実証</b>（Wilson下限 '+edge.wl+'% ＞ 分岐 '+edge.be+'%）':'🔬 検証中（n='+edge.n+'/30）';
+  var em=edge.status==='proven'?'<b class="up">✅ エッジ実証</b>（独立'+edge.ni+'回・Wilson下限 '+edge.wl+'% ＞ 分岐 '+edge.be+'%）'
+        :'🔬 検証中（独立イベント '+(edge.ni||0)+'/30回）';
   var byMode={};s.closed.forEach(function(x){var k=x.mode||'?';byMode[k]=byMode[k]||{n:0,w:0};byMode[k].n++;if(x.R>0)byMode[k].w++;});
   var mb=Object.keys(byMode).map(function(k){var d=byMode[k];return (MODE_LABEL[k]||k)+' '+(d.n?Math.round(d.w/d.n*100):0)+'%('+d.n+')';}).join(' ／ ')||'—';
   fp.innerHTML='<h2>📈 前向き検証（実弾不要のエッジ実証）</h2>'
     +'<div style="padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'
-    +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 件数 <b>'+s.n+'</b></div>'+spark
+    +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 件数 <b>'+s.n+'</b>'
+      +'<span style="color:var(--mut)"> ／ 独立イベント <b>'+cl.length+'</b>回</span></div>'
+    +(s.n>cl.length?'<div style="font-size:11px;color:var(--mut);margin-top:3px">※同じ時間帯に同じ方向で持った記録は、円が動けば一斉に同じ結果になるため1回として数えています</div>':'')
+    +spark
     +'<div style="font-size:12px;color:var(--mut)">'+em+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">モード別：'+mb+'</div>'
-    +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">学習補正別：'+_fwdEdgeSplit(s.closed)+'</div>'
+    +(_fwdEdgeSplit(s.closed)?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">学習補正別：'+_fwdEdgeSplit(s.closed)+'</div>':'')
+    +(s.pol?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">出口別の平均R：'+s.pol+'</div>':'')
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">未決着 '+s.open+'件'
       +(s.timed?' ／ 時間切れ決済 '+s.timed+'件':'')
       +' ／ サーバ判定済 '+s.srv+'/'+s.n+'件'+(s.srv<s.n?'（残りは旧ブラウザ判定。次のサーバ実行で上書きされます）':'')+'</div>'

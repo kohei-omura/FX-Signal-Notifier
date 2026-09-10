@@ -1720,7 +1720,12 @@ class AdviceInputAuditTest(RunTestCase):
     def test_no_touch_from_bars_before_entry(self):
         """足の安値がSLを割っていても、建てる前の足なら反応しないこと。"""
         self._setup_bars("day", [(158.5, 157.0, 158.2)])   # 安値157.0
-        opened = int(F.datetime.datetime.now(F.JST).timestamp() * 1000)
+        # 「いま」をそのまま使うと、実行時刻が15分足のちょうど頭（:00/:15/:30/:45）に
+        # 当たった1分間だけ、足の開始＝建玉時刻になって足が残り、テストが落ちていた。
+        # 建てたのは足が始まった1分後、と固定する（足は必ず建玉より前に始まっている）。
+        bar_ms = 15 * 60000
+        now_ms = int(F.datetime.datetime.now(F.JST).timestamp() * 1000)
+        opened = (now_ms // bar_ms) * bar_ms + 60000
         pos = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 158.2,
                "lot": 1000, "tp_pips": 20.0, "sl_pips": 12.5,
                "opened_at": F.datetime.datetime.fromtimestamp(
@@ -1840,12 +1845,17 @@ class ForwardResolveTest(RunTestCase):
         self.addCleanup(setattr, F, "get_ohlc_hist_timed",
                         F.__dict__["get_ohlc_hist_timed"])
 
-    def _bars(self, rows):
-        """rows=[(high,low,close)] を T0 の次の足から並べ、取得関数を差し替える。"""
+    def _bars(self, rows, pre=1):
+        """rows=[(high,low,close)] を T0 の次の足から並べ、取得関数を差し替える。
+
+           手前に pre 本ぶんの足を置く。建てた時刻を含む足が無いと
+           「どこから後ろを見るか」が決まらないため（実データでは必ずある）。"""
         bar_ms = self.BAR * self.MS
         first = ((self.T0 // bar_ms) + 1) * bar_ms
-        times = [first + i * bar_ms for i in range(len(rows))]
-        F.get_ohlc_hist_timed = lambda sym, days, cap: (times, list(rows))
+        times = ([first - (pre - k) * bar_ms for k in range(pre)]
+                 + [first + i * bar_ms for i in range(len(rows))])
+        oh = [(150.0, 150.0, 150.0)] * pre + list(rows)   # 手前の足は判定に使わない
+        F.get_ohlc_hist_timed = lambda sym, days, cap: (times, list(oh))
         return times[-1] + 2 * bar_ms            # この時刻を now にすれば全部確定済み
 
     # ---- 売り: 決済は ask ----
@@ -1928,7 +1938,8 @@ class ForwardResolveTest(RunTestCase):
         r = self._rec("long")
         bar_ms = self.BAR * self.MS
         first = ((self.T0 // bar_ms) + 1) * bar_ms
-        F.get_ohlc_hist_timed = lambda s, d, c: ([first], [(r["tp"] + 0.1, 150.0, 150.2)])
+        F.get_ohlc_hist_timed = lambda s, d, c: (
+            [first - bar_ms, first], [(150.0, 150.0, 150.0), (r["tp"] + 0.1, 150.0, 150.2)])
         self.assertIsNone(F.resolve_forward_record(r, first + 5 * self.MS),
                           "形成中の足で決着させている")
 
@@ -1961,6 +1972,52 @@ class ForwardResolveTest(RunTestCase):
         self.assertEqual(set(F.FWD_MAX_BARS), set(F.PARAMS))
 
     # ---- ファイルの受け渡し ----
+    # ---- 実運用の出口（利確推奨）でのR ----
+    def test_advice_policy_is_recorded_alongside(self):
+        """TP/SL到達だけでなく、利確推奨で降りた場合のRも残すこと。
+
+        実運用は利確推奨で決済している。バックテスト実測では mtf で
+        tp_sl +0.034R に対し advice +0.069R と出口の違いが期待値の半分を
+        占めるので、TP/SLだけだと運用していない戦略の成績になる。"""
+        self.addCleanup(setattr, F, "htf_aligned_series",
+                        F.__dict__["htf_aligned_series"])
+        F.htf_aligned_series = lambda sym, times, days: [0] * len(times)
+        r = self._rec("long")
+        # 指標の助走ぶんを手前に置き、その後じわじわ上げてTPに届かせる
+        warm = [(150.0 + i * 0.001, 149.99 + i * 0.001, 150.0 + i * 0.001)
+                for i in range(150)]
+        after = [(150.15 + i * 0.02, 150.10 + i * 0.02, 150.14 + i * 0.02)
+                 for i in range(12)]
+        bar_ms = self.BAR * self.MS
+        first = ((self.T0 // bar_ms) + 1) * bar_ms
+        times = ([first - (len(warm) - k) * bar_ms for k in range(len(warm))]
+                 + [first + i * bar_ms for i in range(len(after))])
+        F.get_ohlc_hist_timed = lambda sym, days, cap: (times, warm + after)
+        got = F.resolve_forward_record(r, times[-1] + 2 * bar_ms)
+        self.assertIsNotNone(got)
+        self.assertIn("policies", got, "決済ポリシー別のRが残っていない")
+        self.assertIn("advice", got["policies"])
+        for v in got["policies"].values():
+            self.assertIsInstance(v, float)
+
+    def test_policy_failure_does_not_block_the_verdict(self):
+        """ポリシー再現が落ちても、本体の決着判定は止めないこと。"""
+        self.addCleanup(setattr, F, "fwd_policy_r", F.__dict__["fwd_policy_r"])
+        def boom(*a, **k):
+            raise RuntimeError("わざと")
+        F.fwd_policy_r = boom
+        r = self._rec("long")
+        now = self._bars([(r["tp"], 150.0, 150.1)])
+        got = F.resolve_forward_record(r, now)
+        self.assertEqual(got["result"], "tp")
+        self.assertNotIn("policies", got)
+
+    def test_no_policy_without_enough_warmup(self):
+        """指標の助走が足りない記録では、無理に数字を作らないこと。"""
+        r = self._rec("long")
+        now = self._bars([(r["tp"], 150.0, 150.1)])
+        self.assertNotIn("policies", F.resolve_forward_record(r, now))
+
     def test_key_matches_the_dashboard(self):
         """Python の fwd_key() と画面の fwdCloseKey() が同じ形であること。
 
@@ -2060,6 +2117,91 @@ class ForwardResolveTest(RunTestCase):
         now = self._bars([(111.259, 110.912, 111.200)] * 6)   # 実測の高値・安値
         self.assertIsNone(F.resolve_forward_record(r, now),
                           "足が届いていない水準で勝ちにしている")
+
+
+class ForwardClusterTest(unittest.TestCase):
+    """相関の補正：同時・同方向の記録を1つの賭けとして数えること。
+
+    4通貨すべてが対円なので、円が動けば同方向の記録は一斉に同じ結果になる。
+    実際の最初の5件は 9/8 に3件・9/10 に2件が同時進行で、独立した検証は2回
+    しかなかった。件数のまま Wilson に入れると、足りていない段階で
+    「エッジ実証」と表示してしまう。
+    """
+
+    # 実際の記録（サーバ判定後の ts / closed）。すべて買い。
+    REAL = [
+        {"sym": "GBP_JPY", "side": "long", "ts": 1788853090277,
+         "closed": 1788866100000, "R": 1.5738, "open": False},
+        {"sym": "AUD_JPY", "side": "long", "ts": 1788853090279,
+         "closed": 1788866100000, "R": 1.5706, "open": False},
+        {"sym": "USD_JPY", "side": "long", "ts": 1788856209992,
+         "closed": 1788866100000, "R": 1.5913, "open": False},
+        {"sym": "USD_JPY", "side": "long", "ts": 1789040076197,
+         "closed": 1789043400000, "R": 1.5886, "open": False},
+        {"sym": "EUR_JPY", "side": "long", "ts": 1789040977638,
+         "closed": 1789043400000, "R": 1.5753, "open": False},
+    ]
+
+    def _run(self, rows):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function fwdClusters(")
+        end = src.index("\n}", i) + 2
+        script = src[i:end] + (
+            "\nconsole.log(JSON.stringify(fwdClusters(" + json.dumps(rows) + ")));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_the_real_five_records_are_two_independent_events(self):
+        got = self._run(self.REAL)
+        self.assertEqual(len(got), 2, f"独立イベント数が違う: {got}")
+        self.assertEqual(sorted(c["n"] for c in got), [2, 3])
+        self.assertTrue(all(c["win"] for c in got))
+
+    def test_opposite_sides_are_not_merged(self):
+        """同じ時間帯でも方向が逆なら別の賭け。"""
+        rows = [dict(self.REAL[0]), dict(self.REAL[1])]
+        rows[1]["side"] = "short"
+        self.assertEqual(len(self._run(rows)), 2)
+
+    def test_non_overlapping_records_stay_separate(self):
+        a = {"sym": "USD_JPY", "side": "long", "ts": 1000, "closed": 2000, "R": 1.6}
+        b = {"sym": "USD_JPY", "side": "long", "ts": 3000, "closed": 4000, "R": -1.0}
+        self.assertEqual(len(self._run([a, b])), 2)
+
+    def test_a_chain_of_overlaps_becomes_one_event(self):
+        """A-B-C と数珠つなぎに重なる場合も1つにまとめること。
+
+        AとCは直接は重なっていないが、Bを介して同じ相場を見ている。"""
+        rows = [
+            {"sym": "USD_JPY", "side": "long", "ts": 1000, "closed": 2000, "R": 1.6},
+            {"sym": "EUR_JPY", "side": "long", "ts": 1900, "closed": 3000, "R": 1.6},
+            {"sym": "GBP_JPY", "side": "long", "ts": 2900, "closed": 4000, "R": -1.0},
+        ]
+        got = self._run(rows)
+        self.assertEqual(len(got), 1, f"数珠つなぎがまとまっていない: {got}")
+        self.assertEqual(got[0]["n"], 3)
+        # まとまりのRは平均。2勝1敗なら (1.6+1.6-1.0)/3 = +0.733 で勝ち扱い
+        self.assertAlmostEqual(got[0]["R"], (1.6 + 1.6 - 1.0) / 3, places=4)
+        self.assertTrue(got[0]["win"])
+
+    def test_a_cluster_that_nets_negative_is_a_loss(self):
+        rows = [
+            {"sym": "USD_JPY", "side": "long", "ts": 1000, "closed": 2000, "R": 1.6},
+            {"sym": "EUR_JPY", "side": "long", "ts": 1000, "closed": 2000, "R": -1.0},
+            {"sym": "GBP_JPY", "side": "long", "ts": 1000, "closed": 2000, "R": -1.0},
+        ]
+        got = self._run(rows)
+        self.assertEqual(len(got), 1)
+        self.assertFalse(got[0]["win"], "負け越しているまとまりを勝ちにしている")
 
 
 if __name__ == "__main__":
