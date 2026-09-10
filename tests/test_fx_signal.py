@@ -86,6 +86,13 @@ class RunTestCase(unittest.TestCase):
         F.STATUS_FILE = p("status.json"); F.POSITIONS_FILE = p("positions.json")
         F.ENTRY_LOG_FILE = p("entry_log.json"); F.NEWS_FILE = p("news_blackout.json")
         F.MODE_FILE = p("mode.json")
+        # 前向き検証のファイルもテスト用に逃がす。逃がさないと main() の決着判定が
+        # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
+        # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
+        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE"):
+            self.addCleanup(setattr, F, _n, getattr(F, _n))
+        F.FWD_LOG_FILE = p("forward_log.json")
+        F.FWD_CLOSE_FILE = p("forward_close.json")
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
             {"id": "t1", "symbol": "USD_JPY", "side": "long",
@@ -1798,6 +1805,258 @@ class EntryRuleParityTest(unittest.TestCase):
                 want, got,
                 f"rule={rule} aligned={aligned} rsi={rv} score={total}: "
                 f"python={want} / 画面={got}")
+
+
+class ForwardResolveTest(RunTestCase):
+    """前向き検証の決着判定（サーバ側）。
+
+    直したのは4点。どれも「勝ち側に甘く出る」向きの誤りだった。
+      1) 買いの建値を bid で記録していた（実際の約定は ask）
+      2) 売りの TP/SL を bid で見ていた（売りの決済は ask）
+      3) 判定がブラウザ側にあり、開いている間しか見ていなかったので、
+         SLに触れてから戻ってTPに行った場合に「TP勝ち」と記録できた
+      4) 期限が無く、決着しない記録がその銘柄の記録を永久に止めていた
+    """
+
+    MS = 60000
+    BAR = 15                                     # day/mtf は15分足
+
+    def _rec(self, side="long", entry=150.000, tp_pips=16.0, sl_pips=10.0,
+             mode="day", ts=None):
+        d = 1 if side == "long" else -1
+        return {"sym": "USD_JPY", "side": side, "mode": mode,
+                "ts": ts if ts is not None else self.T0,
+                "entry": entry,
+                "tp": round(entry + d * tp_pips * 0.01, 5),
+                "sl": round(entry - d * sl_pips * 0.01, 5),
+                "b": tp_pips / sl_pips, "open": True}
+
+    def setUp(self):
+        super().setUp()
+        self.T0 = int(F.datetime.datetime(2026, 9, 10, 12, 0,
+                                          tzinfo=F.JST).timestamp() * 1000)
+        self.spread = F.SPREAD_PIPS["USD_JPY"] * F.PIP_SIZE      # 0.002
+        # 差し替える前に元を保存する（後で保存すると差し替えた方を戻してしまう）
+        self.addCleanup(setattr, F, "get_ohlc_hist_timed",
+                        F.__dict__["get_ohlc_hist_timed"])
+
+    def _bars(self, rows):
+        """rows=[(high,low,close)] を T0 の次の足から並べ、取得関数を差し替える。"""
+        bar_ms = self.BAR * self.MS
+        first = ((self.T0 // bar_ms) + 1) * bar_ms
+        times = [first + i * bar_ms for i in range(len(rows))]
+        F.get_ohlc_hist_timed = lambda sym, days, cap: (times, list(rows))
+        return times[-1] + 2 * bar_ms            # この時刻を now にすれば全部確定済み
+
+    # ---- 売り: 決済は ask ----
+    def test_short_tp_needs_the_ask_to_reach_it(self):
+        """売りのTPは bid が tp に触れただけでは足りない（決済は ask）。"""
+        r = self._rec("short")
+        tp = r["tp"]
+        now = self._bars([(150.05, tp, 150.02)])          # 安値がちょうど tp
+        self.assertIsNone(F.resolve_forward_record(r, now),
+                          "売りのTPを bid で判定している（ask で決済するので早すぎる）")
+        now = self._bars([(150.05, tp - self.spread, 150.02)])
+        got = F.resolve_forward_record(r, now)
+        self.assertEqual(got["result"], "tp")
+
+    def test_short_sl_fires_when_the_ask_reaches_it(self):
+        """売りのSLは bid が sl に届く前（spread ぶん手前）で当たる。"""
+        r = self._rec("short")
+        sl = r["sl"]
+        now = self._bars([(sl - self.spread, 149.95, 150.02)])
+        got = F.resolve_forward_record(r, now)
+        self.assertIsNotNone(got, "売りのSLを bid で判定している（当たるのが遅すぎる）")
+        self.assertEqual(got["result"], "sl")
+
+    def test_short_r_has_no_entry_cost(self):
+        """売りは bid で約定するので建値は正しい。Rは設計どおり ±b。"""
+        r = self._rec("short")
+        now = self._bars([(150.05, r["tp"] - self.spread, 150.0)])
+        self.assertAlmostEqual(F.resolve_forward_record(r, now)["R"], 1.6, places=3)
+        now = self._bars([(r["sl"] - self.spread, 149.9, 150.0)])
+        self.assertAlmostEqual(F.resolve_forward_record(r, now)["R"], -1.0, places=3)
+
+    # ---- 買い: 建値は ask ----
+    def test_long_pays_the_spread_at_entry(self):
+        """買いの約定は ask。勝ちは b より小さく、負けは 1 より大きくなる。"""
+        r = self._rec("long")
+        cost = self.spread / (r["entry"] - r["sl"])           # = spread / 1R
+        now = self._bars([(r["tp"], 150.0, 150.1)])
+        win = F.resolve_forward_record(r, now)
+        self.assertEqual(win["result"], "tp")
+        self.assertAlmostEqual(win["R"], 1.6 - cost, places=4)
+        self.assertAlmostEqual(win["fill"], round(r["entry"] + self.spread, 3), places=4)
+        now = self._bars([(150.0, r["sl"], 149.95)])
+        lose = F.resolve_forward_record(r, now)
+        self.assertAlmostEqual(lose["R"], -1.0 - cost, places=4)
+
+    def test_long_touch_levels_stay_on_the_bid(self):
+        """買いの決済(売り)は bid で約定するので、水準は動かさない。"""
+        self.assertEqual(F.fwd_touch_levels("long", 1.5, 1.0, 0.002), (1.5, 1.0))
+        self.assertEqual(F.fwd_touch_levels("short", 1.5, 1.0, 0.002), (1.498, 0.998))
+        self.assertAlmostEqual(F.fwd_fill("long", 150.0, 0.002), 150.002)
+        self.assertEqual(F.fwd_fill("short", 150.0, 0.002), 150.0)
+
+    # ---- 順序 ----
+    def test_sl_first_then_tp_is_a_loss(self):
+        """SLに触れてから戻ってTPに行った場合は負け。
+
+        ブラウザ判定はここを「TP勝ち」にできた。開いていない間の値動きを
+        見ておらず、次に見た時の現在値だけで決めていたため。"""
+        r = self._rec("long")
+        now = self._bars([(150.0, r["sl"], 149.95),        # 先にSL
+                          (r["tp"] + 0.1, 150.0, 150.3)])   # 後からTP
+        got = F.resolve_forward_record(r, now)
+        self.assertEqual(got["result"], "sl", "SLが先なのに勝ちにしている")
+        self.assertEqual(got["bars"], 1)
+
+    def test_same_bar_touching_both_counts_as_a_loss(self):
+        """同じ足で両方に触れたら、どちらが先かは分からない。負けに倒す。"""
+        r = self._rec("long")
+        now = self._bars([(r["tp"] + 0.1, r["sl"] - 0.1, 150.0)])
+        self.assertEqual(F.resolve_forward_record(r, now)["result"], "sl")
+
+    def test_stays_open_when_neither_level_is_reached(self):
+        """どちらにも届いていない記録は決着させない。"""
+        r = self._rec("long")
+        now = self._bars([(r["tp"] - 0.02, r["sl"] + 0.02, 150.0)] * 3)
+        self.assertIsNone(F.resolve_forward_record(r, now))
+
+    def test_the_forming_bar_is_not_used(self):
+        """形成中の足の高安は使わない（まだ確定していない）。"""
+        r = self._rec("long")
+        bar_ms = self.BAR * self.MS
+        first = ((self.T0 // bar_ms) + 1) * bar_ms
+        F.get_ohlc_hist_timed = lambda s, d, c: ([first], [(r["tp"] + 0.1, 150.0, 150.2)])
+        self.assertIsNone(F.resolve_forward_record(r, first + 5 * self.MS),
+                          "形成中の足で決着させている")
+
+    # ---- 期限 ----
+    def test_expires_after_the_mode_limit(self):
+        """期限を過ぎたら、その足の終値で手仕舞う。
+
+        期限が無いと、決着しない記録が1件あるだけでその銘柄は二度と
+        記録されなくなる（fwdRecord は銘柄ごとにopenを1件しか持たない）。"""
+        r = self._rec("long")
+        n = F.FWD_MAX_BARS["day"]
+        flat = (r["tp"] - 0.02, r["sl"] + 0.02, 150.05)
+        now = self._bars([flat] * (n + 5))
+        got = F.resolve_forward_record(r, now)
+        self.assertEqual(got["result"], "time")
+        self.assertEqual(got["bars"], n)
+        cost = self.spread / (r["entry"] - r["sl"])
+        self.assertAlmostEqual(got["R"], (150.05 - 150.0) / 0.10 - cost, places=4)
+
+    def test_short_time_exit_buys_at_the_ask(self):
+        r = self._rec("short")
+        n = F.FWD_MAX_BARS["day"]
+        now = self._bars([(r["sl"] - self.spread - 0.02, r["tp"] + 0.02, 149.95)] * (n + 2))
+        got = F.resolve_forward_record(r, now)
+        self.assertEqual(got["result"], "time")
+        # 売りの手仕舞いは ask（= 終値 + spread）で買い戻す
+        self.assertAlmostEqual(got["R"], (150.0 - (149.95 + self.spread)) / 0.10, places=4)
+
+    def test_each_mode_uses_its_own_limit(self):
+        self.assertEqual(set(F.FWD_MAX_BARS), set(F.PARAMS))
+
+    # ---- ファイルの受け渡し ----
+    def test_key_matches_the_dashboard(self):
+        """Python の fwd_key() と画面の fwdCloseKey() が同じ形であること。
+
+        ここがズレると、サーバが判定しても画面が結果を拾えない。"""
+        rec = {"ts": 1789000000000, "sym": "USD_JPY", "side": "long", "entry": 154.115}
+        self.assertEqual(F.fwd_key(rec), "1789000000000|USD_JPY|long")
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function fwdCloseKey(")
+        js = src[i:src.index("\n", i)]
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(js.split("//")[0] + "\nconsole.log(fwdCloseKey("
+                    + json.dumps(rec) + "));\n")
+            path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), F.fwd_key(rec))
+
+    def test_resolve_forward_only_writes_the_close_file(self):
+        """forward_log.json（アプリが書く）には触らないこと。
+
+        同じファイルを両方から書くと、5分ごとのコミットが rebase -X ours で
+        アプリ側を優先し、サーバの判定が毎回捨てられる。"""
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d)
+        log_p = os.path.join(d, "forward_log.json")
+        close_p = os.path.join(d, "forward_close.json")
+        r = self._rec("long")
+        body = {"updated": "x", "entries": [r]}
+        with open(log_p, "w", encoding="utf-8") as f:
+            json.dump(body, f)
+        with open(log_p, encoding="utf-8") as f:
+            before = f.read()
+        self.addCleanup(setattr, F, "FWD_LOG_FILE", F.FWD_LOG_FILE)
+        self.addCleanup(setattr, F, "FWD_CLOSE_FILE", F.FWD_CLOSE_FILE)
+        F.FWD_LOG_FILE, F.FWD_CLOSE_FILE = log_p, close_p
+        self.assertEqual(F.resolve_forward(self._bars([(r["tp"], 150.0, 150.1)])), 1)
+        with open(log_p, encoding="utf-8") as f:
+            self.assertEqual(f.read(), before, "アプリが書くファイルを書き換えている")
+        with open(close_p, encoding="utf-8") as f:
+            got = json.load(f)["closes"]
+        self.assertEqual(list(got), [F.fwd_key(r)])
+        self.assertEqual(got[F.fwd_key(r)]["result"], "tp")
+        # 判定済みは作り直さない（古い足を毎回取りに行かないため）
+        F.get_ohlc_hist_timed = lambda *a: (_ for _ in ()).throw(
+            AssertionError("判定済みの記録を取り直している"))
+        self.assertEqual(F.resolve_forward(), 0)
+
+    def test_close_entries_for_deleted_records_are_dropped(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d)
+        log_p = os.path.join(d, "forward_log.json")
+        close_p = os.path.join(d, "forward_close.json")
+        with open(log_p, "w", encoding="utf-8") as f:
+            json.dump({"entries": [self._rec("long")]}, f)
+        with open(close_p, "w", encoding="utf-8") as f:
+            json.dump({"closes": {"999|EUR_JPY|short": {"result": "tp", "R": 1.6}}}, f)
+        self.addCleanup(setattr, F, "FWD_LOG_FILE", F.FWD_LOG_FILE)
+        self.addCleanup(setattr, F, "FWD_CLOSE_FILE", F.FWD_CLOSE_FILE)
+        F.FWD_LOG_FILE, F.FWD_CLOSE_FILE = log_p, close_p
+        r = self._rec("long")
+        F.resolve_forward(self._bars([(r["tp"], 150.0, 150.1)]))
+        with open(close_p, encoding="utf-8") as f:
+            got = json.load(f)["closes"]
+        self.assertNotIn("999|EUR_JPY|short", got, "消した記録の判定が残っている")
+
+    def test_missing_log_file_is_not_an_error(self):
+        self.addCleanup(setattr, F, "FWD_LOG_FILE", F.FWD_LOG_FILE)
+        F.FWD_LOG_FILE = os.path.join(tempfile.mkdtemp(), "nope.json")
+        self.assertEqual(F.resolve_forward(), 0)
+
+    def test_recorded_spread_is_preferred_over_the_default(self):
+        """記録時に実測したスプレッドがあればそれを使う。桁が変な値は無視する。"""
+        r = self._rec("short"); r["sp"] = 0.010          # 1.0pips（既定は0.2pips）
+        now = self._bars([(150.05, r["tp"] - 0.002, 150.02)])
+        self.assertIsNone(F.resolve_forward_record(r, now),
+                          "記録済みのスプレッドを使っていない")
+        now = self._bars([(150.05, r["tp"] - 0.010, 150.02)])
+        self.assertEqual(F.resolve_forward_record(r, now)["result"], "tp")
+        r["sp"] = 9.9                                    # 明らかに桁がおかしい
+        now = self._bars([(150.05, r["tp"] - self.spread, 150.02)])
+        self.assertEqual(F.resolve_forward_record(r, now)["result"], "tp",
+                         "壊れた値を信用している")
+
+    def test_the_real_aud_record_is_not_closed_on_snapshot_highs(self):
+        """実データの再現: 9/8 の AUD/JPY は5分ごとのbidでは TP に2.0pips届いていない。
+
+        足の高安で見て届いていないものを勝ちにしないこと。"""
+        r = {"sym": "AUD_JPY", "side": "long", "mode": "day", "ts": self.T0,
+             "entry": 110.996, "tp": 111.279, "sl": 110.819, "b": 1.6, "open": True}
+        now = self._bars([(111.259, 110.912, 111.200)] * 6)   # 実測の高値・安値
+        self.assertIsNone(F.resolve_forward_record(r, now),
+                          "足が届いていない水準で勝ちにしている")
 
 
 if __name__ == "__main__":

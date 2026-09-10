@@ -1465,6 +1465,188 @@ def bars_after_entry(rec, bar_min, opened_ms, now_ms=None):
     return keep
 
 
+# ---------------- 前向き検証（forward test）の決着判定 ----------------
+# 記録の作成はアプリ側（🟢OKが出た瞬間の判定が要るため）。
+# 決着（TP/SL到達）の判定だけをここに持ってくる。理由は2つ。
+#   1) アプリは「開いている間」しか価格を見ていない。SLに触れてから戻ってTPに
+#      行った場合、順序が分からず「TP勝ち」として記録してしまう。
+#   2) アプリは売りでも bid で TP/SL を見ていた。売りの決済は ask なので、
+#      TPは早く当たりSLは遅く当たる＝両方とも勝ち側に甘い。
+# サーバは5分ごとに高安つきの足を古い順に走査するので、順序どおりに決着できる。
+#
+# 書き込むのは forward_close.json だけにする。forward_log.json はアプリが
+# GitHub Contents API で書くファイルで、同じものを両方から書くと 5分ごとの
+# コミットとぶつかり、ワークフローの rebase -X ours でこちら側の判定が捨てられる。
+# 書き手をファイル単位で分ければ衝突しない。
+FWD_LOG_FILE = data_path("forward_log.json")      # アプリが書く（記録の作成）
+FWD_CLOSE_FILE = data_path("forward_close.json")  # ここが書く（決着の判定）
+
+# 記録の期限（足の本数）。これを超えたら時間切れとして、その足の終値で決着させる。
+# 期限が無いと「TPにもSLにも当たらない記録」が1件残っただけで、その銘柄は
+# 二度と記録されなくなる（fwdRecord は銘柄ごとにopenを1件しか持たない）。
+# 実測の平均保有は day/mtf で6時間前後、swing で3日前後なので、
+# 通常は当たらず「本当に動かなくなった記録」だけを拾う長さにしてある。
+FWD_MAX_BARS = {"scalp": 480, "day": 192, "swing": 240, "mtf": 192}
+FWD_KEEP = 400                                    # 判定結果の保持件数
+
+
+def fwd_key(rec):
+    """記録の同一性キー。アプリ側の fwdCloseKey() と必ず同じ形にすること。
+
+       価格は JS と Python で文字列化がずれる可能性があるのでキーに入れない。
+       ts はミリ秒なので、これと銘柄・方向があれば衝突しない。"""
+    return "{}|{}|{}".format(rec.get("ts"), rec.get("sym"), rec.get("side"))
+
+
+def fwd_fill(side, entry, spread):
+    """実際に約定する価格。記録の entry は bid（通知に載る建値の目安）。
+
+       買いは ask で約定するのでスプレッドぶん不利になる。
+       売りは bid で約定するので entry がそのまま約定価格。"""
+    return entry + spread if side == "long" else entry
+
+
+def fwd_touch_levels(side, tp, sl, spread):
+    """bid建ての足で到達を見るときの水準。
+
+       買い: 決済(売り)は bid で約定する。OCOは通知どおりの tp/sl に置くので
+             bid の高安をそのまま比べてよい。コストは建値側（ask約定）に出る。
+       売り: 決済(買い)は ask で約定する。ask = bid + spread なので、
+             bid の足では spread ぶん手前で当たる。水準を下げて判定する。"""
+    if side == "long":
+        return tp, sl
+    return tp - spread, sl - spread
+
+
+def fwd_bars_since(sym, mode, ts_ms, now_ms):
+    """記録した時刻より後に始まった足を (足の分数, [(時刻, (高,安,終))]) で返す。
+
+       get_ohlc は直近ぶんしか持たないので、古い記録は日付を遡って取り直す。
+       klines_day のキャッシュを通るので、同じ日を二度は取りに行かない。"""
+    with use_mode(mode):
+        bar_min = BARMIN.get(P["interval"], 1)
+    span_min = max(1, (now_ms - ts_ms) // 60000)
+    days = int(span_min // 1440) + 2
+    cap = int(span_min // max(1, bar_min)) + 300
+    times, bars = get_ohlc_hist_timed(sym, days, cap)
+    bar_ms = max(1, bar_min) * 60000
+    cur_start = (now_ms // bar_ms) * bar_ms        # 形成中の足は使わない
+    rows = [(t, b) for t, b in zip(times, bars) if ts_ms <= t < cur_start]
+    return bar_min, rows
+
+
+def resolve_forward_record(rec, now_ms=None):
+    """前向き検証の記録を1件、足の高安で決着させる。未決着なら None。"""
+    sym, side, ts = rec.get("sym"), rec.get("side"), rec.get("ts")
+    if not sym or side not in ("long", "short") or not ts:
+        return None
+    try:
+        entry, tp, sl = float(rec["entry"]), float(rec["tp"]), float(rec["sl"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    risk = abs(entry - sl)
+    if not risk:
+        return None
+    mode = rec.get("mode") if rec.get("mode") in PARAMS else MODE
+    if now_ms is None:
+        now_ms = int(datetime.datetime.now(JST).timestamp() * 1000)
+    bar_min, rows = fwd_bars_since(sym, mode, int(ts), now_ms)
+    if not rows:
+        return None
+    # 記録時に実測したスプレッドがあればそれを使う（既定値より実態に近い）。
+    # 桁が明らかにおかしい値は信用しない（1銘柄ぶんの想定幅を超えるもの）。
+    sp = rec.get("sp")
+    spread = SPREAD_PIPS.get(sym, DEFAULT_SPREAD_PIPS) * PIP_SIZE
+    try:
+        if sp is not None and 0 < float(sp) <= 5 * PIP_SIZE:
+            spread = float(sp)
+    except (TypeError, ValueError):
+        pass
+    fill = fwd_fill(side, entry, spread)
+    tp_l, sl_l = fwd_touch_levels(side, tp, sl, spread)
+    maxb = FWD_MAX_BARS.get(mode, 192)
+    d = 1 if side == "long" else -1
+
+    def close(result, exit_px, j, t):
+        return {"result": result, "R": round((exit_px - fill) * d / risk, 4),
+                "bars": j + 1, "held_min": (j + 1) * bar_min,
+                "fill": round(fill, 3), "exit": round(exit_px, 3),
+                "closed": int(t) + bar_min * 60000, "src": "server",
+                "mode": mode, "sym": sym, "side": side}
+
+    for j, (t, (hi, lo, c)) in enumerate(rows):
+        if side == "long":
+            sl_hit, tp_hit = lo <= sl_l, hi >= tp_l
+        else:
+            sl_hit, tp_hit = hi >= sl_l, lo <= tp_l
+        # 同じ足で両方に触れた場合、どちらが先かは足からは分からない。
+        # 負けの側に倒す（甘く出さない）。バックテストの走査と同じ順序。
+        if sl_hit:
+            return close("sl", sl, j, t)
+        if tp_hit:
+            return close("tp", tp, j, t)
+        if j + 1 >= maxb:
+            # 時間切れ。その時点の終値で手仕舞う。売りの決済は ask なので
+            # spread ぶん不利な価格で降りる。
+            return close("time", c if side == "long" else c + spread, j, t)
+    return None
+
+
+def _fwd_read(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+    except Exception as e:
+        warn(f"{os.path.basename(path)} を読めませんでした: {e}",
+             tag="fwd-read", surface=False)
+        return default
+
+
+def resolve_forward(now_ms=None):
+    """アプリが作った前向き検証の記録を、まとめて決着させる。
+
+       戻り値は今回あらたに決着した件数。判定済みの記録は再計算しない
+       （古い記録の足を毎回取りに行かないため）。"""
+    log = _fwd_read(FWD_LOG_FILE, {})
+    entries = log.get("entries") if isinstance(log, dict) else log
+    if not isinstance(entries, list) or not entries:
+        return 0
+    store = _fwd_read(FWD_CLOSE_FILE, {})
+    closes = store.get("closes") if isinstance(store, dict) else {}
+    if not isinstance(closes, dict):
+        closes = {}
+    keys = {fwd_key(r) for r in entries if isinstance(r, dict)}
+    closes = {k: v for k, v in closes.items() if k in keys}   # 消えた記録は捨てる
+    added = 0
+    for rec in entries:
+        if not isinstance(rec, dict):
+            continue
+        k = fwd_key(rec)
+        if k in closes:
+            continue
+        try:
+            res = resolve_forward_record(rec, now_ms)
+        except Exception as e:
+            warn(f"前向き検証の判定に失敗 {k}: {e}", tag="fwd-resolve", surface=False)
+            continue
+        if res:
+            closes[k] = res; added += 1
+    if added or closes != (store.get("closes") if isinstance(store, dict) else None):
+        if len(closes) > FWD_KEEP:
+            closes = dict(sorted(closes.items(),
+                                 key=lambda kv: kv[1].get("closed") or 0)[-FWD_KEEP:])
+        tmp = FWD_CLOSE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"updated": datetime.datetime.now(JST).isoformat(timespec="seconds"),
+                       "closes": closes}, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, FWD_CLOSE_FILE)
+    if added:
+        print(f"[INFO] 前向き検証: {added}件を決着させた（累計{len(closes)}件）")
+    return added
+
+
 def position_pl(p, ticker):
     sym, side = p.get("symbol"), p.get("side", "long")
     entry, lot = float(p["entry"]), float(p.get("lot", DEFAULT_LOT))
@@ -2044,6 +2226,11 @@ def main():
         notify, sig_events = [], []
         warn("価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）", tag="skip-status")
         save_degraded_status()   # 表示内容は残したまま「今おかしい」ことだけ画面に伝える
+    # 前向き検証の決着判定。通知の可否とは無関係なので、通知が無い回でも必ず通す。
+    try:
+        resolve_forward()
+    except Exception as e:
+        warn(f"前向き検証の判定に失敗: {e}", tag="fwd", surface=False)
     # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
     # LINE: シグナル通知だけ。保有中サインは NOTIFY_POSITION_TO_LINE=True の時のみ追加。

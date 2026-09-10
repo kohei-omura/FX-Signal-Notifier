@@ -1014,8 +1014,14 @@ function _fwdKey(x){ return [x.ts,x.sym,x.entry,x.side].join('|'); }
 function fwdMerge(list){
   if(!Array.isArray(list)||!list.length) return 0;
   var cur=loadFwd(), seen={}, add=0;
-  cur.forEach(function(x){ seen[_fwdKey(x)]=1; });
-  list.forEach(function(x){ var k=_fwdKey(x); if(seen[k])return; seen[k]=1; cur.push(x); add++; });
+  var byKey={};
+  cur.forEach(function(x){ var k=_fwdKey(x); seen[k]=1; byKey[k]=x; });
+  list.forEach(function(x){ var k=_fwdKey(x);
+    if(seen[k]){ // 既にある記録でも、向こうが決着済みでこちらが未決着なら結果を取り込む
+      var e=byKey[k]; if(e&&e.open&&x&&!x.open&&x.R!=null){
+        e.open=false;e.result=x.result;e.R=x.R;e.closed=x.closed;e.src=x.src;add++;}
+      return; }
+    seen[k]=1; cur.push(x); byKey[k]=x; add++; });
   cur.sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
   try{ localStorage.setItem('fxnavi_forward_v1',JSON.stringify(cur.slice(-300))); }catch(e){}
   return add;
@@ -1044,23 +1050,72 @@ async function fwdCloudLoad(){
     if(n){ try{ toast('☁️ 前向き検証を'+n+'件復元しました'); }catch(e){} try{ renderFwdPanel(); }catch(e){} }
   }catch(e){ console.warn('前向き検証のクラウド復元に失敗',e); }
 }
-function fwdRecord(pair){try{if(!pair||!pair.signal)return;var f=loadFwd();
+// 約定コストの控えめな既定値（pips）。ライブのask/bidが取れない時だけ使う。
+var FWD_SPREAD_PIPS={USD_JPY:0.2,EUR_JPY:0.4,GBP_JPY:0.9,AUD_JPY:0.5}, FWD_SPREAD_DEF=0.5;
+/* 前向き検証の記録を作る。
+   ★運用モード(mode.json)と画面モードが一致している時だけ記録する。
+     以前は画面モード(S.mode)でそのまま記録していたため、気になって別モードを
+     眺めていた間の合図が「前向き検証」として貯まっていた。実際、最初の5件は
+     全部デイだった（運用はmtf、デイは1年4038件の実測で -0.079R＝負けが確定的）。
+     判定できない時は記録しない（送信を止める liveNotifyBlock と同じ、閉じる側に倒す）。
+   ★建値は bid ではなく実際の約定価格を持つ。買いは ask で約定するので、
+     bid で記録すると毎回スプレッドぶんだけ有利な成績になる。 */
+function fwdRecord(pair){try{if(!pair||!pair.signal)return;
+  if(!S.mode||!MODES.includes(S.mode))return;
+  if(!MODEJSON||!MODES.includes(MODEJSON)||MODEJSON!==S.mode)return;
+  var f=loadFwd();
   for(var i=0;i<f.length;i++){if(f[i].open&&f[i].sym===pair.symbol)return;}
   var side=pair.signal==='買い'?'long':'short',entry=(pair.entry_ref!=null?pair.entry_ref:pair.bid);
   if(entry==null||!pair.tp_pips||!pair.sl_pips)return;
+  var _p=PRICE[pair.symbol]||{},sp=(_p.ask!=null&&_p.bid!=null&&_p.ask>_p.bid)?(_p.ask-_p.bid)
+        :((FWD_SPREAD_PIPS[pair.symbol]||FWD_SPREAD_DEF)*PS_);
+  // tp/sl は通知に載る水準そのもの（bid建て）。OCOはこの価格で置くので動かさない。
   var tp=side==='long'?entry+pair.tp_pips*PS_:entry-pair.tp_pips*PS_;
   var sl=side==='long'?entry-pair.sl_pips*PS_:entry+pair.sl_pips*PS_;
   // 学習補正が本当に効いているかを後から検証できるよう、補正ON/OFFと素点も残す
   var _st=(typeof STATS!=='undefined'&&STATS)?STATS[(S.mode||'swing')+pair.symbol]:null;
   var _cf=null; try{ _cf=confluence(pair,_st); }catch(e){}
-  f.push({sym:pair.symbol,mode:S.mode,side:side,entry:entry,tp:tp,sl:sl,b:pair.tp_pips/pair.sl_pips,ts:Date.now(),open:true,
+  f.push({sym:pair.symbol,mode:S.mode,side:side,entry:entry,
+    fill:Math.round((side==='long'?entry+sp:entry)*1e5)/1e5, sp:Math.round(sp*1e5)/1e5,
+    tp:tp,sl:sl,b:pair.tp_pips/pair.sl_pips,ts:Date.now(),open:true,
     edgeOn:(typeof edgeOn==='function')?edgeOn():false,
     rawPct:_cf?_cf.rawPct:null, pct:_cf?_cf.pct:null, edgeAdj:_cf?(_cf.edge||0):0});saveFwd(f);}catch(e){}}
-function fwdTrack(){try{var f=loadFwd(),ch=false;for(var i=0;i<f.length;i++){var e=f[i];if(!e.open)continue;
-  var pr=(PRICE[e.sym]&&PRICE[e.sym].bid);if(pr==null)continue;
-  var hitTP=e.side==='long'?pr>=e.tp:pr<=e.tp,hitSL=e.side==='long'?pr<=e.sl:pr>=e.sl;
-  if(hitTP||hitSL){e.open=false;e.result=hitTP?'tp':'sl';e.R=hitTP?e.b:-1;e.closed=Date.now();ch=true;}}
-  if(ch)saveFwd(f);return ch;}catch(e){return false;}}
+
+/* ===== 決着の判定はサーバ側（engine/fx_signal.py・5分ごと）に移した =====
+   以前はブラウザが9秒ごとの現在値で判定していた。2つの理由で勝ち側に倒れていた。
+   1) アプリを開いている間しか価格を見ていない。SLに触れてから戻ってTPに行った
+      場合、順序が分からないまま「TP勝ち」として記録してしまう。
+   2) 売りでも bid で TP/SL を見ていた。売りの決済は ask なので、TPは早く当たり
+      SLは遅く当たる＝どちらも甘い（position_advice で2回直したのと同じ取り違え）。
+   サーバは高安つきの足を古い順に走査するので、順序どおりに決着できる。
+   ここではその結果（data/forward_close.json）を取り込むだけにする。
+   ブラウザが書く forward_log.json とはファイルを分けてあるので衝突しない。 */
+var FWD_CLOSE_PATH='data/forward_close.json';
+function fwdCloseKey(x){ return [x.ts,x.sym,x.side].join('|'); }   // Python の fwd_key() と同じ形
+function fwdApplyCloses(map){
+  if(!map||typeof map!=='object') return 0;
+  var f=loadFwd(),ch=0;
+  for(var i=0;i<f.length;i++){
+    var e=f[i],r=map[fwdCloseKey(e)];
+    if(!r||r.R==null) continue;
+    // 旧ブラウザ判定で閉じた記録も、サーバの判定で上書きする（過去ぶんも直る）。
+    if(e.src==='server'&&e.result===r.result&&e.R===r.R) continue;
+    e.open=false;e.result=r.result;e.R=r.R;e.closed=r.closed||Date.now();
+    e.bars=r.bars;e.heldMin=r.held_min;e.fill=r.fill;e.exit=r.exit;e.src='server';ch++;
+  }
+  if(ch){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(f.slice(-300)));}catch(e){}}
+  return ch;
+}
+async function fwdCloseLoad(){
+  try{
+    var c=cfg(); if(!c||!c.owner||!c.repo) return 0;
+    var url='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')+'/'+FWD_CLOSE_PATH+'?t='+Date.now();
+    var r=await fetch(url,{cache:'no-store'}); if(!r.ok) return 0;
+    var j=await r.json(),n=fwdApplyCloses(j&&j.closes);
+    if(n){ try{ renderFwdPanel(); }catch(e){} }
+    return n;
+  }catch(e){ return 0; }
+}
 /* 学習補正が本当に効いているかの検証：記録時に補正ONだったものと、OFFだったものを別集計する。
    補正なしの方が成績が良ければ、補正は使わない方がよい、と後から判断できる。 */
 function _fwdEdgeSplit(closed){
@@ -1073,10 +1128,24 @@ function _fwdEdgeSplit(closed){
 function fwdStats(){var f=loadFwd(),closed=f.filter(function(x){return !x.open&&x.R!=null;});
   var wins=closed.filter(function(x){return x.R>0;}).length,n=closed.length,cum=0,curve=[];
   for(var i=0;i<closed.length;i++){cum+=closed[i].R;curve.push(Math.round(cum*100)/100);}
-  return{n:n,wins:wins,wr:n?Math.round(wins/n*100):0,cum:Math.round(cum*100)/100,curve:curve,closed:closed};}
+  var open=f.filter(function(x){return x.open;}).length;
+  var timed=closed.filter(function(x){return x.result==='time';}).length;
+  var srv=closed.filter(function(x){return x.src==='server';}).length;
+  return{n:n,wins:wins,wr:n?Math.round(wins/n*100):0,cum:Math.round(cum*100)/100,
+    curve:curve,closed:closed,open:open,timed:timed,srv:srv};}
+/* 損益分岐勝率は「実際の平均勝ちR / 平均負けR」から出す。
+   以前は設計上の比率 b(=TP/SL) をそのまま使っていたが、
+   ・買いは ask 約定なので勝ちRは b より小さく、負けRは 1 より大きい
+   ・時間切れ決済は端数のRになる
+   ので、b を使うと分岐点を低く見積もり「実証」と出やすくなる。 */
 function fwdEdge(){var s=fwdStats();if(s.n<30)return{status:'testing',n:s.n};
-  var ab=s.closed.reduce(function(a,x){return a+(x.b||1.5);},0)/s.closed.length,be=1/(1+ab),wl=wilsonLower(s.wins,s.n,1.96);
-  return wl>be?{status:'proven',n:s.n,wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10}:{status:'testing',n:s.n,wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10};}
+  var w=s.closed.filter(function(x){return x.R>0;}),l=s.closed.filter(function(x){return x.R<=0;});
+  var aw=w.length?w.reduce(function(a,x){return a+x.R;},0)/w.length:null;
+  var al=l.length?l.reduce(function(a,x){return a+Math.abs(x.R);},0)/l.length:null;
+  var be=(aw!=null&&al!=null&&(aw+al)>0)?al/(aw+al)
+        :1/(1+(s.closed.reduce(function(a,x){return a+(x.b||1.5);},0)/s.closed.length));
+  var wl=wilsonLower(s.wins,s.n,1.96);
+  return{status:(wl>be?'proven':'testing'),n:s.n,wl:Math.round(wl*1000)/10,be:Math.round(be*1000)/10};}
 // 機能5: 体感速度改善（stale-while-revalidate）。klines等の既存通信最適化は不変
 function saveCache(){try{localStorage.setItem('fxnavi_cache_v1',JSON.stringify({S:S,POS:POS,ts:Date.now()}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem('fxnavi_cache_v1')||'null');}catch(e){return null;}}
@@ -1274,6 +1343,9 @@ setInterval(snapScores, 5*60*1000);
 setTimeout(snapScores, 8000);
 // 起動時に前向き検証をクラウドから復元（端末を作り直しても記録が続く）
 setTimeout(function(){ try{ fwdCloudLoad(); }catch(e){} }, 3000);
+// 決着はサーバが5分ごとに書く。取り込みも同じ間隔で回す（初回は起動直後）。
+setTimeout(function(){ try{ fwdCloseLoad(); }catch(e){} }, 6000);
+setInterval(function(){ try{ fwdCloseLoad(); }catch(e){} }, 5*60*1000);
 // ===== 段階3: ツールで学習した補正をスコアへ反映 =====
 // ===== 上位足(MTF)と時間帯フィルタ（TDZ回避のため使用箇所より前で宣言）=====
 // 上位足(MTF)の退避先。fx_signal.py が status.json に書いた {label,aligned} を銘柄別に保持する。
@@ -1610,8 +1682,11 @@ function exportHistoryCSV(){
       (h.tp_pips!=null?h.tp_pips:''),(sl===''?'':sl),R]);
   });
   _csvDist(new Blob([_csvBody(rows)],{type:'text/csv;charset=utf-8'}),'fxnavi-history.csv');}
-function exportForwardCSV(){var f=loadFwd();var rows=[['日時','ペア','方向','建値','TP','SL','仮想R','マーク','モード','状態']];
-  f.forEach(function(e){rows.push([new Date(e.ts).toLocaleString('ja-JP'),e.sym,e.side==='long'?'買い':'売り',e.entry,e.tp,e.sl,(e.R!=null?e.R:''),(e.result||''),e.mode||'',e.open?'追跡中':'確定']);});
+function exportForwardCSV(){var f=loadFwd();
+  var rows=[['日時','ペア','方向','建値(通知)','約定','スプレッド','TP','SL','仮想R','マーク','保有分','モード','判定','状態']];
+  f.forEach(function(e){rows.push([new Date(e.ts).toLocaleString('ja-JP'),e.sym,e.side==='long'?'買い':'売り',
+    e.entry,(e.fill!=null?e.fill:''),(e.sp!=null?e.sp:''),e.tp,e.sl,(e.R!=null?e.R:''),(e.result||''),
+    (e.heldMin!=null?e.heldMin:''),e.mode||'',(e.src||'旧判定'),e.open?'追跡中':'確定']);});
   _csvDist(new Blob([_csvBody(rows)],{type:'text/csv;charset=utf-8'}),'fxnavi-forward.csv');}
 function onVerdictTap(e){try{var el=document.getElementById('pairs');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_e){}}
 // 保有ポジションのパチンコ演出を生成（プラス/ゼロ/マイナスで描き分け・煽り過ぎない）
@@ -2408,7 +2483,11 @@ function renderFwdPanel(){
     +'<div style="font-size:12px;color:var(--mut)">'+em+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">モード別：'+mb+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">学習補正別：'+_fwdEdgeSplit(s.closed)+'</div>'
-    +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率 で実証。🟢OK発生時に自動記録・最大300件ローテ。</div>'
+    +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">未決着 '+s.open+'件'
+      +(s.timed?' ／ 時間切れ決済 '+s.timed+'件':'')
+      +' ／ サーバ判定済 '+s.srv+'/'+s.n+'件'+(s.srv<s.n?'（残りは旧ブラウザ判定。次のサーバ実行で上書きされます）':'')+'</div>'
+    +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率（実測の平均勝ちR/平均負けRから算出）で実証。'
+      +'記録は「運用モードと画面モードが一致」かつ🟢OKの時だけ・最大300件ローテ。建値は実約定(買いはask)、決着はサーバが高安つきの足で順序どおりに判定します。</div>'
     +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="exportHistoryCSV()">📤 決済履歴CSV</button><button class="dettog" style="width:auto;flex:1" onclick="exportForwardCSV()">📤 前向き検証CSV</button></div>'
     +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudSaveNow()">☁️ 今すぐクラウド保存</button><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudRestore()">♻️ クラウドから復元</button></div>'
     +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">⚙のGitHub連携が設定済みなら、記録は自動でリポジトリ（'+FWD_PATH+'）にも保存され、起動時に取り込まれます。端末を作り直しても記録が続きます。</div></div>';
@@ -2902,7 +2981,7 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   const j=await r.json(),arr=(j&&j.data)?j.data:(Array.isArray(j)?j:[]);
   if(Array.isArray(arr))arr.forEach(d=>{if(d&&d.symbol&&!isNaN(parseFloat(d.bid)))PRICE[d.symbol]={bid:parseFloat(d.bid),ask:parseFloat(d.ask!=null?d.ask:d.bid)};});
   if(Array.isArray(arr)&&arr.length)LAST_TICK_TS=Date.now();
-  (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});fwdTrack();render();
+  (S.pairs||[]).forEach(p=>{if(PRICE[p.symbol])p.bid=PRICE[p.symbol].bid;});render();
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
 loadRisk();{const _c=$('#r_cap');if(_c)_c.value=RISK.cap;const _r=$('#r_risk');if(_r)_r.value=RISK.risk;const _m=$('#r_lev');if(_m)_m.value=RISK.lev;}
