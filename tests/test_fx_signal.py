@@ -330,6 +330,12 @@ class NotificationTest(RunTestCase):
         """エントリー通知にpips幅だけでなく絶対価格を載せること。
         pipsだけだと受け手が建値から暗算する必要があり、その間に相場が動いて
         発注レベルがずれる（＝画面の目安値と建玉の確定値を取り違える原因）。"""
+        # モックの値動き任せだと、シグナルが1本も出ない日があって落ちていた。
+        # 検証したいのは通知の文面なので、保有をゼロにしたうえで確実に1本立てる。
+        self.write(F.POSITIONS_FILE, {"positions": []})
+        self.addCleanup(setattr, F, "entry_side", F.entry_side)
+        F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: (
+            "買い" if sym == "USD_JPY" else None)
         F.main()
         bodies = [b for _, b in self.sent["mail"]]
         entry_bodies = [b for b in bodies if "エントリー目安" in b]
@@ -1253,12 +1259,17 @@ class MtfNotificationTest(RunTestCase):
                              "mtfではスコアが判定に使われていないのに警告している")
 
     def test_other_modes_keep_the_score_based_wording(self):
+        # モックの値動き任せだとシグナルが出ない日があり、skipされて何も
+        # 検証していなかった。確実に1本立てる。
         self.write(F.MODE_FILE, {"mode": "day"})
+        self.write(F.POSITIONS_FILE, {"positions": []})
+        self.addCleanup(setattr, F, "entry_side", F.entry_side)
+        F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: (
+            "買い" if sym == "USD_JPY" else None)
         F.main()
         self.assertEqual(self.status()["mode"], "day", "前提: dayで動いていること")
         bodies = [b for _, b in self.sent["mail"] if "エントリー目安" in b]
-        if not bodies:
-            self.skipTest("この足ではエントリーシグナルが出ない")
+        self.assertTrue(bodies, "エントリー通知が出ていない（前提が崩れている）")
         for b in bodies:
             self.assertIn("スコア", b)
             self.assertNotIn("で入る設定", b, "day に mtf 用の文面が混ざっている")
@@ -1573,6 +1584,81 @@ class DuplicateAndHedgeTest(RunTestCase):
         F.BLOCK_DUPLICATE = False
         p = self._run_with_signal("GBP_JPY", "売り", "long")
         self.assertEqual(p["signal"], "売り")
+
+
+class EntryTimeTouchTest(RunTestCase):
+    """TP/SL接触の判定に、建てる前の値動きを使わないこと。
+
+    実際に起きた誤報: 2026-09-10 19:42 に EUR/JPY を 179.114 で買った直後、
+    「SLに接触（178.955）」の損切り推奨が届いた。178.95台を付けていたのは
+    19:30〜19:33 で、建てる9分前。19:30〜19:45の足の安値が使われていた。
+    """
+
+    BAR_MIN = 15
+    MS = 60000
+
+    def _bars(self, n):
+        # (high, low, close) を n 本。安値だけ意味を持たせる
+        return [(179.20, 178.93, 179.00)] * n
+
+    def test_bar_that_started_before_entry_is_dropped(self):
+        rec = self._bars(1)
+        now = 1000 * 3600 * 24 * 20000 + 19 * 3600000 + 42 * 60000   # 足の途中
+        bar_ms = self.BAR_MIN * self.MS
+        cur_start = (now // bar_ms) * bar_ms
+        opened = cur_start + 9 * self.MS          # 足が始まって9分後に建てた
+        self.assertEqual(F.bars_after_entry(rec, self.BAR_MIN, opened, now), [],
+                         "建てる前に始まった足を判定に使っている")
+
+    def test_bar_that_started_after_entry_is_kept(self):
+        rec = self._bars(1)
+        now = 1000 * 3600 * 24 * 20000 + 19 * 3600000 + 42 * 60000
+        bar_ms = self.BAR_MIN * self.MS
+        cur_start = (now // bar_ms) * bar_ms
+        opened = cur_start - 5 * self.MS          # 足が始まる5分前に建てた
+        self.assertEqual(F.bars_after_entry(rec, self.BAR_MIN, opened, now), rec)
+
+    def test_keeps_only_the_bars_after_entry(self):
+        """複数本を見るモード（スキャル等）でも、建玉より後の足だけ残すこと。"""
+        rec = [(1.0 + i, 0.0 + i, 0.5 + i) for i in range(5)]   # 古い→新しい
+        now = 1000 * 3600 * 24 * 20000
+        bar_ms = 1 * self.MS
+        cur_start = (now // bar_ms) * bar_ms
+        opened = cur_start - 2 * bar_ms          # 直近3本ぶんが建玉より後
+        got = F.bars_after_entry(rec, 1, opened, now)
+        self.assertEqual(got, rec[-3:], "残す本数がずれている")
+
+    def test_no_open_time_keeps_everything(self):
+        """時刻が分からない建玉は従来どおり（絞り込まない）。"""
+        rec = self._bars(2)
+        self.assertEqual(F.bars_after_entry(rec, self.BAR_MIN, None), rec)
+
+    def test_open_time_is_read_from_either_field(self):
+        self.assertEqual(F.pos_opened_ms({"id": "p1789036924237"}), 1789036924237)
+        got = F.pos_opened_ms({"id": "t1", "opened_at": "2026-09-10 19:42 JST"})
+        self.assertIsNotNone(got)
+        import datetime as _dt
+        self.assertEqual(
+            _dt.datetime.fromtimestamp(got / 1000, F.JST).strftime("%Y-%m-%d %H:%M"),
+            "2026-09-10 19:42")
+        self.assertIsNone(F.pos_opened_ms({"id": "manual-1"}))
+
+    def test_the_real_false_alarm_no_longer_fires(self):
+        """9/10 の誤報そのものを再現し、出なくなったことを確認する。"""
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        pos = {"id": "p1", "symbol": "EUR_JPY", "side": "long", "entry": 179.114,
+               "lot": 3000, "tp_pips": 25.4, "sl_pips": 15.9,
+               "opened_at": "2026-09-10 19:42 JST"}
+        need = (max(F.P["ema_s"], F.P["macd"][1], F.P["adx"]*2, F.P["atr"])
+                + F.CHART_POINTS + 30)
+        F._OHLC_CACHE.clear()
+        # 19:30〜19:45 の足。安値178.93 は SL178.955 を割っているが、
+        # それを付けたのは建てる9分前。
+        F._OHLC_CACHE[("EUR_JPY", F.P["interval"], need)] = [(179.15, 178.93, 179.10)]
+        now = int(F.datetime.datetime(2026, 9, 10, 19, 42, tzinfo=F.JST).timestamp() * 1000)
+        kept = F.bars_after_entry([(179.15, 178.93, 179.10)], 15,
+                                  F.pos_opened_ms(pos), now)
+        self.assertEqual(kept, [], "建てる前の安値を今も使っている")
 
 
 class EntryRuleParityTest(unittest.TestCase):

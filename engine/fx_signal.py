@@ -1424,6 +1424,47 @@ def auto_set_levels(data):
     return msgs, changed
 
 
+def pos_opened_ms(p):
+    """建玉を持った時刻(epoch ms)。取れなければ None。
+
+       アプリの id は 'p' + Date.now() なので、opened_at が無くてもここから拾える。"""
+    t = p.get("opened_at")
+    if t:
+        try:
+            return int(datetime.datetime.strptime(
+                str(t).replace(" JST", "").strip(), "%Y-%m-%d %H:%M"
+            ).replace(tzinfo=JST).timestamp() * 1000)
+        except Exception:
+            pass
+    pid = str(p.get("id") or "")
+    if pid.startswith("p") and pid[1:].isdigit():
+        return int(pid[1:])
+    return None
+
+
+def bars_after_entry(rec, bar_min, opened_ms, now_ms=None):
+    """直近の足のうち『建てた後に始まった足』だけを残す。
+
+       建てた瞬間はたいてい足の途中なので、その足の高安には建てる前の
+       値動きが混ざっている。それをTP/SL接触の判定に使うと、まだ建てても
+       いない時間帯の価格で「SLに接触」と出る。
+       実際 9/10 の EUR/JPY で、19:42に建てた直後に「SLに接触(178.955)」と
+       通知が出た。178.95台を付けていたのは19:30〜19:33で、建てる9分前だった。
+       形成中の足は捨てる側に倒す（見逃しても現在値の判定は生きている）。"""
+    if not rec or not opened_ms:
+        return rec
+    bar_ms = max(1, int(bar_min)) * 60000
+    if now_ms is None:
+        now_ms = int(datetime.datetime.now(JST).timestamp() * 1000)
+    cur_start = (now_ms // bar_ms) * bar_ms      # 形成中の足の開始時刻
+    keep = []
+    for i, b in enumerate(reversed(rec)):        # i=0 が形成中の足
+        if cur_start - i * bar_ms >= opened_ms:
+            keep.append(b)
+    keep.reverse()
+    return keep
+
+
 def position_pl(p, ticker):
     sym, side = p.get("symbol"), p.get("side", "long")
     entry, lot = float(p["entry"]), float(p.get("lot", DEFAULT_LOT))
@@ -1494,6 +1535,8 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     bm = BARMIN.get(P["interval"], 1)
     nb = max(1, -(-TOUCH_LOOKBACK_MIN // bm))
     rec = (get_ohlc(sym) or [])[-nb:]
+    # 建てる前の値動きで「接触」と判定しないよう、建玉より後の足だけを見る
+    rec = bars_after_entry(rec, bm, pos_opened_ms(p))
     if rec:
         hi = max(b[0] for b in rec); lo = min(b[1] for b in rec)
         if side == "long":
