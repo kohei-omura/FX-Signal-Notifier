@@ -832,14 +832,18 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         mfe = early_excursion(oh, i, side, entry, tp, sl, sl_pips * PIP_SIZE)
         if mfe is not None:
             adv = sim.get("advice")
-            row = (mfe, 1 if mfe >= FAST_NEED_R else 0, adv, cost)
+            etp = early_tp_r(oh, i, side, entry, sl, sl_pips * PIP_SIZE)
+            row = (mfe, 1 if mfe >= FAST_NEED_R else 0, adv, cost, etp)
             _ef = ef_s[i] if i < len(ef_s) else None
             stretch = (((closes[i] - _ef) * want / a)
                        if (_ef is not None and a) else None)
             for kind, band in (
                     ("adx", _band_of(ADX_BANDS, adx_s[i][0] if adx_s[i] else None)),
                     ("stretch", _band_of(STRETCH_BANDS, stretch)),
-                    ("aligned", ALIGNED_LABEL.get(al)),
+                    # al は相場そのものの向き。売買の向きを掛けないと
+                    # 「売り＋下降トレンド（＝順行）」を逆行と数えてしまう。
+                    ("aligned", ALIGNED_LABEL.get(al * want)),
+                    ("side", "買い" if side == "買い" else "売り"),
                     ("rsi", _rsi_band(rsi_s[i], side))):
                 if band:
                     fast_r.setdefault(kind, {}).setdefault(band, []).append(row)
@@ -893,19 +897,28 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
             if len(rows) < 8:
                 continue
             nb = len(rows)
-            nets = [(r, c) for _m, _f, r, c in rows if r is not None]
-            slot[band] = {
+            nets = [(r, c) for _m, _f, r, c, _e in rows if r is not None]
+            cell = {
                 "n": nb,
-                "mfe": round(sum(m for m, _f, _r, _c in rows) / nb, 3),
-                "fast_rate": round(sum(f for _m, f, _r, _c in rows) / nb * 100),
+                "mfe": round(sum(m for m, _f, _r, _c, _e in rows) / nb, 3),
+                "fast_rate": round(sum(f for _m, f, _r, _c, _e in rows) / nb * 100),
                 "advice": _r_summary(nets) if nets else None,
             }
+            etp = {}
+            for k in FAST_TP_TARGETS:
+                vals = [(e[k], c) for _m, _f, _r, c, e in rows if k in e]
+                if vals:
+                    etp[str(k)] = _r_summary(vals)
+            if etp:
+                cell["early_tp"] = etp
+            slot[band] = cell
         if slot:
             fast[kind] = slot
     if fast:
         fast["bars"] = FAST_BARS
         fast["bar_min"] = bar_min
         fast["need_r"] = FAST_NEED_R
+        fast["tp_targets"] = list(FAST_TP_TARGETS)
         out["fast"] = fast
     return out
 
@@ -978,6 +991,39 @@ def early_excursion(oh, i, side, entry, tp, sl, risk, bars=None):
         if fav > mfe:
             mfe = fav
     return round(mfe / risk, 4)
+
+
+# 近いTPに置き換えた場合のR。SLは変えない。
+# 「初動が速い型は、早めに利確すれば勝てるのか」を実際に当てて確かめる。
+# 速いだけで最終的に負ける型は、その型で入るのではなく早く降りるべきなので、
+# その差をここで測る。
+FAST_TP_TARGETS = (0.6, 0.8, 1.0, 1.2)
+
+
+def early_tp_r(oh, i, side, entry, sl, risk):
+    """TPを近くに置いた各水準でのR。SL先着なら-1。1回の走査で全水準を解く。
+
+       同じ足でSLとTPの両方に触れた場合はSLを採る（順序が分からないので
+       甘く出さない）。バックテスト本体の走査と同じ向きに倒してある。"""
+    if not risk:
+        return {}
+    d = 1 if side == "買い" else -1
+    tps = [(k, entry + d * k * risk) for k in FAST_TP_TARGETS]
+    out = {}
+    for j in range(i + 1, len(oh)):
+        h, l, _ = oh[j]
+        if (side == "買い" and l <= sl) or (side == "売り" and h >= sl):
+            for k, _t in tps:
+                out.setdefault(k, -1.0)
+            break
+        for k, t in tps:
+            if k in out:
+                continue
+            if (side == "買い" and h >= t) or (side == "売り" and l <= t):
+                out[k] = float(k)
+        if len(out) == len(tps):
+            break
+    return out
 
 
 ATR_PCT_WINDOW = 200

@@ -226,6 +226,8 @@ def run_mode(mode):
                 slot["fast"] += b["fast_rate"] * b["n"]
                 if b.get("advice"):
                     slot["adv"].append(b["advice"])
+                for k, v in (b.get("early_tp") or {}).items():
+                    slot.setdefault("etp", {}).setdefault(k, []).append(v)
 
     if not symbols:
         return None
@@ -255,6 +257,9 @@ def run_mode(mode):
                    "fast_rate": round(sl["fast"]/sl["n"])}
             if sl["adv"]:
                 row["advice"] = pool_summary(sl["adv"])
+            etp = {k: pool_summary(v) for k, v in (sl.get("etp") or {}).items() if v}
+            if etp:
+                row["early_tp"] = etp
             rows[bn] = row
         if rows:
             fast[kind] = rows
@@ -309,16 +314,20 @@ def main():
         if fast:
             print(f"      ── 初動（建てて{fast['bars']}本={fast['bars']*fast['bar_min']}分の"
                   f"あいだに含み益が{fast['need_r']}Rへ届いた割合）")
-            for kind in ("aligned", "adx", "stretch", "rsi"):
+            for kind in ("aligned", "side", "adx", "stretch", "rsi"):
                 per = fast.get(kind)
                 if not per:
                     continue
                 for band in sorted(per, key=lambda b: -per[b]["fast_rate"]):
                     b = per[band]; adv = b.get("advice") or {}
+                    et = b.get("early_tp") or {}
+                    es = "  ".join(
+                        f"TP{k}R={et[k]['avg_r']:+.3f}"
+                        for k in sorted(et, key=float))
                     print(f"        {kind:8}{band:22} n={b['n']:5} "
                           f"速攻{b['fast_rate']:3}% 平均初動{b['mfe']:+.2f}R "
                           f"最終R{adv.get('avg_r', 0):+.3f} "
-                          f"[{adv.get('ci_lo', 0):+.3f}〜{adv.get('ci_hi', 0):+.3f}]")
+                          f"[{adv.get('ci_lo', 0):+.3f}〜{adv.get('ci_hi', 0):+.3f}]  {es}")
         for row in r.get("sweep") or []:
             v = row.get("advice") or {}
             if v:
