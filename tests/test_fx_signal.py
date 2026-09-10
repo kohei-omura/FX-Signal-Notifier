@@ -2204,5 +2204,67 @@ class ForwardClusterTest(unittest.TestCase):
         self.assertFalse(got[0]["win"], "負け越しているまとまりを勝ちにしている")
 
 
+class FastProfileTest(RunTestCase):
+    """初動プロファイル：型の判定と、表示専用であること。
+
+    実測(1年)で「行き過ぎた所ほど初動は速いが、期待値は上がらない」と出た。
+    近いTPへ置き換えても改善しなかったので、判定には一切使わず表示だけに使う。
+    ここが判定に混ざると、根拠の無いルールで売買することになる。
+    """
+
+    PROF = {
+        "bars": 4, "bar_min": 15, "need_r": 1.0,
+        "stretch": {"追いかけ(1.5ATR〜)": {"n": 1681, "fast_rate": 37, "mfe": 0.979,
+                                     "advice": {"avg_r": -0.04, "ci_lo": -0.1, "ci_hi": 0.02}},
+                    "初動(-0.3〜0.3ATR)": {"n": 94, "fast_rate": 17, "mfe": 0.575,
+                                       "advice": {"avg_r": -0.103, "ci_lo": -0.35, "ci_hi": 0.143}},
+                    "逆張り(-0.3ATR〜)": {"n": 200, "fast_rate": 20, "mfe": 0.65,
+                                      "advice": {"avg_r": 0.02, "ci_lo": -0.1, "ci_hi": 0.14}}},
+        "adx": {"適正(30〜40)": {"n": 986, "fast_rate": 31, "mfe": 0.824,
+                              "advice": {"avg_r": -0.139, "ci_lo": -0.215, "ci_hi": -0.063}}},
+        "rsi": {"強め(65〜75)": {"n": 2486, "fast_rate": 34, "mfe": 0.894,
+                              "advice": {"avg_r": -0.058, "ci_lo": -0.107, "ci_hi": -0.009}}},
+    }
+
+    def test_stretch_band_follows_the_distance_from_the_ema(self):
+        sc = {"price": 154.30, "ef": 154.10, "atr": 0.10, "rsi": 70.0, "adx": 33.0}
+        got = F.fast_profile(sc, "買い", prof=self.PROF)     # 2.0ATR 上
+        self.assertEqual(got["stretch"]["band"], "追いかけ(1.5ATR〜)")
+        self.assertEqual(got["stretch"]["fast_rate"], 37)
+        self.assertEqual(got["stretch"]["avg_r"], -0.04)
+        sc2 = {"price": 154.11, "ef": 154.10, "atr": 0.10, "rsi": 70.0, "adx": 33.0}
+        self.assertEqual(F.fast_profile(sc2, "買い", prof=self.PROF)["stretch"]["band"],
+                         "初動(-0.3〜0.3ATR)")
+
+    def test_the_distance_is_measured_in_the_trade_direction(self):
+        """売りは『EMAより下』が行き過ぎ。方向を掛けないと逆に出る。"""
+        sc = {"price": 153.90, "ef": 154.10, "atr": 0.10, "rsi": 30.0, "adx": 33.0}
+        self.assertEqual(F.fast_profile(sc, "売り", prof=self.PROF)["stretch"]["band"],
+                         "追いかけ(1.5ATR〜)")
+        # 同じ場面でも買いから見れば「EMAより2ATR下」＝逆張り側になる
+        self.assertEqual(F.fast_profile(sc, "買い", prof=self.PROF)["stretch"]["band"],
+                         "逆張り(-0.3ATR〜)")
+
+    def test_missing_backtest_gives_nothing_rather_than_a_guess(self):
+        self.assertIsNone(F.fast_profile({"price": 1, "ef": 1, "atr": 0.1}, "買い", prof={}))
+        self.assertIsNone(F.fast_profile(None, "買い", prof=self.PROF))
+
+    def test_unknown_band_is_skipped_not_faked(self):
+        prof = {"bars": 4, "bar_min": 15, "need_r": 1.0, "adx": {"適正(30〜40)": {}}}
+        self.assertIsNone(F.fast_profile({"price": 1.0, "ef": 1.0, "atr": 0.1,
+                                          "adx": 99.0, "rsi": 50.0}, "買い", prof=prof))
+
+    def test_profile_never_changes_the_verdict(self):
+        """判定に混ざっていないこと。backtest.json が無くても signal は同じ。"""
+        self.addCleanup(setattr, F, "BT_FILE", F.BT_FILE)
+        F._FAST_PROFILE.clear()
+        self.addCleanup(F._FAST_PROFILE.clear)
+        F.BT_FILE = os.path.join(self.dir, "nope.json")
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        sides = [F.entry_side("USD_JPY", v, 55.0, F.P["th"]) for v in (-0.9, 0.0, 0.9)]
+        self.assertEqual(sides, ["売り", None, "買い"])
+        self.assertIsNone(F.fast_profile({"price": 1, "ef": 1, "atr": 0.1}, "買い"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1495,6 +1495,37 @@ async function refreshLongEnv(base,sym){try{
 async function ensureLongEnv(base){let changed=false;for(const sym of SYMS){const b=LONGENV[sym]&&LONGENV[sym].ts;const r=await refreshLongEnv(base,sym);if(r&&(!b||LONGENV[sym].ts!==b))changed=true;}if(changed)try{render();}catch(e){}}
 var ZONE=zoneNow();
 
+/* ===== 初動プロファイル（実測1年） =====
+   「🔴でも短時間で大きく利確できた」は気のせいではなかった。行き過ぎた所・
+   すでに走った所で入るほど初動は速く大きい（デイで 60分以内に+1R到達
+   37% 対 17%、平均初動 +0.98R 対 +0.57R）。
+   ただし最終的な期待値は上がらない。近いTP(0.6〜1.2R)へ置き換えて実際に
+   当てたところ、全モード約90区分のうち現行の利確推奨を有意に上回ったのは
+   1つだけで、これは偶然に期待される数(約4.5)を下回る＝改善は無い。
+   だから「速い型で入る」「速いから早く利確する」はどちらも入れない。
+   ここでやるのは速さと期待値を必ず並べて出すことだけ。速い型ほど
+   儲かるわけではない、と毎回見えるようにするのが正しい使い道。 */
+function fastProfileBox(p){
+  const f=p&&p.fast; if(!f) return '';
+  const rows=[];
+  [['stretch','入った場所'],['adx','ADX'],['rsi','RSI']].forEach(function(kv){
+    const c=f[kv[0]]; if(!c||c.avg_r==null) return;
+    const r=(c.avg_r>=0?'+':'')+c.avg_r.toFixed(3);
+    const cls=c.ci_lo>0?'up':(c.ci_hi<0?'down':'');
+    rows.push('<div class="er">'+kv[1]+' <b>'+c.band+'</b>：'
+      +(f.bars*f.bar_min)+'分で+'+f.need_r+'R到達 <b>'+c.fast_rate+'%</b>'
+      +' ／ 平均初動 <b>+'+c.mfe.toFixed(2)+'R</b>'
+      +' ／ この型の期待R <b class="'+cls+'">'+r+'</b>'
+      +'<span style="opacity:.7">（'+c.n+'回）</span></div>');
+  });
+  if(!rows.length) return '';
+  // 速いのに期待値が0以下、を明示する。ここを黙っていると
+  // 「速い＝良い」と読まれてしまう。
+  const st=f.stretch;
+  const warn=(st&&st.fast_rate>=33&&st.avg_r!=null&&st.avg_r<=0)
+    ? '<div class="er" style="opacity:.85">⚡ 速いが伸びない型です。近いTPに置き換えても改善しませんでした（実測）。利確推奨に従うのが試した中では最良です。</div>' : '';
+  return '<div class="entry"><div class="ev">⚡ 初動プロファイル（実測1年）</div>'+rows.join('')+warn+'</div>';
+}
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
@@ -1514,6 +1545,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     const evTxt=(ev>=0?'+':'')+ev.toFixed(2)+'R';
     statBox=`<div class="entry ${cls}"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b><br>📊 TP勝率 <b>${st.winRate}%</b> ／ 損益分岐 <b>${beR}%</b>（RR 1:${rr.toFixed(1)}・直近${st.n}回）<br><b>${verdict}</b> <span style="opacity:.75">期待値 ${evTxt}/回</span></div></div>`;
   }
+  const fastBox=fastProfileBox(p);
   let entryBox='';
   if(p.signal && p.entry_ref!=null){
     const q=PRICE[p.symbol], cur=q?(p.signal==='買い'?q.bid:q.ask):null, now=Date.now();
@@ -1641,7 +1673,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     <div class="sparkwrap" style="position:relative">${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}${sparkSignal(p)}</div>
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
 function toggleDetail(sym,btn){try{var card=btn.parentNode;var willOpen=card.classList.contains('simple');card.classList.toggle('simple',!willOpen);localStorage.setItem('fxnavi_acc_'+sym,willOpen?'1':'0');btn.textContent=willOpen?'▲ 詳細を閉じる':'▼ 詳細';}catch(e){}}
 function setView(v){try{localStorage.setItem('fxnavi_view',v);var i=0;var keys=[];for(i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('fxnavi_acc_')===0)keys.push(k);}keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}renderViewToggle();render();}
 function renderViewToggle(){var el=document.getElementById('viewtog');if(!el)return;var v='simple';try{v=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}

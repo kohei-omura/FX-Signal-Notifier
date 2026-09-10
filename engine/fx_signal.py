@@ -1026,6 +1026,67 @@ def early_tp_r(oh, i, side, entry, sl, risk):
     return out
 
 
+# ===== 型ごとの「初動プロファイル」をカードに載せる =====
+# 実測(1年)で分かったこと:
+#   ・行き過ぎた所・すでに走った所で入るほど、初動は速くて大きい（デイで
+#     速攻率 37% 対 17%、平均初動 +0.98R 対 +0.57R）。体感どおり本当に速い。
+#   ・しかし最終的な期待値は上がらない。近いTP(0.6〜1.2R)へ置き換えて当てても、
+#     全モード約90区分のうち現行の利確推奨を有意に上回ったのは1つだけで、
+#     これは偶然に期待される数（約4.5）を下回る＝改善は無い。
+# つまり「速い型で入る」「速いから早く利確する」はどちらも根拠が無い。
+# 根拠が無いものを機能にすると損が増えるので、ここでやるのは
+# 『その型の速さと期待値を並べて出す』ことだけにする。速さと儲けが
+# 別物だと毎回見えるようにするのが、この数字の正しい使い道。
+BT_FILE = data_path("backtest.json")
+_FAST_PROFILE = {}
+
+
+def load_fast_profile(mode=None):
+    """backtest.json から現在モードの型別実測を読む。無ければ空。"""
+    mode = mode or MODE
+    if mode in _FAST_PROFILE:
+        return _FAST_PROFILE[mode]
+    prof = {}
+    try:
+        with open(BT_FILE, encoding="utf-8") as f:
+            prof = ((json.load(f).get("modes") or {}).get(mode) or {}).get("fast") or {}
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        warn(f"backtest.json を読めませんでした: {e}", tag="bt-read", surface=False)
+    _FAST_PROFILE[mode] = prof
+    return prof
+
+
+def fast_profile(sc, side, prof=None):
+    """いまの場面が属する型と、その型の実測（速攻率・平均初動・期待R）。
+
+       side が無い（シグナルが出ていない）場面でも、買い側を仮に当てて
+       『いま入るとどういう型か』を出す。カードの説明が目的なので、
+       判定そのものには一切使わない。"""
+    prof = load_fast_profile() if prof is None else prof
+    if not prof or not sc:
+        return None
+    d = 1 if side != "売り" else -1
+    a = sc.get("atr") or 0
+    ef = sc.get("ef")
+    stretch = ((sc["price"] - ef) * d / a) if (ef is not None and a) else None
+    out = {"bars": prof.get("bars"), "bar_min": prof.get("bar_min"),
+           "need_r": prof.get("need_r")}
+    for kind, band in (("stretch", _band_of(STRETCH_BANDS, stretch)),
+                       ("adx", _band_of(ADX_BANDS, sc.get("adx"))),
+                       ("rsi", _rsi_band(sc.get("rsi"), side or "買い"))):
+        cell = ((prof.get(kind) or {}) if isinstance(prof.get(kind), dict) else {}).get(band)
+        if not cell:
+            continue
+        adv = cell.get("advice") or {}
+        out[kind] = {"band": band, "n": cell.get("n"),
+                     "fast_rate": cell.get("fast_rate"), "mfe": cell.get("mfe"),
+                     "avg_r": adv.get("avg_r"), "ci_lo": adv.get("ci_lo"),
+                     "ci_hi": adv.get("ci_hi")}
+    return out if len(out) > 3 else None
+
+
 ATR_PCT_WINDOW = 200
 ATR_REGIME_BANDS = ((95, "クライマックス(95%〜)"), (80, "拡大(80〜95%)"),
                     (20, "適正(20〜80%)"), (0, "閑散(〜20%)"))
@@ -2159,6 +2220,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             "cost_r": round(SPREAD_PIPS.get(sym, DEFAULT_SPREAD_PIPS) / sc["sl_pips"], 3)
                       if sc.get("sl_pips") else None,
             "mtf": mtf,
+            # 実測(1年)の型別プロファイル。判定には使わず、表示だけに使う。
+            "fast": fast_profile(sc, sig),
             "skip_reason": skip_reason,
             "next_news": ({"title": nw[2], "time": nw[1].strftime("%H:%M"),
                            "in_min": int(nw[3]), "country": nw[0]} if nw else None),
