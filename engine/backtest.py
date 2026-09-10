@@ -183,6 +183,7 @@ def run_mode(mode):
 
     symbols, total_pol, total_band, blocked, n_all = {}, {}, {}, 0, 0
     total_atr = {}; atr_warm = 0
+    total_fast = {}; fast_meta = {}
     for sym in F.SYMBOLS:
         try:
             st = F.compute_signal_stats(sym)
@@ -211,6 +212,20 @@ def run_mode(mode):
             for k in F.EXIT_POLICIES:
                 if b.get(k):
                     slot.setdefault(k, []).append(b[k])
+        # 初動は通貨ごとに件数が違うので、件数で重みを付けて合成する。
+        # 最終Rは信頼区間まで見たいので pool_summary に渡す（分散も合成される）。
+        for kind, per in (st.get("fast") or {}).items():
+            if not isinstance(per, dict):
+                fast_meta[kind] = per          # bars / bar_min / need_r
+                continue
+            for bn, b in per.items():
+                slot = total_fast.setdefault(kind, {}).setdefault(
+                    bn, {"n": 0, "mfe": 0.0, "fast": 0.0, "adv": []})
+                slot["n"] += b["n"]
+                slot["mfe"] += b["mfe"] * b["n"]
+                slot["fast"] += b["fast_rate"] * b["n"]
+                if b.get("advice"):
+                    slot["adv"].append(b["advice"])
 
     if not symbols:
         return None
@@ -230,6 +245,19 @@ def run_mode(mode):
         if row:
             row["n"] = max(v["n"] for v in row.values())
             atr_band[bn] = row
+    fast = dict(fast_meta)
+    for kind, per in total_fast.items():
+        rows = {}
+        for bn, sl in per.items():
+            if not sl["n"]:
+                continue
+            row = {"n": sl["n"], "mfe": round(sl["mfe"]/sl["n"], 3),
+                   "fast_rate": round(sl["fast"]/sl["n"])}
+            if sl["adv"]:
+                row["advice"] = pool_summary(sl["adv"])
+            rows[bn] = row
+        if rows:
+            fast[kind] = rows
     # 実際に何日ぶんのデータが取れたか（取引所の保持期間で足りないことがある）
     covered = len({k[2] for k in F._KLINE_DAY_CACHE
                    if k[1] == F.P["interval"] and F._KLINE_DAY_CACHE[k]})
@@ -237,7 +265,7 @@ def run_mode(mode):
             "current_th": F.PARAMS[mode]["th"],
             "policies": pol, "bands": band, "atr_bands": atr_band,
             "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
-            "atr_bands_warmup": atr_warm,
+            "atr_bands_warmup": atr_warm, "fast": fast,
             **(({"pullback_sweep": sweep_pullback(mode),
                  "pullback_holdout": holdout_pullback(mode),
                  "pullback": list(F.MTF_PULLBACK_RSI)}
