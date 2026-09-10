@@ -584,6 +584,7 @@ function attachSnapScores(tolMin){
   var snap=_loadSnap(); if(!snap.length) return {filled:0,total:0,noSnap:true};
   var t=loadTrades(), filled=0, skipped=0;
   t.forEach(function(x){
+    if(x.markSrc==='entrylog') return;      // 記録簿の値（エントリー時点）を上書きしない
     if(x.score!=null&&x.score!=='') return;
     var od=_tOpen(x)||_tJst(x.closed_at||''); if(!od) return;
     var want=String(x.pair||'').replace('/','_');
@@ -663,12 +664,17 @@ function entryLogAttach(){
     // 同じ建値が複数ある場合は新しい方を優先
     if(!idx[k]||String(e.logged_at||'')>String(idx[k].logged_at||'')) idx[k]=e;
   });
-  var t=loadTrades(), filled=0;
+  var t=loadTrades(), filled=0, fixed=0;
   t.forEach(function(x){
     if(x.entry==null||x.entry==='') return;
-    if(x.elSrc) return;                                  // 既に紐付け済み
     var e=idx[String(x.pair||'')+'@'+(+x.entry).toFixed(3)];
     if(!e) return;
+    /* 既に紐付け済みでも、判定マークがスナップショット由来なら付け直す。
+       スナップショットは5分ごとのサンプルなので、エントリーした瞬間の値とは
+       限らない。実例: 9/10 19:33 の USD/JPY は記録簿では 🟡保留・検討(54%)
+       なのに、履歴には 🔴 と出ていた。マーク別成績が狂う。 */
+    var needFix=(x.markSrc!=='entrylog'&&e.conf_mark);
+    if(x.elSrc&&!needFix) return;
     if(x.tp_pips==null&&e.tp_pips!=null) x.tp_pips=e.tp_pips;
     if(x.sl_pips==null&&e.sl_pips!=null) x.sl_pips=e.sl_pips;
     if(x.rawScore==null&&e.score!=null) x.rawScore=e.score;     // -1〜+1 の総合スコア
@@ -682,9 +688,14 @@ function entryLogAttach(){
        これが欠けると、期待値が確定でマイナスのデイ(-0.079R)と
        mtf(+0.065R)が同じ集計に混ざり、どの数字も意味を失う。 */
     if(!x.mode&&e.mode) x.mode=e.mode;
-    // 総合判定（マーク別成績の元）。スナップショットと同じ意味で入れる。
-    if((x.score==null||x.score==='')&&e.conf_pct!=null) x.score=e.conf_pct;
-    if(!x.smark&&e.conf_mark) x.smark=e.conf_mark;
+    /* 総合判定（マーク別成績の元）。
+       記録簿の conf_* はアプリが【エントリーした瞬間】に保存した値なので、
+       5分ごとのスナップショットより正確。既に入っていても上書きする。 */
+    if(e.conf_mark){
+      if(x.smark!==e.conf_mark||x.markSrc!=='entrylog') fixed++;
+      x.smark=e.conf_mark; x.markSrc='entrylog';
+      if(e.conf_pct!=null) x.score=e.conf_pct;
+    }else if((x.score==null||x.score==='')&&e.conf_pct!=null){ x.score=e.conf_pct; }
     if((x.rsi==null||x.rsi==='')&&e.rsi!=null) x.rsi=e.rsi;
     if((x.tech==null||x.tech==='')&&e.tech!=null) x.tech=e.tech;
     if((x.fund==null||x.fund==='')&&e.fund!=null) x.fund=e.fund;
@@ -693,7 +704,7 @@ function entryLogAttach(){
     x.elSrc='entrylog'; filled++;
   });
   if(filled) saveTrades(t);
-  return {filled:filled,total:t.length};
+  return {filled:filled,total:t.length,fixed:fixed};
 }
 
 /* CSV取込だけで集計が成立しているかの自己診断。
@@ -737,6 +748,7 @@ async function entryLogSync(){
   var el=document.getElementById('impmsg');
   if(el) el.innerHTML='<span class="good">記録簿を'+_elLoad().length+'件保持（新規'+added+'件）／ '
     +r.filled+'件の取引に判断材料を紐付けました</span>'
+    +(r.fixed?('<br><span class="good">うち'+r.fixed+'件は判定マークを記録簿の値（エントリー時点）に直しました</span>'):'')
     +(r.filled?'':'<br><span class="warn">建値が一致する取引がありませんでした。CSVを「建単価つき」で取り込んでいるかご確認ください。</span>')
     +'<br>'+coverageNote();
   try{ renderJournal(); }catch(e){}
