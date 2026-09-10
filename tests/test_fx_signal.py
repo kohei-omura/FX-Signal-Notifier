@@ -2048,10 +2048,13 @@ class ForwardResolveTest(RunTestCase):
         self.assertEqual(F.resolve_forward_record(r, now)["result"], "tp",
                          "壊れた値を信用している")
 
-    def test_the_real_aud_record_is_not_closed_on_snapshot_highs(self):
-        """実データの再現: 9/8 の AUD/JPY は5分ごとのbidでは TP に2.0pips届いていない。
+    def test_a_level_the_bars_never_reached_is_not_a_win(self):
+        """足が届いていない水準を勝ちにしないこと。
 
-        足の高安で見て届いていないものを勝ちにしないこと。"""
+        値は 9/8 の AUD/JPY を5分ごとのbidスナップショットで追った時の
+        高値111.259・安値110.912（TPは111.279で、2.0pips届いていない）。
+        実際にはこの記録は15分足の高値がTPに届いており勝ちで正しかったが、
+        「観測できた範囲で届いていないなら決着させない」ことをここで固定する。"""
         r = {"sym": "AUD_JPY", "side": "long", "mode": "day", "ts": self.T0,
              "entry": 110.996, "tp": 111.279, "sl": 110.819, "b": 1.6, "open": True}
         now = self._bars([(111.259, 110.912, 111.200)] * 6)   # 実測の高値・安値
