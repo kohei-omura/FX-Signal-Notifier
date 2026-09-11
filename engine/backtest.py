@@ -167,6 +167,55 @@ def holdout(mode, policy="advice"):
             "candidates": {str(t): first[t]["avg_r"] for t in first}}
 
 
+def _tech_entry_rule(ctx, i):
+    """tech だけでエントリーを判定する候補ルール。
+
+       現行は total(=TECH_W*tech + FUND_W*fund) をしきい値と比べている。
+       fund は通貨ごとの固定値（USD/JPY +0.5 等）なので、スイング(0.45:0.55)
+       では +0.275 の下駄になり、total の下限が -0.175 までしか下がらない。
+       売りには -0.45 が要るので、スイングは構造上1件も売れない
+       （実測1年386件すべて買い）。tech は [-1,1] で対称なので両方向に出せる。"""
+    a = ctx["atr"][i]
+    if a is None or i + 1 < ctx["min_len"]:
+        return None
+    ef, es, rv = ctx["ef"][i], ctx["es"][i], ctx["rsi"][i]
+    md, bb, ax = ctx["macd"][i], ctx["bb"][i], ctx["adx"][i]
+    if None in (ef, es, rv) or None in (md, bb, ax):
+        return None
+    t = F._compose_score(ctx["symbol"], ctx["closes"][i], ef, es, rv,
+                         md[0], md[1], bb[0], bb[1], a, ax[0])["tech"]
+    th = ctx["th"]
+    return "買い" if t >= th else ("売り" if t <= -th else None)
+
+
+def entry_variant_holdout(mode):
+    """エントリー候補（tech判定）を、前半で測って後半で当てる。
+
+       現行ルールも同じ区間で測って並べる。片方だけ良い区間を選んで
+       比べてしまわないため。"""
+    out = {}
+    for lab, rng in (("first_half", (0.0, 0.5)), ("second_half", (0.5, 1.0))):
+        cur, var = [], []
+        for sym in F.SYMBOLS:
+            try:
+                a = F.compute_signal_stats(sym, entry_range=rng)
+                b = F.compute_signal_stats(sym, entry_range=rng, rule=_tech_entry_rule)
+            except Exception as e:
+                print(f"[WARN] {mode}/{sym} エントリー候補 失敗: {e}", file=sys.stderr)
+                continue
+            if a and (a.get("policies") or {}).get("advice"):
+                cur.append(a["policies"]["advice"])
+            if b and (b.get("policies") or {}).get("advice"):
+                var.append(b["policies"]["advice"])
+        row = {}
+        if cur:
+            row["現行(total判定)"] = pool_summary(cur)
+        if var:
+            row["候補(tech判定)"] = pool_summary(var)
+        out[lab] = row
+    return out
+
+
 def filter_holdout(mode):
     """前半で測った絞り込みが、後半でも通用するかを確かめる。
 
@@ -298,6 +347,7 @@ def run_mode(mode):
             "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
             "atr_bands_warmup": atr_warm, "fast": fast,
             "filter_holdout": filter_holdout(mode),
+            "entry_variant": entry_variant_holdout(mode),
             **(({"pullback_sweep": sweep_pullback(mode),
                  "pullback_holdout": holdout_pullback(mode),
                  "pullback": list(F.MTF_PULLBACK_RSI)}
@@ -355,6 +405,15 @@ def main():
                           f"速攻{b['fast_rate']:3}% 平均初動{b['mfe']:+.2f}R "
                           f"最終R{adv.get('avg_r', 0):+.3f} "
                           f"[{adv.get('ci_lo', 0):+.3f}〜{adv.get('ci_hi', 0):+.3f}]  {es}")
+        ev = r.get("entry_variant") or {}
+        if ev.get("second_half"):
+            print("      ── エントリー候補（tech判定 vs 現行・前半→後半）")
+            for k in (ev.get("first_half") or {}):
+                a = (ev["first_half"] or {}).get(k) or {}
+                b = (ev["second_half"] or {}).get(k) or {}
+                print(f"        {k:18} 前半 n={a.get('n',0):4} {a.get('avg_r',0):+.3f}"
+                      f"  →  後半 n={b.get('n',0):4} {b.get('avg_r',0):+.3f}"
+                      f"[{b.get('ci_lo',0):+.3f},{b.get('ci_hi',0):+.3f}]")
         fh = r.get("filter_holdout") or {}
         if fh.get("second_half"):
             print("      ── 絞り込み（前半で測り、後半で当てる）")

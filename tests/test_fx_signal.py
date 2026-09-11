@@ -2808,5 +2808,76 @@ class TechFundWeightTest(unittest.TestCase):
                           f"{mode} に mode 名が無い")
 
 
+class ReachableThresholdTest(unittest.TestCase):
+    """しきい値が、その値の到達範囲の外に置かれていないこと。
+
+    スコアは total = TECH_W*tech + FUND_W*fund で、tech は [-1,1]、
+    fund は FUND_BIAS の固定値。つまり到達範囲は
+      [TECH_W*(-1)+FUND_W*fund,  TECH_W*(+1)+FUND_W*fund]
+    に限られる。この外にしきい値を置くと、その分岐は一度も通らない。
+
+    実際に2件あった（どちらもスイング・4通貨すべて）。
+      売りシグナル  total<=-0.45 が必要だが下限は -0.175〜-0.230
+        → 1年386件すべて買い。売りは構造上1件も出せなかった。
+      買いの損切り  total<=-0.25 が必要だが下限は同上
+        → 「入った根拠が消えた」の損切り推奨が出ない。
+    黙って死んだ分岐になるので、ここで数値として固定する。
+    """
+
+    ADV_OPP = 0.25          # fx_signal.py / index.html で共有
+
+    def _range(self, mode, sym):
+        with F.use_mode(mode):
+            t, f = F.TECH_W, F.FUND_W
+        fb = F.FUND_BIAS.get(sym, 0.0)
+        return (t * -1 + f * fb, t * 1 + f * fb)
+
+    def test_entry_thresholds_are_reachable_in_both_directions(self):
+        dead = []
+        for mode in F.PARAMS:
+            if F.PARAMS[mode].get("rule") == "mtf_pullback":
+                continue                      # mtfはRSIで判定するので th を使わない
+            th = F.PARAMS[mode]["th"]
+            for sym in F.SYMBOLS:
+                lo, hi = self._range(mode, sym)
+                if hi < th:
+                    dead.append(f"{mode}/{sym} 買い(>= {th})")
+                if lo > -th:
+                    dead.append(f"{mode}/{sym} 売り(<= -{th})")
+        # スイングの売りは現状すべて到達不能。直したらこの期待値を更新すること。
+        self.assertEqual(
+            sorted(dead),
+            sorted(f"swing/{s} 売り(<= -0.45)" for s in F.SYMBOLS),
+            "到達できないエントリー判定が増減した")
+
+    def test_the_cut_threshold_is_reachable(self):
+        dead = []
+        for mode in F.PARAMS:
+            for sym in F.SYMBOLS:
+                lo, hi = self._range(mode, sym)
+                if lo > -self.ADV_OPP:
+                    dead.append(f"{mode}/{sym} 買いの損切り")
+                if -hi > -self.ADV_OPP:
+                    dead.append(f"{mode}/{sym} 売りの損切り")
+        self.assertEqual(
+            sorted(dead),
+            sorted(f"swing/{s} 買いの損切り" for s in F.SYMBOLS),
+            "到達できない損切り判定が増減した")
+
+    def test_the_measured_swing_trades_are_all_buys(self):
+        """実測でも裏が取れていること（1年386件すべて買い）。
+
+        backtest.json が無い環境では飛ばす。"""
+        path = os.path.join(ROOT, "data", "backtest.json")
+        if not os.path.exists(path):
+            self.skipTest("backtest.json が無い")
+        with open(path, encoding="utf-8") as f:
+            sw = (json.load(f).get("modes") or {}).get("swing") or {}
+        side = ((sw.get("fast") or {}).get("side")) or {}
+        if not side:
+            self.skipTest("side の集計がまだ無い")
+        self.assertNotIn("売り", side, "売りが出た＝到達範囲が変わっている")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

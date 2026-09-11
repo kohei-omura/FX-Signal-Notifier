@@ -1170,7 +1170,7 @@ def _score_band(abs_score, th, rsi=None, side=None):
 #   tp_sl        … TP/SLに当たるまで持つ（設計どおり）
 #   advice       … 現行の「🎯利確推奨 / 🛑損切り推奨」で降りる（LINE+メールで届く分）
 #   advice_watch … 「🟡利確検討」でも降りる（メールに届く分に全部従った場合）
-EXIT_POLICIES = ("tp_sl", "advice", "advice_watch")
+EXIT_POLICIES = ("tp_sl", "advice", "advice_watch", "advice_tech")
 
 
 def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
@@ -1190,8 +1190,16 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
         if (side == "買い" and h >= tp) or (side == "売り" and l <= tp):
             out["tp_sl"] = P.get("tsr", TP_SL_RATIO); break
     # アドバイスに従って降りる場合
-    for name in ("advice", "advice_watch"):
+    #   advice_tech は「入った根拠が消えたか」を tech だけで見る版。
+    #   現行は total(=TECH_W*tech + FUND_W*fund) で見ているが、fund は通貨ごとの
+    #   固定値（USD/JPY +0.5 等）なので、スイング(0.45:0.55)では +0.275 の下駄に
+    #   なる。その結果 total の下限が -0.175 までしか下がらず、損切りの
+    #   しきい値 -0.25 に構造上届かない＝買い建玉で「根拠が消えた」の損切りが
+    #   一度も出なかった。tech は [-1,1] で対称なので、どのモード・どちらの
+    #   向きでも同じ基準で判定できる。どちらが良いかは実測で決める。
+    for name in ("advice", "advice_watch", "advice_tech"):
         use_watch = (name == "advice_watch")
+        use_tech = (name == "advice_tech")
         mfe = entry
         for j in range(i+1, n):
             h, l, c = oh[j]
@@ -1204,12 +1212,17 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
             ef, es, rv = ef_s[j], es_s[j], rsi_s[j]
             if None in (ef, es, rv, a) or None in (md, bb, ax):
                 continue
-            score = _compose_score(symbol, c, ef, es, rv, md[0], md[1],
-                                   bb[0], bb[1], a, ax[0])["total"]
+            _sc = _compose_score(symbol, c, ef, es, rv, md[0], md[1],
+                                 bb[0], bb[1], a, ax[0])
+            score = _sc["total"]
             adx_v = ax[0]
             profit = (c - entry) * d
-            aligned = hold_alignment(symbol, {"score": score}, d,
-                                     aligned=aligned_s[j] if aligned_s else None)
+            if use_tech and P.get("rule") != "mtf_pullback":
+                # mtfは上位足の向きで見るので変えない（元から対称で到達できる）
+                aligned = _sc["tech"] * d
+            else:
+                aligned = hold_alignment(symbol, {"score": score}, d,
+                                         aligned=aligned_s[j] if aligned_s else None)
             mfe = max(mfe, c) if side == "買い" else min(mfe, c)
             retrace = (mfe - c) if side == "買い" else (c - mfe)
             hit = None
