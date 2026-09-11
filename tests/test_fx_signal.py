@@ -2517,5 +2517,81 @@ class StatsShortfallTest(unittest.TestCase):
         self.assertTrue(got["ok"], "8件以上あるのに統計が出ていない")
 
 
+class PositionModeStickyTest(unittest.TestCase):
+    """建玉は、画面のモードを切り替えても『建てた時のモードの物差し』で判定すること。
+
+    実際に起きたこと: スイングで建てた USD/JPY を、画面を運用モード(mtf)へ
+    戻したとたん「入った根拠が弱まった」に変わった。サーバーは同じ時刻に
+    🟢ホールド「入った根拠が続いている（スコア+0.47）」と判定していた。
+
+    原因は computeOpen() が建玉の mode と、サーバーの adv_* を
+    落としていたこと。holdAligned/holdBasis/posAdvice はどれも
+    p.mode を読む作りだったが、無いので全部【画面のモード】に
+    フォールバックしていた。用意してあったサーバー判定の代替も、
+    adv_label が落ちているので働いていなかった。
+    """
+
+    def _eval(self, tail, extra=""):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function computeOpen(){")
+        end = src.index("function posMode(p){")
+        end = src.index("\n", end) + 1
+        head = ("const PS=0.01;\nfunction tpsl(p){return[null,null];}\n"
+                "let PRICE={},S={mode:'mtf',open_positions:[]},POS={positions:[]};\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(head + src[i:end] + extra + tail); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    REAL_POS = {"id": "p1789085633538", "symbol": "USD_JPY", "side": "long",
+                "entry": 154.388, "lot": 3000, "status": "open",
+                "entry_mode": "swing", "mode": "swing"}
+    REAL_SRV = {"id": "p1789085633538", "symbol": "USD_JPY",
+                "adv_level": "hold", "adv_label": "🟢 ホールド",
+                "adv_reason": "入った根拠が続いている（スコア+0.47）",
+                "mode": "swing"}
+
+    def test_the_position_keeps_its_own_mode(self):
+        """画面がmtfでも、建玉のモードはスイングのまま読めること。"""
+        tail = ("\nPOS={positions:[" + json.dumps(self.REAL_POS) + "]};\n"
+                "const o=computeOpen()[0];\n"
+                "console.log(JSON.stringify({mode:o.mode,pm:posMode(o)}));\n")
+        got = self._eval(tail)
+        self.assertEqual(got["mode"], "swing", "建玉のモードが落ちている")
+        self.assertEqual(got["pm"], "swing", "画面のモードに引きずられている")
+
+    def test_the_server_verdict_reaches_the_card(self):
+        """サーバーが出した判定が建玉に届くこと（代替が働く前提）。"""
+        tail = ("\nPOS={positions:[" + json.dumps(self.REAL_POS) + "]};\n"
+                "S.open_positions=[" + json.dumps(self.REAL_SRV) + "];\n"
+                "const o=computeOpen()[0];\n"
+                "console.log(JSON.stringify({lab:o.adv_label,lv:o.adv_level,rs:o.adv_reason}));\n")
+        got = self._eval(tail)
+        self.assertEqual(got["lab"], "🟢 ホールド", "サーバー判定が届いていない")
+        self.assertEqual(got["lv"], "hold")
+        self.assertIn("根拠が続いている", got["rs"])
+
+    def test_a_position_without_a_mode_falls_back_to_the_screen(self):
+        """モードを持たない古い建玉は従来どおり画面のモードで見る。"""
+        old = dict(self.REAL_POS); old.pop("mode"); old.pop("entry_mode")
+        tail = ("\nPOS={positions:[" + json.dumps(old) + "]};\n"
+                "console.log(JSON.stringify({pm:posMode(computeOpen()[0])}));\n")
+        self.assertEqual(self._eval(tail)["pm"], "mtf")
+
+    def test_entry_mode_alone_is_enough(self):
+        """mode が無くても entry_mode があればそちらを使う。"""
+        only = dict(self.REAL_POS); only.pop("mode")
+        tail = ("\nPOS={positions:[" + json.dumps(only) + "]};\n"
+                "console.log(JSON.stringify({pm:posMode(computeOpen()[0])}));\n")
+        self.assertEqual(self._eval(tail)["pm"], "swing")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -925,11 +925,23 @@ async function delPos(id){const c=needCfg();if(!c)return;
 function tpsl(p){const side=p.side||'long',entry=+p.entry;let tp=(p.tp!=null)?+p.tp:null,sl=(p.sl!=null)?+p.sl:null;
   if(tp===null&&p.tp_pips!=null)tp=side==='long'?entry+p.tp_pips*PS:entry-p.tp_pips*PS;
   if(sl===null&&p.sl_pips!=null)sl=side==='long'?entry-p.sl_pips*PS:entry+p.sl_pips*PS;return[tp,sl];}
-function computeOpen(){return(POS.positions||[]).filter(p=>(p.status||'open')==='open').map(p=>{
+/* ★建玉のモードとサーバー判定を必ず持ち回る。
+   ここで mode を落としていたため、holdAligned/holdBasis/posAdvice が
+   p.mode を読めず、すべて【画面のモード】にフォールバックしていた。
+   その結果、スイングで建てた玉を画面mtfで見ると15分足の指標で評価され、
+   「入った根拠が弱まった」と出ていた（サーバーは🟢ホールドと判定していた）。
+   adv_* も落ちていたので、用意してあったサーバー判定の代替も働いていなかった。 */
+function computeOpen(){
+  const srv={};(S.open_positions||[]).forEach(x=>{if(x&&x.id)srv[x.id]=x;});
+  return(POS.positions||[]).filter(p=>(p.status||'open')==='open').map(p=>{
   const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000),q=PRICE[p.symbol];let cur=null,pp=null,yy=null;
   if(q){const c2=side==='long'?q.bid:q.ask,diff=side==='long'?(c2-entry):(entry-c2);cur=+c2.toFixed(3);pp=+(diff/PS).toFixed(1);yy=Math.round(diff*lot);}
-  const[tp,sl]=tpsl(p);return{id:p.id,symbol:p.symbol,side,entry,lot,current:cur,pips:pp,yen:yy,
+  const[tp,sl]=tpsl(p);const sv=srv[p.id]||{};
+  return{id:p.id,symbol:p.symbol,side,entry,lot,current:cur,pips:pp,yen:yy,
+    mode:p.mode||p.entry_mode||null, entry_mode:p.entry_mode||null,
+    adv_level:sv.adv_level||null, adv_label:sv.adv_label||null, adv_reason:sv.adv_reason||null,
     tp_price:tp!=null?+tp.toFixed(3):null,sl_price:sl!=null?+sl.toFixed(3):null};});}
+function posMode(p){return (p&&(p.mode||p.entry_mode))||(S&&S.mode)||'scalp';}
 
 /* ---------- 保有ポジションの利確/損切り判定（建値ベース・シグナル監視） ---------- */
 const ADV_OPP=0.25, ADV_SUPP=0.15, ADV_DECAY=0.10, TRAIL_ATR=1.0, PROFIT_ATR=1.0, ADX_WEAK=20.0;
@@ -1204,6 +1216,16 @@ const CONFLUENCE_W={longEnv:2,adxBand:2,expectancy:2,dow:1,zone:1,granville:1,bl
 const LONGENV={};
 try{const _le=JSON.parse(localStorage.getItem('fxnavi_longenv')||'{}');Object.assign(LONGENV,_le);}catch(e){}
 function pairSig(sym){return (S.pairs||[]).find(x=>x.symbol===sym);}
+/* 建玉は必ず『その建玉のモードの足』で見る。画面のモードは関係ない。
+   画面と同じモードなら通常の pairSig、違うモードなら posModeLive() が
+   45秒ごとに計算して貯めたものを使う。どちらも無ければサーバー判定に落ちる。 */
+var POSMODE_SIG={};
+function pairSigFor(p){
+  const pm=posMode(p);
+  if(pm===((S&&S.mode)||pm))return pairSig(p.symbol);
+  const c=POSMODE_SIG[pm+p.symbol];
+  return (c&&Date.now()-c.ts<15*60000)?c.ps:null;
+}
 function loadMfe(){try{return JSON.parse(localStorage.getItem('fxnavi_mfe'))||{}}catch(e){return{}}}
 function saveMfe(o){try{localStorage.setItem('fxnavi_mfe',JSON.stringify(o));}catch(e){}}
 /* 保有中に『入った根拠がまだ生きているか』。fx_signal.py の hold_alignment() と同じ。
@@ -1238,14 +1260,14 @@ function posAdvice(p){
      profit_atr が約1/4になってトレール利確が発火しなくなる。RSI・ADX・スコアも
      別の足のものになるので「弱化」「過熱」の判定も狂う。
      サーバーは建玉のモードで評価している（use_mode）ので、その判定をそのまま出す。 */
-  const pm=(p.mode||p.entry_mode||(S&&S.mode)||'scalp');
-  if(pm!==((S&&S.mode)||pm)){
+  const pm=posMode(p), cross=(pm!==((S&&S.mode)||pm));
+  const ps=pairSigFor(p);
+  if(!ps||p.current==null){
     if(!p.adv_label)return null;          // 判定できないなら出さない（誤った表示より無表示）
     return {level:p.adv_level||'watch',label:p.adv_label,reason:p.adv_reason||'',
       cls:(p.adv_level==='cut'?'down':((p.adv_level==='take'||p.adv_level==='hold')?'up':'')),
-      src:'server'};
+      src:'server',pm:pm,cross:cross};
   }
-  const ps=pairSig(p.symbol); if(!ps||p.current==null)return null;
   const dir=p.side==='long'?1:-1, a=ps.atr||0, score=(ps.score!=null?ps.score:0), rsi=(ps.rsi!=null?ps.rsi:50), adx=(ps.adx!=null?ps.adx:0);
   const profit=(p.current-p.entry)*dir, profitAtr=a?profit/a:0, aligned=holdAligned(p,ps,dir), basis=holdBasis(p,ps);
   // 初回は建値だけで初期化せず現在値も取り込む（含み益ピークの取りこぼし＝トレール判定のズレを防ぐ）
@@ -1267,7 +1289,8 @@ function posAdvice(p){
       ?`根拠が弱まった（${basis}）`:(rsiAgainst?'RSI過熱':'ADX低下');}
   else if(aligned>=ADV_SUPP){level='hold';label='🟢 ホールド';reason=`入った根拠が続いている（${basis}）`;}
   else{level='watch';label='🟡 様子見';reason='明確なサインなし'}
-  return {level,label,reason,cls:(level==='cut'?'down':(level==='take'||level==='hold')?'up':'')};
+  return {level,label,reason,cls:(level==='cut'?'down':(level==='take'||level==='hold')?'up':''),
+    pm:pm,cross:cross};
 }
 function checkPosNotify(){
   let adv0;try{adv0=JSON.parse(localStorage.getItem('fxnavi_pos_adv'))||{}}catch(e){adv0={}}
@@ -1865,7 +1888,7 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
   }
   const adv=posAdvice(p);
   const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}${
-    adv.src==='server'?`<br><span style="opacity:.7">※${MODE_LABEL[p.mode]||p.mode}の建玉です。画面は別のスタイルを表示中なので、サーバーの判定（約5分ごと）を出しています</span>`:''}</div></div>`:'';
+    adv.cross?`<br><span style="opacity:.7">※<b>${MODE_LABEL[adv.pm]||adv.pm}</b>で建てた玉なので、画面のスタイルに関係なく${MODE_LABEL[adv.pm]||adv.pm}の物差しで判定しています${adv.src==='server'?'（サーバーの判定・約5分ごと）':''}</span>`:''}</div></div>`:'';
   // 機能7: タイムストップ注意（想定保有中央値の2倍超で膠着警告・表示のみ）
   var _st7=STATS[((p.mode||S.mode)||'scalp')+p.symbol],_tsBox='';
   if(_st7&&_st7.tpMin){var _om=parseInt(String(p.id).replace(/^p/,''),10);
@@ -2911,6 +2934,28 @@ function subHeld(sym){
   return ((POS&&POS.positions)||[]).some(function(p){
     return p.symbol===sym && (p.status||'open')==='open'; });
 }
+/* 建玉のモードが画面と違う時、そのモードの足で指標を作っておく。
+   これが無いと5分ごとのサーバー判定しか出せず、45秒ごとの画面と
+   食い違って見える。運用モードを戻しても「入った時の物差し」のまま
+   評価が続くようにするのが目的。 */
+async function posModeLive(base){
+  const need={};
+  computeOpen().forEach(function(p){
+    const pm=posMode(p);
+    if(pm!==((S&&S.mode)||pm)&&JS_PARAMS[pm])need[pm+'|'+p.symbol]={mode:pm,sym:p.symbol};
+  });
+  for(const k in need){
+    const {mode,sym}=need[k],P=JS_PARAMS[mode];
+    const c=POSMODE_SIG[mode+sym];
+    if(c&&Date.now()-c.ts<60000)continue;          // 1分以内は作り直さない
+    const n=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30;
+    let oh;try{oh=await fetchKlines(base,sym,P,n);}catch(e){continue;}
+    if(!oh||oh.length<30)continue;
+    const sc=scorePair(sym,oh,P);if(!sc)continue;
+    POSMODE_SIG[mode+sym]={ts:Date.now(),ps:{symbol:sym,rsi:sc.rsi,adx:sc.adx,atr:sc.atr,
+      score:sc.score,tech:sc.tech,fund:sc.fund,tp_pips:sc.tp_pips,sl_pips:sc.sl_pips}};
+  }
+}
 async function subLiveSignals(base){
   if(!SUBNOTIFY.length) return;
   // 画面と運用モードがズレている時は送らない（本体の liveNotifyBlock と同じ、閉じる側）
@@ -3035,6 +3080,7 @@ async function liveSignals(){
       LIVE_PAIRS[sym]=pair;LIVE_AT=Date.now();
     }
     saveNotified(notified);
+    try{ await posModeLive(base); }catch(e){ console.warn('建玉モードの指標',e); }
     try{ await subLiveSignals(base); }catch(e){ console.warn('参考ライブ通知',e); }
     render();
     checkPosNotify();
