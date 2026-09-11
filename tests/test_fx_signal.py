@@ -2625,5 +2625,101 @@ class PositionModeStickyTest(unittest.TestCase):
         self.assertEqual(self._eval(tail)["pm"], "swing")
 
 
+class ModeCompareTest(unittest.TestCase):
+    """ツール画面のモード別くらべ。混ぜてはいけないものを混ぜないこと。
+
+    4つのモードは1年ぶんの実測で期待値がまるで違う。
+      mtf +0.063R / スイング +0.018R / デイ -0.077R / スキャル -0.300R
+    これを1つの集計にまとめると、どの数字も意味を失う。
+    """
+
+    TRADES = [
+        # 同じ時間帯・同じ方向のmtf 2件（円が動けば一斉に同じ結果＝独立1回）
+        {"mode": "mtf", "side": "買い", "yen": 820, "pips": 12.4, "sl_pips": 21.0,
+         "opened_at": "2026-09-08 16:38 JST", "closed_at": "2026-09-08 20:10 JST"},
+        {"mode": "mtf", "side": "買い", "yen": -640, "pips": -9.8, "sl_pips": 21.0,
+         "opened_at": "2026-09-08 16:40 JST", "closed_at": "2026-09-08 20:02 JST"},
+        {"mode": "swing", "side": "買い", "yen": 99, "pips": 3.3, "sl_pips": 42.2,
+         "opened_at": "2026-09-11 11:15 JST", "closed_at": "2026-09-11 11:22 JST"},
+        {"mode": "day", "side": "売り", "yen": -725, "pips": -8.1, "sl_pips": 15.0,
+         "opened_at": "2026-09-11 00:37 JST", "closed_at": "2026-09-11 01:10 JST"},
+        {"side": "買い", "yen": 300, "pips": 5.0},          # モード不明
+    ]
+    # 実際の backtest.json と同じ4モード（取引が1件も無いモードも検証値は出す）
+    BT = {"modes": {
+        "mtf": {"policies": {"advice": {"avg_r": 0.063, "ci_lo": -0.025,
+                                        "ci_hi": 0.150, "n": 709}}},
+        "swing": {"policies": {"advice": {"avg_r": 0.018, "ci_lo": -0.105,
+                                          "ci_hi": 0.141, "n": 386}}},
+        "day": {"policies": {"advice": {"avg_r": -0.077, "ci_lo": -0.115,
+                                        "ci_hi": -0.039, "n": 4069}}},
+        "scalp": {"policies": {"advice": {"avg_r": -0.300, "ci_lo": -0.338,
+                                          "ci_hi": -0.262, "n": 4077}}}}}
+
+    def _render(self):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いのでツール画面を実行できない")
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            src = f.read()
+        part1 = src[src.index("function _tJst"):src.index("function _scoreBand")]
+        part2 = src[src.index("var SPREAD_PIPS_T"):src.index("function renderCostPanel")]
+        script = (
+            "let OUT='';\n"
+            "global.document={getElementById:()=>({set innerHTML(v){OUT=v;}})};\n"
+            + part1 + part2
+            + "function loadTrades(){return " + json.dumps(self.TRADES) + ";}\n"
+            + "BT_CACHE=" + json.dumps(self.BT) + ";\n"
+            "renderModeCompare();\nconsole.log(OUT);\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout
+
+    def test_every_mode_has_its_own_row(self):
+        """取引が1件も無いモードも、検証値だけは並べること。
+
+        スキャルは実測 -0.300R で、触っていなくても「触らない方が良い」
+        ことが一覧で分かる必要がある。"""
+        html = self._render()
+        for lab in ("mtf(上位足押し目)", "スイング(1時間)", "デイ(15分)", "スキャル(1分)"):
+            self.assertIn(lab, html, f"{lab} の行が無い")
+        self.assertIn("-0.3R", html.replace("-0.300R", "-0.3R"))
+
+    def test_simultaneous_same_direction_trades_count_as_one(self):
+        """同時刻・同方向のmtf2件は独立1回として数えること。"""
+        html = self._render()
+        self.assertIn(">2<", html)          # 件数2
+        self.assertIn("/1<", html)          # 独立1
+        self.assertIn("独立", html)
+
+    def test_unknown_mode_is_excluded_and_reported(self):
+        """モード不明は集計に混ぜず、件数を出して気づけるようにすること。"""
+        html = self._render()
+        self.assertIn("モード不明が1件", html)
+
+    def test_the_backtest_expectation_is_shown_next_to_it(self):
+        """実測のとなりにバックテストの期待値を置くこと。
+
+        件数が少ないうちは実測より検証値の方が当てになるので、
+        必ず並べて出す。"""
+        html = self._render()
+        self.assertIn("+0.063R", html)
+        self.assertIn("-0.077R", html)
+        self.assertIn("検証R", html)
+
+    def test_r_uses_the_trade_own_stop_width(self):
+        """1Rはその取引のSL幅。モードの目安で代用しないこと。
+
+        スイングの +3.3pips は SL42.2pips なので +0.08R。
+        デイの目安(9pips)で割ると +0.37R になり、4倍以上ずれる。"""
+        html = self._render()
+        self.assertIn("+0.08R", html)
+        self.assertNotIn("+0.37R", html)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

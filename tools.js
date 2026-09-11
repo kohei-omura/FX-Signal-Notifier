@@ -474,6 +474,7 @@ function renderJournal(){
   try{renderEdgeProfile();}catch(e){}
   try{renderExitQuality();}catch(e){}
   try{renderVerdict();}catch(e){}
+  try{renderModeCompare();}catch(e){}
   try{renderCostPanel();}catch(e){}
   $('#trlist').innerHTML=t.slice().reverse().map((x,ri)=>{const i=t.length-1-ri;
     const sd=x.side==='買い'?'<span style="color:var(--up)">買</span>':x.side==='売り'?'<span style="color:var(--down)">売</span>':'<span style="color:var(--mut)">—</span>';
@@ -740,7 +741,9 @@ async function entryLogSync(){
       var bt=null;
       try{ var br=await fetch(base+'data/backtest.json?t='+Date.now(),{cache:'no-store'});
            if(br.ok) bt=await br.json(); }catch(e){}
+      BT_CACHE=bt;
       renderExitPolicies(st, bt);
+      try{ renderModeCompare(); }catch(e){ console.warn(e); }
       try{ renderSweep(bt, (st&&st.mode)||'day'); }catch(e){ console.warn(e); }
       try{ renderRegimeBands(bt, (st&&st.mode)||'day'); }catch(e){ console.warn(e); }
     }
@@ -760,14 +763,126 @@ async function entryLogSync(){
    期待値がゼロ近辺である以上、損益を動かせるのはコストだけなので、
    どの設定なら1件あたりいくら払うのかを円で並べる。 */
 var SPREAD_PIPS_T = {USD_JPY:0.2, EUR_JPY:0.4, GBP_JPY:0.9, AUD_JPY:0.5};
-var MODE_SL_PIPS  = {scalp:1.5, day:9.0, swing:36.0};   // 1R(=SL幅)の目安
-var MODE_LABEL_T  = {scalp:'スキャル(1分)', day:'デイ(15分)', swing:'スイング(1時間)'};
+var MODE_SL_PIPS  = {scalp:1.5, day:9.0, swing:36.0, mtf:21.0};   // 1R(=SL幅)の目安
+var MODE_LABEL_T  = {scalp:'スキャル(1分)', day:'デイ(15分)', swing:'スイング(1時間)', mtf:'mtf(上位足押し目)'};
+var MODE_ORDER_T  = ['mtf','swing','day','scalp'];
 // 1通貨あたり月あたりのシグナル数。backtest.json の実測から算出（営業日21日換算）。
 //   scalp 4550件/12日/4通貨 = 94.8件/日 → 約1,990件/月
 //   day   4033件/261日/4通貨 = 3.86件/日 → 約81件/月
 //   swing  396件/261日/4通貨 = 0.38件/日 → 約8件/月
 // コストは1回いくらより「月にいくら払うか」で効く。
-var MODE_TRADES_PER_MONTH = {scalp:1990, day:81, swing:8};
+var MODE_TRADES_PER_MONTH = {scalp:1990, day:81, swing:8, mtf:15};
+
+/* ===== モード別 実績くらべ =====
+   4つのモードは期待値がまるで違う（1年ぶんの実測）。
+     mtf +0.063R / スイング +0.018R / デイ -0.077R / スキャル -0.300R
+   なのに実績は全部ひとまとめに出ていたので、どのモードで勝って
+   どこで負けているのかが見えなかった。
+   ここでは実データ(CSV)をモード別に並べ、同じ表にバックテストの期待値も
+   置いて「実際が読みどおりか」を比べられるようにする。
+   件数が少ないうちは実測よりバックテストの方が当てになるので、
+   件数と独立イベント数を必ず一緒に出す。 */
+var BT_CACHE=null;
+function _tradeYen(x){ return (x.close_yen!=null)?+x.close_yen:(+x.yen||0); }
+function _tradeR(x){
+  // 1R = その取引のSL幅。記録簿から取れない時はモードの目安で代用する。
+  var p=(x.pips!=null&&x.pips!=='')?+x.pips:null; if(p==null||!isFinite(p)) return null;
+  var sl=(x.sl_pips!=null&&x.sl_pips!=='')?+x.sl_pips:MODE_SL_PIPS[x.mode];
+  return (sl&&isFinite(sl))?p/sl:null;
+}
+/* 同じ時間帯に同じ方向で持った取引は、4通貨とも対円なので一斉に同じ結果になる。
+   件数のまま勝率を見ると、実際より多く検証したように見える。
+   ダッシュボードの前向き検証と同じ数え方をここでも使う。 */
+function _tradeClusters(rows){
+  var xs=rows.map(function(x){
+    var o=_tOpen(x), c=_tJst(x.closed_at||'');
+    return {side:x.side||'', s:(o?o.getTime():(x.ts||0)), e:(c?c.getTime():(x.ts||0))};
+  }).sort(function(a,b){return a.s-b.s;});
+  var cl=[];
+  xs.forEach(function(x){
+    for(var i=0;i<cl.length;i++){var g=cl[i];
+      if(g.side===x.side&&x.s<=g.e&&x.e>=g.s){g.s=Math.min(g.s,x.s);g.e=Math.max(g.e,x.e);g.n++;return;}}
+    cl.push({side:x.side,s:x.s,e:x.e,n:1});
+  });
+  return cl.length;
+}
+function _btExpect(mode){
+  try{
+    var v=((BT_CACHE&&BT_CACHE.modes)||{})[mode];
+    var a=v&&v.policies&&v.policies.advice;
+    return a?{r:a.avg_r,lo:a.ci_lo,hi:a.ci_hi,n:a.n}:null;
+  }catch(e){ return null; }
+}
+function renderModeCompare(){
+  var el=document.getElementById('modecmp'); if(!el) return;
+  var t=loadTrades();
+  if(!t.length){ el.innerHTML=''; return; }
+  var by={}, unknown=[];
+  t.forEach(function(x){
+    if(x.mode&&MODE_LABEL_T[x.mode]) (by[x.mode]=by[x.mode]||[]).push(x);
+    else unknown.push(x);
+  });
+  var rows='', bars='', any=false;
+  // 実測とバックテストを同じ倍率で並べるため、先に幅の基準を決める
+  var vals=[];
+  MODE_ORDER_T.forEach(function(m){
+    var g=by[m]||[]; var rs=g.map(_tradeR).filter(function(v){return v!=null;});
+    if(rs.length) vals.push(Math.abs(rs.reduce(function(a,b){return a+b;},0)/rs.length));
+    var b=_btExpect(m); if(b) vals.push(Math.abs(b.r));
+  });
+  var scale=Math.max(0.15, Math.max.apply(null, vals.concat([0.1])));
+  var bar=function(v,col){
+    if(v==null) return '<span style="color:var(--mut)">—</span>';
+    var w=Math.min(50, Math.abs(v)/scale*50);
+    var neg=v<0;
+    return '<span style="display:inline-block;width:104px;vertical-align:middle">'
+      +'<span style="display:block;position:relative;height:9px;background:#0c1118;border-radius:3px">'
+      +'<span style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)"></span>'
+      +'<span style="position:absolute;top:1px;height:7px;border-radius:2px;background:'+col+';'
+      +(neg?('right:50%;width:'+w.toFixed(1)+'%'):('left:50%;width:'+w.toFixed(1)+'%'))+'"></span>'
+      +'</span></span>';
+  };
+  MODE_ORDER_T.forEach(function(m){
+    var g=by[m]||[], b=_btExpect(m);
+    if(!g.length&&!b) return;
+    any=true;
+    var n=g.length;
+    var wins=g.filter(function(x){return _tradeYen(x)>0;}).length;
+    var net=g.reduce(function(a,x){return a+_tradeYen(x);},0);
+    var rs=g.map(_tradeR).filter(function(v){return v!=null;});
+    var avgR=rs.length?rs.reduce(function(a,b2){return a+b2;},0)/rs.length:null;
+    var ind=n?_tradeClusters(g):0;
+    var f=function(v,d){return (v>=0?'+':'')+v.toFixed(d);};
+    rows+='<tr>'
+      +'<td>'+MODE_LABEL_T[m]+'</td>'
+      +'<td>'+(n||'—')+(n&&ind<n?'<span style="color:var(--mut)">/'+ind+'</span>':'')+'</td>'
+      +'<td>'+(n?Math.round(wins/n*100)+'%':'—')+'</td>'
+      +'<td class="'+(net>0?'good':(net<0?'warn':''))+'">'+(n?Math.round(net).toLocaleString()+'円':'—')+'</td>'
+      +'<td class="'+(avgR>0?'good':(avgR<0?'warn':''))+'">'+(avgR!=null?f(avgR,2)+'R':'—')+'</td>'
+      +'<td>'+bar(avgR,'var(--gold)')+'</td>'
+      +'<td class="'+(b&&b.r>0?'good':(b&&b.r<0?'warn':''))+'">'+(b?f(b.r,3)+'R':'—')+'</td>'
+      +'<td>'+bar(b?b.r:null,'#5b7fa8')+'</td>'
+      +'</tr>';
+  });
+  if(!any){ el.innerHTML=''; return; }
+  var small=Object.keys(by).filter(function(m){return by[m].length&&by[m].length<20;});
+  el.innerHTML='<h2 class="sec">モード別 実績くらべ</h2><div class="card">'
+    +'<table><tr><th>モード</th><th>件数/独立</th><th>勝率</th><th>純損益</th>'
+    +'<th>実測R</th><th></th><th>検証R</th><th></th></tr>'+rows+'</table>'
+    +'<div class="note">'
+    +'<b>実測R</b>＝あなたの取引1件あたりの損益をSL幅で割った値。<b>検証R</b>＝1年ぶんのバックテスト（利確推奨で決済・スプレッド控除後）。'
+    +'金色があなたの実績、青が検証値です。同じ倍率で並べてあります。<br>'
+    +'<b>件数/独立</b>の「独立」は、同じ時間帯に同じ方向で持った取引を1回として数えた数です。'
+    +'4通貨とも対円なので、円が動けば同方向の取引は一斉に同じ結果になります。'
+    +'件数だけ見ると実際より多く検証したように見えます。'
+    +(small.length?'<br><span class="warn">件数が少ないモードがあります（'
+        +small.map(function(m){return MODE_LABEL_T[m]+' '+by[m].length+'件';}).join('・')
+        +'）。この段階では実測Rより検証Rの方が当てになります。</span>':'')
+    +(unknown.length?'<br><span class="warn">モード不明が'+unknown.length+'件あります（上の集計に入っていません）。'
+        +'「🧠 記録簿を取込」を押すと紐付きます。</span>':'')
+    +(BT_CACHE?'':'<br>検証Rは「🧠 記録簿を取込」を押すと読み込まれます。')
+    +'</div></div>';
+}
 
 function renderCostPanel(){
   var el=document.getElementById('costpanel'); if(!el) return;
