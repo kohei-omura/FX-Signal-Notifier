@@ -822,7 +822,7 @@ function renderModeCompare(){
     if(x.mode&&MODE_LABEL_T[x.mode]) (by[x.mode]=by[x.mode]||[]).push(x);
     else unknown.push(x);
   });
-  var rows='', bars='', any=false;
+  var rows='', any=false;
   // 実測とバックテストを同じ倍率で並べるため、先に幅の基準を決める
   var vals=[];
   MODE_ORDER_T.forEach(function(m){
@@ -831,16 +831,17 @@ function renderModeCompare(){
     var b=_btExpect(m); if(b) vals.push(Math.abs(b.r));
   });
   var scale=Math.max(0.15, Math.max.apply(null, vals.concat([0.1])));
+  var f=function(v,d){return (v>=0?'+':'')+v.toFixed(d);};
+  var cls=function(v){return v==null?'':(v>0?'good':(v<0?'warn':''));};
+  // 棒は中央を0として左右に伸ばす。幅は%なので画面幅に追従する。
   var bar=function(v,col){
-    if(v==null) return '<span style="color:var(--mut)">—</span>';
-    var w=Math.min(50, Math.abs(v)/scale*50);
-    var neg=v<0;
-    return '<span style="display:inline-block;width:104px;vertical-align:middle">'
-      +'<span style="display:block;position:relative;height:9px;background:#0c1118;border-radius:3px">'
-      +'<span style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)"></span>'
-      +'<span style="position:absolute;top:1px;height:7px;border-radius:2px;background:'+col+';'
-      +(neg?('right:50%;width:'+w.toFixed(1)+'%'):('left:50%;width:'+w.toFixed(1)+'%'))+'"></span>'
-      +'</span></span>';
+    var fill='';
+    if(v!=null){
+      var w=Math.min(50, Math.abs(v)/scale*50);
+      fill='<i style="background:'+col+';'
+        +(v<0?('right:50%;width:'+w.toFixed(1)+'%'):('left:50%;width:'+w.toFixed(1)+'%'))+'"></i>';
+    }
+    return '<span class="mtrack"><span class="z"></span>'+fill+'</span>';
   };
   MODE_ORDER_T.forEach(function(m){
     var g=by[m]||[], b=_btExpect(m);
@@ -852,35 +853,36 @@ function renderModeCompare(){
     var rs=g.map(_tradeR).filter(function(v){return v!=null;});
     var avgR=rs.length?rs.reduce(function(a,b2){return a+b2;},0)/rs.length:null;
     var ind=n?_tradeClusters(g):0;
-    var f=function(v,d){return (v>=0?'+':'')+v.toFixed(d);};
-    rows+='<tr>'
-      +'<td>'+MODE_LABEL_T[m]+'</td>'
-      +'<td>'+(n||'—')+(n&&ind<n?'<span style="color:var(--mut)">/'+ind+'</span>':'')+'</td>'
-      +'<td>'+(n?Math.round(wins/n*100)+'%':'—')+'</td>'
-      +'<td class="'+(net>0?'good':(net<0?'warn':''))+'">'+(n?Math.round(net).toLocaleString()+'円':'—')+'</td>'
-      +'<td class="'+(avgR>0?'good':(avgR<0?'warn':''))+'">'+(avgR!=null?f(avgR,2)+'R':'—')+'</td>'
-      +'<td>'+bar(avgR,'var(--gold)')+'</td>'
-      +'<td class="'+(b&&b.r>0?'good':(b&&b.r<0?'warn':''))+'">'+(b?f(b.r,3)+'R':'—')+'</td>'
-      +'<td>'+bar(b?b.r:null,'#5b7fa8')+'</td>'
-      +'</tr>';
+    rows+='<div class="mrow">'
+      +'<div class="mhead"><span class="mname">'+MODE_LABEL_T[m]+'</span>'
+      +'<span class="mnet '+(net>0?'good':(net<0?'warn':''))+'">'
+      +(n?(net>=0?'+':'')+Math.round(net).toLocaleString()+'円':'取引なし')+'</span></div>'
+      +'<div class="mmeta">'+(n?(n+'件'+(ind<n?'（独立'+ind+'）':'')+' ／ 勝率'+Math.round(wins/n*100)+'%'
+           +(rs.length<n?' ／ R算出'+rs.length+'件':'')):'—')+'</div>'
+      +'<div class="mbar"><span class="l">実測</span>'
+      +'<span class="v '+cls(avgR)+'">'+(avgR!=null?f(avgR,2)+'R':'—')+'</span>'
+      +bar(avgR,'var(--gold)')+'</div>'
+      +'<div class="mbar"><span class="l">検証</span>'
+      +'<span class="v '+cls(b?b.r:null)+'">'+(b?f(b.r,3)+'R':'—')+'</span>'
+      +bar(b?b.r:null,'#5b7fa8')+'</div>'
+      +'</div>';
   });
   if(!any){ el.innerHTML=''; return; }
   var small=Object.keys(by).filter(function(m){return by[m].length&&by[m].length<20;});
-  el.innerHTML='<h2 class="sec">モード別 実績くらべ</h2><div class="card">'
-    +'<table><tr><th>モード</th><th>件数/独立</th><th>勝率</th><th>純損益</th>'
-    +'<th>実測R</th><th></th><th>検証R</th><th></th></tr>'+rows+'</table>'
+  el.innerHTML='<h2 class="sec">モード別 実績くらべ</h2><div class="card">'+rows
     +'<div class="note">'
-    +'<b>実測R</b>＝あなたの取引1件あたりの損益をSL幅で割った値。<b>検証R</b>＝1年ぶんのバックテスト（利確推奨で決済・スプレッド控除後）。'
-    +'金色があなたの実績、青が検証値です。同じ倍率で並べてあります。<br>'
-    +'<b>件数/独立</b>の「独立」は、同じ時間帯に同じ方向で持った取引を1回として数えた数です。'
+    +'<b>実測</b>＝あなたの取引1件あたりの損益をSL幅で割った値（金色）。'
+    +'<b>検証</b>＝1年ぶんのバックテスト（青・利確推奨で決済・スプレッド控除後）。'
+    +'左右の棒は同じ倍率で、中央が0です。<br>'
+    +'<b>独立</b>は、同じ時間帯に同じ方向で持った取引を1回として数えた数です。'
     +'4通貨とも対円なので、円が動けば同方向の取引は一斉に同じ結果になります。'
     +'件数だけ見ると実際より多く検証したように見えます。'
     +(small.length?'<br><span class="warn">件数が少ないモードがあります（'
         +small.map(function(m){return MODE_LABEL_T[m]+' '+by[m].length+'件';}).join('・')
-        +'）。この段階では実測Rより検証Rの方が当てになります。</span>':'')
+        +'）。この段階では実測より検証値の方が当てになります。</span>':'')
     +(unknown.length?'<br><span class="warn">モード不明が'+unknown.length+'件あります（上の集計に入っていません）。'
-        +'「🧠 記録簿を取込」を押すと紐付きます。</span>':'')
-    +(BT_CACHE?'':'<br>検証Rは「🧠 記録簿を取込」を押すと読み込まれます。')
+        +'「🧠 記録簿を取込」を押すと紐付きます。記録簿はエントリーを記録し始めた後のぶんしかありません。</span>':'')
+    +(BT_CACHE?'':'<br><span class="warn">検証Rが「—」です。「🧠 記録簿を取込」を押すと読み込まれます。</span>')
     +'</div></div>';
 }
 

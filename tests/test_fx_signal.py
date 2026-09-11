@@ -2692,9 +2692,19 @@ class ModeCompareTest(unittest.TestCase):
     def test_simultaneous_same_direction_trades_count_as_one(self):
         """同時刻・同方向のmtf2件は独立1回として数えること。"""
         html = self._render()
-        self.assertIn(">2<", html)          # 件数2
-        self.assertIn("/1<", html)          # 独立1
-        self.assertIn("独立", html)
+        self.assertIn("2件（独立1）", html)
+
+    def test_the_layout_has_no_fixed_width_that_can_overflow(self):
+        """棒を固定幅にしないこと。
+
+        最初は8列の表＋104px固定幅の棒で作ったため、スマホで右端が
+        画面外へはみ出し、検証Rの列が見えなくなった。
+        棒は残り幅いっぱい(flex)に伸びる .mtrack を使う。"""
+        html = self._render()
+        self.assertIn('class="mtrack"', html)
+        self.assertNotIn("<table", html, "表に戻すと幅が固定されてはみ出す")
+        self.assertNotIn("width:104px", html)
+        self.assertNotIn("display:inline-block;width:", html)
 
     def test_unknown_mode_is_excluded_and_reported(self):
         """モード不明は集計に混ぜず、件数を出して気づけるようにすること。"""
@@ -2709,7 +2719,7 @@ class ModeCompareTest(unittest.TestCase):
         html = self._render()
         self.assertIn("+0.063R", html)
         self.assertIn("-0.077R", html)
-        self.assertIn("検証R", html)
+        self.assertIn("検証", html)
 
     def test_r_uses_the_trade_own_stop_width(self):
         """1Rはその取引のSL幅。モードの目安で代用しないこと。
