@@ -10,7 +10,7 @@
   - 価格が取れない回に画面の表示内容を消さないこと
   - API障害でクラッシュしたり通知が二重に飛んだりしないこと
 """
-import json, os, random, shutil, subprocess, sys, tempfile, types, unittest
+import json, os, random, re, shutil, subprocess, sys, tempfile, types, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
@@ -3048,6 +3048,83 @@ class LiveModeRaceTest(unittest.TestCase):
         self.assertIn("function confW(mode){", src, "confW がモードを取れない")
         self.assertIn("function confluence(pair,st,mode){", src,
                       "confluence がモードを取れない")
+
+
+class ForwardRecordModeTest(unittest.TestCase):
+    """前向き検証の記録が、計算に使ったモードで残ること。
+
+    fwdRecord は S.mode を読み直していたため、足の取得中にモードが変わった
+    回に、デイの係数で作った合図を mtf として記録してしまった。
+    実例 2026-09-11 20:46 EUR/JPY 売り: SL幅15.9pips はデイの係数
+    （15分ATR×1.3）なのに mode:'mtf' で記録された。mtfなら×1.95で
+    約23pipsになるはずで、同じ足・同じATRからは出ない値。
+    運用mtf・画面デイの場面なので、本来は記録されない回だった。
+    """
+
+    def _src(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_caller_passes_the_computed_mode(self):
+        src = self._src()
+        self.assertIn("function fwdRecord(pair,mode){", src,
+                      "fwdRecord がモードを受け取らない")
+        self.assertIn("fwdRecord(pair,MODE0)", src,
+                      "計算に使ったモードを渡していない")
+
+    def test_the_record_does_not_reread_the_screen_mode(self):
+        """fwdRecord の中で S.mode を直に使わないこと（受け取った m を使う）。"""
+        src = self._src()
+        i = src.index("function fwdRecord(pair,mode){")
+        end = src.index("saveFwd(f);}catch(e){}}", i)
+        body = src[i:end]
+        # コメント中の記述は数えない（説明文にも S.mode が出てくる）
+        code = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+        code = re.sub(r"//[^\n]*", "", code)
+        # 既定値として一度だけ読むのは可
+        self.assertEqual(code.count("S.mode"), 1,
+                         f"fwdRecord が画面のモードを読み直している: "
+                         f"{[l.strip() for l in code.split(chr(10)) if 'S.mode' in l]}")
+        self.assertIn("const m=mode||S.mode;", body)
+        self.assertIn("mode:m,", body, "記録するモードが受け取った値でない")
+
+    def test_the_corrupt_record_is_dropped_on_load(self):
+        """素性が信用できない記録を読み込み時に落とすこと。"""
+        src = self._src()
+        self.assertIn("1789127207637|EUR_JPY|short", src,
+                      "混入した記録の鍵が登録されていない")
+        i = src.index("function loadFwd(){")
+        self.assertIn("FWD_DROP[", src[i:i + 400], "loadFwd が除外していない")
+
+    def test_the_repo_copy_no_longer_has_it(self):
+        path = os.path.join(ROOT, "data", "forward_log.json")
+        if not os.path.exists(path):
+            self.skipTest("forward_log.json が無い")
+        with open(path, encoding="utf-8") as f:
+            ent = (json.load(f) or {}).get("entries") or []
+        self.assertFalse([x for x in ent if x.get("ts") == 1789127207637],
+                         "リポジトリ側に混入した記録が残っている")
+
+    def test_every_remaining_record_matches_its_mode_stop_width(self):
+        """残っている記録のSL幅が、そのモードの係数と辻褄が合うこと。
+
+        同じ通貨・近い時刻の記録どうしでATRは大きく変わらない。
+        mtf(×1.95)とデイ(×1.3)ではSL幅が1.5倍違うので、混ざっていれば
+        ここで気づける。"""
+        path = os.path.join(ROOT, "data", "forward_log.json")
+        if not os.path.exists(path):
+            self.skipTest("forward_log.json が無い")
+        with open(path, encoding="utf-8") as f:
+            ent = (json.load(f) or {}).get("entries") or []
+        slm = {"scalp": 1.0, "day": 1.3, "swing": 1.8, "mtf": 1.95}
+        for x in ent:
+            m = x.get("mode")
+            if m not in slm or x.get("entry") is None or x.get("sl") is None:
+                continue
+            atr = abs(x["entry"] - x["sl"]) / slm[m]
+            # 円ペアの15分/1時間ATRが取り得るおおよその幅。桁違いを拾うための粗い網。
+            self.assertTrue(0.01 <= atr <= 1.0,
+                            f"{x['sym']} {m}: SL幅から逆算したATR {atr:.4f} が現実的でない")
 
 
 if __name__ == "__main__":

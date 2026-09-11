@@ -1022,7 +1022,19 @@ function kellyRec(mode){var m=modeStats(mode);if(m.n<30)return{status:'acc',n:m.
   return{status:'ok',rec:Math.round(Math.min(2,f/4*100)*100)/100,f:f,n:m.n,p:m.p,b:m.b};}
 // 機能6: Wilson信頼下限（z=1.96）＋仮想エクイティカーブ（fxnavi_forward_v1・最大300件ローテ）
 function wilsonLower(wins,n,z){if(!n)return 0;z=z||1.96;var p=wins/n,z2=z*z;return (p+z2/(2*n)-z*Math.sqrt((p*(1-p)+z2/(4*n))/n))/(1+z2/n);}
-function loadFwd(){try{return JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]')||[];}catch(e){return[];}}
+/* 素性が信用できない記録。鍵は fwdCloseKey と同じ ts|sym|side。
+   2026-09-11 20:46 の EUR_JPY 売り(ts=1789127207637)は、足の取得中にモードが変わった回に
+   作られたもので、デイの係数(SL15.9pips)で計算した合図が mode:'mtf' として
+   記録されていた。運用mtf・画面デイの場面なので、本来は記録されない
+   （記録は運用モードと画面モードが一致する時だけ）。
+   混ざったまま残すとモード別の検証がそのまま狂うので、明示して落とす。 */
+var FWD_DROP={'1789127207637|EUR_JPY|short':'2026-09-11 20:46 モード切替と競合して混入'};
+function loadFwd(){try{
+  var a=JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]')||[];
+  var keep=a.filter(function(x){ return !FWD_DROP[[x.ts,x.sym,x.side].join('|')]; });
+  if(keep.length!==a.length){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(keep));}catch(e){}}
+  return keep;
+}catch(e){return[];}}
 function saveFwd(a){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(a.slice(-300)));}catch(e){}
   fwdCloudSaveLater();}
 
@@ -1082,9 +1094,15 @@ var FWD_SPREAD_PIPS={USD_JPY:0.2,EUR_JPY:0.4,GBP_JPY:0.9,AUD_JPY:0.5}, FWD_SPREA
      判定できない時は記録しない（送信を止める liveNotifyBlock と同じ、閉じる側に倒す）。
    ★建値は bid ではなく実際の約定価格を持つ。買いは ask で約定するので、
      bid で記録すると毎回スプレッドぶんだけ有利な成績になる。 */
-function fwdRecord(pair){try{if(!pair||!pair.signal)return;
-  if(!S.mode||!MODES.includes(S.mode))return;
-  if(!MODEJSON||!MODES.includes(MODEJSON)||MODEJSON!==S.mode)return;
+function fwdRecord(pair,mode){try{if(!pair||!pair.signal)return;
+  /* ★モードは呼び出し側（計算に使った MODE0）から受け取る。
+     ここで S.mode を読み直すと、足の取得中にモードが変わった回に、
+     デイの係数で作った合図を mtf として記録してしまう。
+     実際 2026-09-11 20:46 の EUR/JPY がそうなった（SL15.9pips＝デイの
+     係数なのに mode:'mtf' で記録された）。 */
+  const m=mode||S.mode;
+  if(!m||!MODES.includes(m))return;
+  if(!MODEJSON||!MODES.includes(MODEJSON)||MODEJSON!==m)return;
   var f=loadFwd();
   for(var i=0;i<f.length;i++){if(f[i].open&&f[i].sym===pair.symbol)return;}
   var side=pair.signal==='買い'?'long':'short',entry=(pair.entry_ref!=null?pair.entry_ref:pair.bid);
@@ -1095,9 +1113,9 @@ function fwdRecord(pair){try{if(!pair||!pair.signal)return;
   var tp=side==='long'?entry+pair.tp_pips*PS_:entry-pair.tp_pips*PS_;
   var sl=side==='long'?entry-pair.sl_pips*PS_:entry+pair.sl_pips*PS_;
   // 学習補正が本当に効いているかを後から検証できるよう、補正ON/OFFと素点も残す
-  var _st=(typeof STATS!=='undefined'&&STATS)?STATS[(S.mode||'swing')+pair.symbol]:null;
-  var _cf=null; try{ _cf=confluence(pair,_st); }catch(e){}
-  f.push({sym:pair.symbol,mode:S.mode,side:side,entry:entry,
+  var _st=(typeof STATS!=='undefined'&&STATS)?STATS[(m||'swing')+pair.symbol]:null;
+  var _cf=null; try{ _cf=confluence(pair,_st,m); }catch(e){}
+  f.push({sym:pair.symbol,mode:m,side:side,entry:entry,
     fill:Math.round((side==='long'?entry+sp:entry)*1e5)/1e5, sp:Math.round(sp*1e5)/1e5,
     tp:tp,sl:sl,b:pair.tp_pips/pair.sl_pips,ts:Date.now(),open:true,
     edgeOn:(typeof edgeOn==='function')?edgeOn():false,
@@ -2667,7 +2685,7 @@ function renderFwdPanel(){
   var mb=Object.keys(byMode).map(function(k){var d=byMode[k];return (MODE_LABEL[k]||k)+' '+(d.n?Math.round(d.w/d.n*100):0)+'%('+d.n+')';}).join(' ／ ')||'—';
   fp.innerHTML='<h2>📈 前向き検証（実弾不要のエッジ実証）</h2>'
     +'<div style="padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'
-    +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 件数 <b>'+s.n+'</b>'
+    +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 決着済 <b>'+s.n+'</b>件'
       +'<span style="color:var(--mut)"> ／ 独立イベント <b>'+cl.length+'</b>回</span></div>'
     +(s.n>cl.length?'<div style="font-size:11px;color:var(--mut);margin-top:3px">※同じ時間帯に同じ方向で持った記録は、円が動けば一斉に同じ結果になるため1回として数えています</div>':'')
     +spark
@@ -3094,7 +3112,7 @@ async function liveSignals(){
       if(sig){
         try{
           const cfNow=confluence(pair,STATS[MODE0+sym],MODE0);
-          if(cfNow&&cfNow.cls==='ok')fwdRecord(pair);
+          if(cfNow&&cfNow.cls==='ok')fwdRecord(pair,MODE0);
         }catch(e){}
       }
       if(sig){
