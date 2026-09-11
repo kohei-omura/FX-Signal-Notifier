@@ -2456,5 +2456,66 @@ class SubFilterParityTest(unittest.TestCase):
                           f"{mode} の既定の絞り込みが画面とズレている")
 
 
+class StatsShortfallTest(unittest.TestCase):
+    """統計が出せない時に、件数不足なのか取得失敗なのかが分かること。
+
+    「USD/JPYだけ想定保有時間とTP勝率が出ない」という形で分からなくなった。
+    原因は件数不足だけで判定には影響しないが、欄がまるごと消えるため
+    不具合と区別が付かなかった。実測(1年261日)の1銘柄あたり20日の件数は
+      スイング USD/JPY 9.0 / EUR/JPY 5.4 / GBP/JPY 8.8 / AUD/JPY 6.3
+    で、表示に必要な8件をまたぐ。出たり出なかったりするのが正常。
+    """
+
+    def _run(self, js_tail):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function simStats(sym,oh,P,barMin,sides,out){")
+        end = src.index("\n// 拡張v2", i)
+        head = ("function median(a){if(!a.length)return null;const s=a.slice()"
+                ".sort((x,y)=>x-y),m=s.length>>1;"
+                "return s.length%2?s[m]:(s[m-1]+s[m])/2;}\nconst PS_=0.01;\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(head + src[i:end] + js_tail); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def _bars(self, n):
+        # 高安終。使うのは sides を外から渡すので中身は単調で良い
+        return [[100.0 + i * 0.05, 99.9 + i * 0.05, 100.0 + i * 0.05] for i in range(n)]
+
+    def test_the_count_is_reported_even_when_it_is_too_small(self):
+        """8件に満たなくても、件数は out に書き戻すこと。"""
+        P = {"ema_s": 5, "macd": [3, 6, 3], "adx": 3, "atr": 5}
+        tail = ("\nconst P=" + json.dumps(P) + ";\n"
+                "const oh=" + json.dumps(self._bars(120)) + ";\n"
+                "const sides=oh.map((_,i)=>(i>=20&&i%20===0)"
+                "?{side:'買い',tpp:5,slp:5}:null);\n"
+                "const out={};const st=simStats('USD_JPY',oh,P,60,sides,out);\n"
+                "console.log(JSON.stringify({n:out.n,st:st===null?null:st.n}));\n")
+        got = self._run(tail)
+        self.assertIsNotNone(got["n"], "件数が書き戻されていない")
+        self.assertLess(got["n"], 8)
+        self.assertIsNone(got["st"], "8件未満なのに統計を返している")
+
+    def test_enough_samples_still_return_stats(self):
+        """従来どおり、8件以上なら統計を返すこと（しきい値は変えていない）。"""
+        P = {"ema_s": 5, "macd": [3, 6, 3], "adx": 3, "atr": 5}
+        tail = ("\nconst P=" + json.dumps(P) + ";\n"
+                "const oh=" + json.dumps(self._bars(400)) + ";\n"
+                "const sides=oh.map((_,i)=>(i>=20&&i%20===0)"
+                "?{side:'買い',tpp:5,slp:5}:null);\n"
+                "const out={};const st=simStats('USD_JPY',oh,P,60,sides,out);\n"
+                "console.log(JSON.stringify({n:out.n,ok:!!st,wr:st&&st.winRate}));\n")
+        got = self._run(tail)
+        self.assertGreaterEqual(got["n"], 8)
+        self.assertTrue(got["ok"], "8件以上あるのに統計が出ていない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

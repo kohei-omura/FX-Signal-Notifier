@@ -842,7 +842,7 @@ async function addPos(){const c=needCfg();if(!c)return;
     pos.entry_mode=S.mode||'';
     if(_cf){ pos.entry_score=_cf.pct; pos.entry_mark=_cf.mark; pos.entry_got=_cf.got; }
     if(_lp){ pos.entry_signal=_lp.signal||''; pos.entry_bias=_lp.bias||''; pos.entry_rsi=_lp.rsi; pos.entry_tech=_lp.tech; pos.entry_fund=_lp.fund; }
-    if(typeof zoneNow==='function'){ const _z=zoneNow(); pos.entry_zone=(_z&&_z.name)?_z.name:(''+(_z||'')); }
+    if(typeof zoneNow==='function'){ const _z=zoneNow(); pos.entry_zone=(_z&&(_z.name||_z.zone))?String(_z.name||_z.zone):(typeof _z==='object'?'':String(_z||'')); }
   }catch(e){}
   let autoNote='';
   if($('#f_mode').value==='manual'){const tp=parseFloat($('#f_tp').value),sl=parseFloat($('#f_sl').value);
@@ -1505,6 +1505,29 @@ var ZONE=zoneNow();
    だから「速い型で入る」「速いから早く利確する」はどちらも入れない。
    ここでやるのは速さと期待値を必ず並べて出すことだけ。速い型ほど
    儲かるわけではない、と毎回見えるようにするのが正しい使い道。 */
+/* 統計が出ていない理由を出す。黙って欄が消えると不具合と区別が付かない。
+   実際「USD/JPYだけ想定保有時間とTP勝率が出ない」という形で分からなくなった。
+   原因は件数不足で、スイングは1銘柄あたり20日で5.4〜9.0件しか出ないのに
+   表示には8件必要、というだけだった（1年261日の実測値）。 */
+var MODE_SIG_PER20={scalp:'多数',day:'約73〜81件',swing:'約5.4〜9.0件',mtf:'約12.6〜14.3件'};
+function statShortBox(sym){
+  const mode=S.mode||'scalp',P=JS_PARAMS[mode]||{},info=STATS_N[mode+sym];
+  let why;
+  if((P.rule==='mtf_pullback')){
+    why='mtfの統計はサーバー（5分ごとの実行）が作ります。直近で条件を満たした回数が'
+       +'8件に届かない間は出ません。';
+  }else if(!info){
+    why='直近データを集計中です。数十秒お待ちください。';
+  }else if(info.bars!=null&&info.bars<120){
+    why='足が'+info.bars+'本しか取れませんでした（120本必要）。通信が戻れば次回出ます。';
+  }else{
+    why='直近'+(info.days||P.days||3)+'日で<b>'+(info.n||0)+'件</b>しかありません（表示には8件必要）。'
+       +MODE_LABEL[mode]+'は1銘柄あたり20日で'+(MODE_SIG_PER20[mode]||'—')+'が目安なので、'
+       +'銘柄や時期によって出ないことがあります。';
+  }
+  return '<div class="entry"><div class="er">📊 想定保有時間・TP勝率：<b>まだ出せません</b><br>'
+        +why+'<br><span style="opacity:.75">判定そのものには影響しません（統計は参考表示です）。</span></div></div>';
+}
 function fastProfileBox(p){
   const f=p&&p.fast; if(!f) return '';
   const rows=[];
@@ -1531,7 +1554,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
   const tC=p.tech>=0?'up':'down';
   const st=STATS[(S.mode||'scalp')+p.symbol];
-  let statBox='';
+  let statBox=st?'':statShortBox(p.symbol);
   if(st){
     // 損益分岐勝率 be = 100/(1+RR)。RRは実際のTP:SL比から算出（無ければスタイル既定tsr）
     const rr=(p.tp_pips&&p.sl_pips)?(p.tp_pips/p.sl_pips):((JS_PARAMS[S.mode||'scalp']||JS_PARAMS.scalp).tsr);
@@ -3035,7 +3058,16 @@ function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.m
 function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
 function precomputeSides(sym,oh,P,warm){const sides=buildEvalSeries(sym,oh,P);
   for(let i=0;i<warm&&i<sides.length;i++)sides[i]=null;return sides;}
-function simStats(sym,oh,P,barMin,sides){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
+/* 第6引数 out に件数を書き戻す。n<8 では null を返す仕様は変えないが、
+   「件数が足りない」のか「取得に失敗した」のかを画面で区別できるようにする。
+   以前は null を返すだけで統計欄がまるごと消え、不具合と見分けが付かなかった。 */
+/* 統計が出せなかった理由を覚えておく。{n:件数, bars:足の本数, days:期間}。
+   実測: スイングは1銘柄あたり20日で5.4〜9.0件しか出ない（USD/JPY 9.0・
+   EUR/JPY 5.4・GBP/JPY 8.8・AUD/JPY 6.3／1年261日の実データより）。
+   表示に必要なのは8件なので、銘柄や時期によって出たり出なかったりする。
+   これは正常な動作だが、黙って欄ごと消えると不具合と区別が付かない。 */
+var STATS_N={};
+function simStats(sym,oh,P,barMin,sides,out){const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5;
   if(!sides)sides=precomputeSides(sym,oh,P,warm);let i=warm;const wins=[],losses=[];
   while(i<oh.length-1){const e=sides[i];if(!e){i++;continue;}
     const entry=oh[i][2],tp=e.side==='買い'?entry+e.tpp*PS_:entry-e.tpp*PS_,sl=e.side==='買い'?entry-e.slp*PS_:entry+e.slp*PS_;
@@ -3043,7 +3075,7 @@ function simStats(sym,oh,P,barMin,sides){const warm=Math.max(P.ema_s,P.macd[1],P
       if(e.side==='買い'){if(l<=sl){res='sl';xj=j;break;}if(h>=tp){res='tp';xj=j;break;}}
       else{if(h>=sl){res='sl';xj=j;break;}if(l<=tp){res='tp';xj=j;break;}}}
     if(res==null)break;(res==='tp'?wins:losses).push(xj-i);i=xj+1;}
-  const n=wins.length+losses.length;if(n<8)return null;
+  const n=wins.length+losses.length;if(out)out.n=n;if(n<8)return null;
   const tm=median(wins),sm=median(losses);
   return{n,winRate:Math.round(wins.length/n*100),tpMin:tm!=null?tm*barMin:null,slMin:sm!=null?sm*barMin:null,ts:Date.now()};}
 // 拡張v2 第2弾: 集計軸の追加のみ（TP/SL・エントリー判定はsimStatsと同一ロジック→既存winRateと整合）
@@ -3118,9 +3150,10 @@ async function refreshStats(force){
   try{const P=JS_PARAMS[mode]||JS_PARAMS.scalp,base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
     const days=P.days||3,cap=P.cap||1000,barMin=BARMIN[P.interval]||1;
     for(const sym of SYMS){let oh=await fetchHistStats(base,sym,P.interval,days);if(oh.length>cap)oh=oh.slice(-cap);
-      if(oh.length<120)continue;
+      if(oh.length<120){STATS_N[mode+sym]={bars:oh.length};continue;}
       const warm=Math.max(P.ema_s,P.macd[1],P.adx*2)+5,sides=precomputeSides(sym,oh,P,warm);
-      const st=simStats(sym,oh,P,barMin,sides);const ch=simChase(sym,oh,P,sides);
+      const _cnt={};const st=simStats(sym,oh,P,barMin,sides,_cnt);const ch=simChase(sym,oh,P,sides);
+      STATS_N[mode+sym]={n:_cnt.n||0,bars:oh.length,days:days};
       if(st){st.mode=mode;if(ch)st.chase=ch;st.byZone=simStatsByZone(sym,oh,P,sides);st.dow=simStatsByDow(sym,oh,P,sides);st.core=simStatsByCore(sym,oh,P,sides);STATS[mode+sym]=st;}
       await new Promise(r=>setTimeout(r,0));}
     try{localStorage.setItem('fxnavi_stats',JSON.stringify(STATS));}catch(e){}
