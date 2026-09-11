@@ -1396,6 +1396,10 @@ SUB_FILTERS = {
     "all": (lambda sc: True, "絞り込みなし", None),
 }
 SUB_DEFAULT_FILTER = {"day": "adx40", "scalp": "adx40", "swing": "all", "mtf": "all"}
+# 前回どの合図を出したか。本体は status.json の前回値を見て「変わった時だけ」
+# 通知しているが、副通知は status.json に載らないので自前で持つ。
+# これが無いと、条件が続いているあいだ5分ごとに同じ通知が飛び続ける。
+SUB_STATE_FILE = data_path("sub_signals.json")
 
 
 def sub_modes():
@@ -1435,6 +1439,11 @@ def sub_mode_signals(data, subs=None):
         return [], []
     held = {(p.get("symbol"), p.get("side")) for p in data.get("positions", [])
             if p.get("status", "open") == "open"}
+    prev = _fwd_read(SUB_STATE_FILE, {})
+    prev = prev.get("signals") if isinstance(prev, dict) else {}
+    if not isinstance(prev, dict):
+        prev = {}
+    cur = {}
     out, events = [], []
     for cfg in subs:
         m, fname = cfg["mode"], cfg["filter"]
@@ -1452,8 +1461,22 @@ def sub_mode_signals(data, subs=None):
                 if not sc or not sc.get("side") or not ok(sc):
                     continue
                 sig = sc["side"]
+                # 上位足と逆行するものは出さない。実測(+0.041R)を出した
+                # バックテストが同じ条件で見送っているので、ここで通すと
+                # 「測っていないもの」を通知することになる。
+                want = 1 if sig == "買い" else -1
+                al = (mtf_view(sym) or {}).get("aligned")
+                if MTF_MODE == "block_opposite" and al == -want:
+                    continue
+                if MTF_MODE == "filter" and al != want:
+                    continue
                 side = "long" if sig == "買い" else "short"
+                cur[f"{m}|{sym}"] = sig
                 if (sym, side) in held or any(hs == sym for hs, _ in held):
+                    continue
+                # 本体と同じく「合図が変わった時だけ」送る。条件が続いている
+                # あいだ5分ごとに同じ通知が飛ぶのを防ぐ。
+                if prev.get(f"{m}|{sym}") == sig:
                     continue
                 d = 1 if sig == "買い" else -1
                 tp = sc["price"] + d * sc["tp_pips"] * PIP_SIZE
@@ -1471,6 +1494,15 @@ def sub_mode_signals(data, subs=None):
                     f"  ▶登録するときは必ずモードを「{MODE_LABEL.get(m, m)}」にしてください"
                     f"（別モードの物差しで監視すると利確/損切りの判断がずれます）")
                 events.append((sig, sym))
+    # 合図が消えた組み合わせも「消えた」と記録する（次に出た時は新規扱いになる）
+    try:
+        tmp = SUB_STATE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"updated": datetime.datetime.now(JST).isoformat(timespec="seconds"),
+                       "signals": cur}, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, SUB_STATE_FILE)
+    except Exception as e:
+        warn(f"副通知の状態を保存できませんでした: {e}", tag="sub-state", surface=False)
     return out, events
 
 

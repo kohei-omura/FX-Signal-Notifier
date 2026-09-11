@@ -2870,6 +2870,64 @@ async function notifyLive(text){
   try{ renderStale(); }catch(e){}
 }
 let LIVE_CALC_BUSY=false,LIVE_LAST=0,LIVE_AT=0,LIVE_PAIRS={};
+/* ===== 参考通知（⚡ライブ側）=====
+   LINEへの経路は2つある。
+     サーバー通知(5分ごと・GitHub Actions) → api.line.me へ直接。Workerを通らない。
+     ⚡ライブ(この画面・45秒ごと)          → Cloudflare Worker 経由。
+   参考通知は最初サーバー側にしか入れていなかったので、こちらにも同じものを載せる。
+   文面は「🔎 参考」で始める。Worker の allowToLine が総合判定%で絞るのは
+   先頭が「⚡ライブ」等の時だけなので、この文面はそのまま通る
+   ＝ Worker の再デプロイは要らない。
+   ★絞り込みはサーバー側(SUB_FILTERS)と必ず同じにすること。ここがズレると
+     サーバーとライブで違う条件の通知が飛ぶ（entrySide で実際に起きた）。 */
+function subFilterOK(fname,sc){
+  if(fname==='adx40') return (sc.adx||0)>=40;
+  return true;
+}
+function subHeld(sym){
+  return ((POS&&POS.positions)||[]).some(function(p){
+    return p.symbol===sym && (p.status||'open')==='open'; });
+}
+async function subLiveSignals(base){
+  if(!SUBNOTIFY.length) return;
+  // 画面と運用モードがズレている時は送らない（本体の liveNotifyBlock と同じ、閉じる側）
+  if(liveNotifyBlock()) return;
+  if(!S.market_open) return;
+  const notified=loadNotified(), now=Date.now(); let changed=false;
+  for(const cfg of SUBNOTIFY){
+    const info=SUB_INFO[cfg.mode], P=JS_PARAMS[cfg.mode];
+    if(!info||!P) continue;
+    const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30;
+    const barMin=BARMIN[P.interval]||1, validMin=VALID_BARS*barMin;
+    for(const sym of SYMS){
+      let oh; try{ oh=await fetchKlines(base,sym,P,need); }catch(e){ continue; }
+      if(!oh||oh.length<30) continue;
+      const sc=scorePair(sym,oh,P);
+      if(!sc||!sc.side) continue;
+      if(!subFilterOK(cfg.filter,sc)) continue;
+      // 上位足と逆行するものは出さない。実測を出したバックテストが同じ条件で
+      // 見送っているので、通すと「測っていないもの」を通知することになる。
+      const w=sc.side==='買い'?1:-1, m=MTF_BY_SYM[sym];
+      if(m&&m.aligned===-w) continue;
+      if(subHeld(sym)) continue;                       // 保有中は重複・両建てを避ける
+      const key='sub:'+cfg.mode+':'+sym, rec=notified[key];
+      if(rec&&rec.side===sc.side&&now-rec.ts<180000) continue;
+      const ref=PRICE[sym]?PRICE[sym].bid:r3(sc.price);
+      const tp=r3(sc.side==='買い'?ref+sc.tp_pips*PS_:ref-sc.tp_pips*PS_);
+      const sl=r3(sc.side==='買い'?ref-sc.sl_pips*PS_:ref+sc.sl_pips*PS_);
+      const txt='🔎 参考：'+info.lab+' '+sym+' '+sc.side+'\n'
+        +'※運用は'+(MODE_LABEL[MODEJSON]||MODEJSON)+'です。別モードの合図で、前向き検証には記録されません\n'
+        +'条件：'+info.note+'\n'
+        +'ADX'+(Math.round(sc.adx*10)/10)+' RSI'+(Math.round(sc.rsi*10)/10)+' スコア'+(sc.score>=0?'+':'')+sc.score.toFixed(2)+'\n'
+        +'▶'+ref+' / TP+'+sc.tp_pips+'p / SL-'+sc.sl_pips+'p（'+validMin+'分以内）\n'
+        +'📍'+ref+'で建てた場合 → TP '+tp+' / SL '+sl+'\n'
+        +'▶登録するときはモードを「'+info.lab+'」にしてください';
+      notifyLive(txt);
+      notified[key]={side:sc.side,ts:now}; changed=true;
+    }
+  }
+  if(changed) saveNotified(notified);
+}
 async function liveSignals(){
   if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
   if(Date.now()-LIVE_LAST<30000)return; // load()とintervalの多重起動を抑制
@@ -2954,6 +3012,7 @@ async function liveSignals(){
       LIVE_PAIRS[sym]=pair;LIVE_AT=Date.now();
     }
     saveNotified(notified);
+    try{ await subLiveSignals(base); }catch(e){ console.warn('参考ライブ通知',e); }
     render();
     checkPosNotify();
     $('#live').innerHTML='<span class="badge open">● LIVE計算 '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';

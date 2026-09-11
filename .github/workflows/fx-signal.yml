@@ -45,7 +45,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # 存在するファイルだけをaddする。entry_log.json（エントリー記録簿）は
           # 最初のポジション登録まで生成されないため、無条件addだと exit 128 で失敗する。
-          for f in data/status.json data/positions.json data/entry_log.json data/forward_close.json; do
+          for f in data/status.json data/positions.json data/entry_log.json data/forward_close.json data/sub_signals.json; do
             if [ -f "$f" ]; then git add "$f"; fi
           done
           if git diff --staged --quiet; then echo "no changes"; exit 0; fi

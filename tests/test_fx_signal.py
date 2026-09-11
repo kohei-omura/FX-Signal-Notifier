@@ -89,10 +89,11 @@ class RunTestCase(unittest.TestCase):
         # 前向き検証のファイルもテスト用に逃がす。逃がさないと main() の決着判定が
         # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
-        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE"):
+        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE"):
             self.addCleanup(setattr, F, _n, getattr(F, _n))
         F.FWD_LOG_FILE = p("forward_log.json")
         F.FWD_CLOSE_FILE = p("forward_close.json")
+        F.SUB_STATE_FILE = p("sub_signals.json")
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
             {"id": "t1", "symbol": "USD_JPY", "side": "long",
@@ -2366,6 +2367,28 @@ class SubNotifyTest(RunTestCase):
         self.assertEqual(len(parts), len(F.SYMBOLS) - 1)
         self.assertNotIn(F.SYMBOLS[0], "".join(parts))
 
+    def test_the_same_signal_is_not_repeated_every_run(self):
+        """合図が続いているあいだ、5分ごとに同じ通知を出さないこと。
+
+        本体は status.json の前回値で抑えているが、副通知は status.json に
+        載らないので自前の状態ファイルで抑える。"""
+        self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
+        self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.in_blackout = lambda sym: False
+        F.mtf_view = lambda sym: {"aligned": 0}
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F.score_pair = lambda sym, oh: self._fake_score(45.0)
+        subs = [{"mode": "day", "filter": "adx40"}]
+        first, _ = F.sub_mode_signals({"positions": []}, subs=subs)
+        self.assertEqual(len(first), len(F.SYMBOLS))
+        again, _ = F.sub_mode_signals({"positions": []}, subs=subs)
+        self.assertEqual(again, [], "同じ合図を毎回送り直している")
+        # 向きが変われば新しい合図として送る
+        F.score_pair = lambda sym, oh: self._fake_score(45.0, side="売り")
+        flipped, _ = F.sub_mode_signals({"positions": []}, subs=subs)
+        self.assertEqual(len(flipped), len(F.SYMBOLS))
+
     def test_the_operating_mode_verdict_is_untouched(self):
         """副通知を出しても、運用モードの設定が書き換わっていないこと。"""
         self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
@@ -2381,6 +2404,56 @@ class SubNotifyTest(RunTestCase):
         F.MODE = "mtf"
         self._mode_file({"mode": "mtf", "sub": ["day", "swing", "scalp"]})
         self.assertEqual(len(F.sub_modes()), 2)
+
+
+class SubFilterParityTest(unittest.TestCase):
+    """参考通知の絞り込みが、サーバー(Python)と⚡ライブ(画面)で一致すること。
+
+    LINEへの経路は2つある。サーバー通知は api.line.me へ直接送っていて
+    Cloudflare Worker を通らず、⚡ライブは Worker 経由。最初はサーバー側
+    にしか参考通知を入れていなかった。
+    絞り込みがズレると、同じ場面でサーバーからは届くのにライブからは
+    届かない（逆も）という状態になる。entrySide で実際に起きた事故なので
+    ここで固定する。
+    """
+
+    ADX = (None, 0, 19.9, 20, 25, 30, 39.9, 40, 40.1, 55, 70, 99)
+
+    def test_adx_filter_matches_the_dashboard(self):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function subFilterOK(")
+        end = src.index("\n}", i) + 2
+        cases = [{"adx": a} for a in self.ADX]
+        script = src[i:end] + (
+            "\nconsole.log(JSON.stringify(" + json.dumps(cases)
+            + ".map(sc=>subFilterOK('adx40',sc))));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        js = json.loads(out.stdout)
+        fn = F.SUB_FILTERS["adx40"][0]
+        for (a, got) in zip(self.ADX, js):
+            self.assertEqual(fn({"adx": a}), got, f"ADX={a}: python={fn({'adx': a})} / 画面={got}")
+
+    def test_the_dashboard_knows_the_same_sub_modes(self):
+        """画面の SUB_INFO と Python の既定の絞り込みが食い違わないこと。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("var SUB_INFO=")
+        chunk = src[i:src.index("function subLabel", i)]
+        for mode, fname in F.SUB_DEFAULT_FILTER.items():
+            if mode == "mtf":
+                continue                       # mtfは運用モード側なので画面の一覧には無い
+            self.assertIn(mode + ":{", chunk, f"画面に {mode} の説明が無い")
+            self.assertIn("filter:'" + fname + "'", chunk,
+                          f"{mode} の既定の絞り込みが画面とズレている")
 
 
 if __name__ == "__main__":
