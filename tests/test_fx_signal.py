@@ -2731,5 +2731,82 @@ class ModeCompareTest(unittest.TestCase):
         self.assertNotIn("+0.37R", html)
 
 
+class TechFundWeightTest(unittest.TestCase):
+    """テク:ファンダの配分が、画面のモードではなく計算対象のモードに従うこと。
+
+    実害が出た例: スイングの建玉を画面mtfで見ると
+    「損切り推奨（スコア-0.30）」と出て、画面スイングでは別の判定になった。
+    スイングの配分(0.45:0.55)なら買いのスコアの下限は
+      0.45×(-1) + 0.55×0.5 = -0.175
+    なので -0.30 はスイングでは到達できない。損切りのしきい値は -0.25 なので、
+    配分を取り違えると届かないはずの判定が出てしまう。
+    """
+
+    def _tfw(self, screen, P):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function tfw(P){")
+        line = src[i:src.index("\n", i)]
+        script = ("let S=" + json.dumps({"mode": screen}) + ";\n" + line
+                  + "\nconsole.log(JSON.stringify(tfw(" + json.dumps(P) + ")));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def _py(self, mode):
+        with F.use_mode(mode):
+            return {"t": F.TECH_W, "f": F.FUND_W}
+
+    def test_matches_python_for_every_mode(self):
+        for mode in F.PARAMS:
+            want = self._py(mode)
+            got = self._tfw("mtf", {"mode": mode})       # 画面はわざと別モード
+            self.assertAlmostEqual(got["t"], want["t"], places=6,
+                                   msg=f"{mode}: テク配分が Python と違う")
+            self.assertAlmostEqual(got["f"], want["f"], places=6,
+                                   msg=f"{mode}: ファンダ配分が Python と違う")
+
+    def test_the_screen_mode_does_not_leak_in(self):
+        """画面をどのモードにしても、渡したモードの配分が返ること。"""
+        for screen in ("scalp", "day", "swing", "mtf"):
+            self.assertEqual(self._tfw(screen, {"mode": "swing"}),
+                             {"t": 0.45, "f": 0.55}, f"画面{screen}で漏れている")
+            self.assertEqual(self._tfw(screen, {"mode": "mtf"}),
+                             {"t": 0.85, "f": 0.15}, f"画面{screen}で漏れている")
+
+    def test_falls_back_to_the_screen_when_no_mode_is_given(self):
+        """モードを渡さない古い呼び出しは従来どおり画面のモードで動く。"""
+        self.assertEqual(self._tfw("swing", None), {"t": 0.45, "f": 0.55})
+        self.assertEqual(self._tfw("day", None), {"t": 0.85, "f": 0.15})
+
+    def test_a_swing_buy_can_never_reach_the_cut_threshold(self):
+        """スイングの買いはスコア-0.175より下に行けない＝あの-0.30は別配分だった。
+
+        これは不具合ではなく配分の帰結だが、ここが崩れると
+        「スイングで損切り推奨が出た＝配分が壊れている」と判断できなくなる。"""
+        w = self._py("swing")
+        fund_bias = 0.5                      # index.html の FUND_BIAS[USD_JPY]
+        floor = w["t"] * -1 + w["f"] * fund_bias
+        self.assertAlmostEqual(floor, -0.175, places=6)
+        self.assertGreater(floor, -0.25, "スイング買いが損切りのしきい値に届いている")
+
+    def test_every_mode_entry_carries_its_name(self):
+        """JS_PARAMS の各モードが自分の名前を持つこと（tfw の判断材料）。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const JS_PARAMS={")
+        chunk = src[i:src.index("function holdTxt", i)]
+        for mode in F.PARAMS:
+            self.assertIn(mode + ":{mode:'" + mode + "'", chunk,
+                          f"{mode} に mode 名が無い")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

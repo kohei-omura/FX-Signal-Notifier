@@ -2684,7 +2684,15 @@ function setPriceFromStatus(){
 const CHART_POINTS=60, PS_=0.01;
 const W_EMA=0.35,W_MACD=0.25,W_RSI=0.20,W_BB=0.20,TECH_W=0.9,FUND_W=0.1;
 // スタイル別 テク:ファンダ 比率（短期=テク重視 0.85:0.15 / スイング=ファンダ重視 0.45:0.55）
-function tfw(){return (S&&S.mode==='swing')?{t:0.45,f:0.55}:{t:0.85,f:0.15};}
+/* テク:ファンダの配分。fx_signal.py の TECH_W/FUND_W と同じ（swingだけ0.45:0.55）。
+   ★必ず『計算しているモード』の配分を使うこと。画面のモードではない。
+     以前は S.mode だけを見ていたため、別モードの足で計算しているのに配分は
+     画面のものが使われていた。実害が出た例:
+       スイングの建玉を画面mtfで見ると「損切り推奨（スコア-0.30）」と出た。
+       スイングの配分ならスコアの下限は -0.175（0.45×-1 + 0.55×0.5）なので、
+       -0.30 はスイングでは到達できない値だった＝mtfの配分で計算されていた。
+       損切りのしきい値は -0.25 なので、判定が変わってしまう。 */
+function tfw(P){const m=(P&&P.mode)||(S&&S.mode);return m==='swing'?{t:0.45,f:0.55}:{t:0.85,f:0.15};}
 const SL_ATR_MULT=1.0,TP_SL_RATIO=1.5,VALID_BARS=3,MAX_CHASE_RATIO=0.5;
 // mtfモードのエントリー条件（fx_signal.py の MTF_PULLBACK_RSI と同値）。
 // 上位足が揃っている方向に、RSIが押し目/戻りまで来た時だけ入る。
@@ -2723,12 +2731,12 @@ const MODES=['scalp','day','swing','mtf'];
 const MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング',mtf:'上位足フォロー'};
 // slm=SL幅(ATR倍), tsr=TP:SL比, days/cap=統計の取得日数/上限本数。スタイルごとに足とTP/SL幅を変える
 const JS_PARAMS={
-  scalp:{interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35,slm:1.0,tsr:1.5,days:3,cap:1500},
-  day:{interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.3,tsr:1.6,days:8,cap:1000},
-  swing:{interval:'1hour',ema_f:12,ema_s:26,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000},
+  scalp:{mode:'scalp',interval:'1min',ema_f:5,ema_s:13,rsi:7,macd:[6,13,5],bb:[20,2.0],adx:14,atr:14,th:0.35,slm:1.0,tsr:1.5,days:3,cap:1500},
+  day:{mode:'day',interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.3,tsr:1.6,days:8,cap:1000},
+  swing:{mode:'swing',interval:'1hour',ema_f:12,ema_s:26,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000},
   // 上位足(1h/4h)で方向、15分足の押し目/戻りで入る。デイとスイングの併用形。
   // SL幅はデイの1.5倍でスプレッド比率を下げている。
-  mtf:{interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.95,tsr:1.6,days:8,cap:1000,rule:'mtf_pullback'}};
+  mtf:{mode:'mtf',interval:'15min',ema_f:9,ema_s:21,rsi:14,macd:[12,26,9],bb:[20,2.0],adx:14,atr:14,th:0.40,slm:1.95,tsr:1.6,days:8,cap:1000,rule:'mtf_pullback'}};
 function holdTxt(min){if(min==null)return'—';if(min<120)return'約'+min+'分';const h=min/60;if(h<48)return'約'+(h>=10?Math.round(h):Math.round(h*10)/10)+'時間';return'約'+Math.round(h/24*10)/10+'日';}
 // リスク基準の数量計算（JPYペア: 1pip=0.01円/通貨）
 let RISK={cap:10000,risk:1,lev:25,riskCap:5};   // riskCap=合計リスクの上限(資金比%)
@@ -2813,7 +2821,7 @@ function buildEvalSeries(sym,o,P){
   const atrS=atrSeries(o,P.atr);
   const adxS=adxSeries(o,P.adx);
   const minLen=Math.max(P.ema_s,P.macd[1],P.adx*2)+2;
-  const fund=cl(FUND_BIAS[sym]||0),tf=tfw();
+  const fund=cl(FUND_BIAS[sym]||0),tf=tfw(P);
   const out=new Array(n).fill(null);
   for(let i=0;i<n;i++){
     if(i+1<minLen)continue;
@@ -2836,7 +2844,8 @@ function scorePair(sym,o,P){const closes=o.map(r=>r[2]);if(closes.length<Math.ma
   let emaSig=cl((ef-es)/(a||1e-9)),macdSig=cl(md[2]/(0.6*(a||1e-9)));
   if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
   const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
-  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),fund=cl(FUND_BIAS[sym]||0),total=cl(tfw().t*tech+tfw().f*fund);
+  const _tf=tfw(P);
+  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),fund=cl(FUND_BIAS[sym]||0),total=cl(_tf.t*tech+_tf.f*fund);
   const reasons=[];if(Math.abs(emaSig)>0.2)reasons.push(`EMA${emaSig>0?'上':'下'}(${P.ema_f}vs${P.ema_s})`);if(Math.abs(macdSig)>0.2)reasons.push(`MACDヒスト${md[2]>0?'+':'-'}`);reasons.push(`RSI${Math.round(rv)}`);reasons.push(`ADX${Math.round(adxVal)}${adxVal>=25?'(強)':'(弱)'}`);
   const win=closes.slice(-1-P.adx,-1),hh=win.length?Math.max(...win):price,ll=win.length?Math.min(...win):price;
   const method=adxVal>=25?((price>hh||price<ll)?'ブレイク':'順張りMA'):(Math.abs(bbSig)>=0.8?'レンジ逆張り':'様子見');
@@ -3098,7 +3107,8 @@ function evalAt(sym,o,P){const c=o.map(r=>r[2]);if(c.length<Math.max(P.ema_s,P.m
   let emaSig=cl((ef-es)/(a||1e-9)),macdSig=cl(md[2]/(0.6*(a||1e-9)));
   if(md[2]>md[3])macdSig=cl(macdSig+0.1);else if(md[2]<md[3])macdSig=cl(macdSig-0.1);
   const rsiSig=cl((rv-50)/50),bbSig=cl((price-bb[0])/(P.bb[1]*(bb[3]||1e-9)));
-  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(tfw().t*tech+tfw().f*cl(FUND_BIAS[sym]||0));
+  const _tf2=tfw(P);
+  const tech=cl(W_EMA*emaSig*adxf+W_MACD*macdSig*adxf+W_RSI*rsiSig+W_BB*bbSig),total=cl(_tf2.t*tech+_tf2.f*cl(FUND_BIAS[sym]||0));
   const slp=a*(P.slm||SL_ATR_MULT)/PS_,tpp=slp*(P.tsr||TP_SL_RATIO),side=total>=P.th?'買い':(total<=-P.th?'売り':null);
   return side?{side,slp,tpp}:null;}
 function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);}
