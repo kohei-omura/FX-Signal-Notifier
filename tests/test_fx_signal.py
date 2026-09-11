@@ -2950,5 +2950,105 @@ class CanSignalTest(RunTestCase):
                 self.assertEqual(F.can_signal(-1), js_, f"{mode} 売り")
 
 
+class LiveModeRaceTest(unittest.TestCase):
+    """⚡ライブが、途中でモードが変わっても混ざらないこと。
+
+    liveSignals() は足の取得で await する。以前は P（足と係数）だけを先に
+    確定させ、判定ブロック・通知文のラベル・総合判定の重み・統計の参照は
+    await の【後】に S.mode を読んでいた。その間に S.mode が変わると、
+    デイの係数で計算した合図に mtf のラベルが付き、
+    「画面と運用が違うなら送らない」ガードも新しい S.mode で評価されて素通りする。
+
+    実際に起きた例: 2026-09-11 20:46 EUR/JPY
+      「⚡ライブ EUR_JPY 売り（上位足フォロー）TP+25.5p / SL-15.9p」
+      mtfのSLは15分ATR×1.95、デイは×1.3。同じ足・同じATRなので比は必ず
+      1.50 になるはずが、同時刻のデイのカード(SL15.5p)との比は 1.026 だった。
+    """
+
+    def _src(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def _live_body(self):
+        """liveSignals() の本体を波括弧の対応で切り出す。"""
+        src = self._src()
+        i = src.index("async function liveSignals(){")
+        j = src.index("{", i)
+        depth, k = 0, j
+        while k < len(src):
+            if src[k] == "{":
+                depth += 1
+            elif src[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    return src[j:k + 1]
+            k += 1
+        self.fail("liveSignals の終わりが見つからない")
+
+    def test_the_mode_is_captured_once(self):
+        body = self._live_body()
+        self.assertIn("const MODE0=S.mode;", body, "モードを1回で確定させていない")
+
+    def test_no_bare_screen_mode_after_the_await(self):
+        """await より後で S.mode を直に読まないこと（読み直すと混ざる）。
+
+        許されるのは「変わっていたら捨てる」ガードだけ。"""
+        body = self._live_body()
+        after = body[body.index("await Promise.all("):]
+        reads = [ln.strip() for ln in after.split("\n") if "S.mode" in ln]
+        self.assertEqual(reads, ["if(S.mode!==MODE0)return;"],
+                         f"await の後で S.mode を読んでいる: {reads}")
+
+    def test_the_cycle_is_dropped_when_the_mode_changed(self):
+        body = self._live_body()
+        self.assertIn("if(S.mode!==MODE0)return;", body,
+                      "モードが変わった回を捨てていない")
+
+    def test_the_label_and_the_block_use_the_captured_mode(self):
+        body = self._live_body()
+        self.assertIn("MODE_LABEL[MODE0]", body, "ラベルが画面のモードのまま")
+        self.assertIn("liveNotifyBlock(MODE0)", body, "ガードが画面のモードのまま")
+        self.assertIn("STATS[MODE0+sym]", body, "統計の参照が画面のモードのまま")
+
+    def test_block_uses_the_given_mode(self):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        src = self._src()
+        i = src.index("function liveNotifyBlock(mode){")
+        end = src.index("\n}", i) + 2
+        head = ("const MODES=" + json.dumps(list(F.PARAMS)) + ";\n"
+                "const MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング',mtf:'上位足フォロー'};\n"
+                "let S={mode:'mtf'},MODEJSON='mtf';\n")
+        script = (head + src[i:end]
+                  + "\nconsole.log(JSON.stringify({"
+                  "same:liveNotifyBlock('mtf')," 
+                  "diff:liveNotifyBlock('day'),"
+                  "screen:liveNotifyBlock()}));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        r = json.loads(out.stdout)
+        self.assertIsNone(r["same"], "運用と同じモードなのに止めている")
+        self.assertIsNotNone(r["diff"], "計算したモードが運用と違うのに素通りした")
+        self.assertIn("デイ", r["diff"])
+        self.assertIsNone(r["screen"], "モード省略時は従来どおり画面で判定すること")
+
+    def test_mtf_has_explicit_confluence_weights(self):
+        """mtf が総合判定の配点を黙って swing に落ちないこと。
+
+        CONFLUENCE_W_BY_MODE に mtf が無く、undefined で swing に
+        フォールバックしていた。合計はどちらも12なので画面からは気づけない。"""
+        src = self._src()
+        self.assertIn("CONFLUENCE_W_FALLBACK={mtf:'swing'}", src,
+                      "mtf の配点が暗黙のフォールバックのまま")
+        self.assertIn("function confW(mode){", src, "confW がモードを取れない")
+        self.assertIn("function confluence(pair,st,mode){", src,
+                      "confluence がモードを取れない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
