@@ -2266,5 +2266,122 @@ class FastProfileTest(RunTestCase):
         self.assertIsNone(F.fast_profile({"price": 1, "ef": 1, "atr": 0.1}, "買い"))
 
 
+class SubNotifyTest(RunTestCase):
+    """副通知：運用モード以外からの参考シグナル。
+
+    mtfは「戻りを待つ」ルールなので、戻りの無い一方向相場では通知が
+    一度も出ない（9/3〜9/9 は全通貨500pips前後の一方向で、7,088サンプル中
+    上位足は全期間4h↓、15分足RSIが60以上は5.8%だけだった）。
+    そこで別モードの合図を参考として足せるようにした。ただし
+    デイ全体は -0.077R [-0.115,-0.039] で負けが確定しているので、
+    前半後半の検証で唯一そのまま通用した ADX40以上 を既定の絞り込みにする。
+      絞り込みなし 前半 -0.083 → 後半 -0.071
+      ADX40以上   前半 +0.043 → 後半 +0.041
+    """
+
+    def _mode_file(self, body):
+        self.write(F.MODE_FILE, body)
+
+    def test_no_sub_setting_means_no_sub_notification(self):
+        self._mode_file({"mode": "mtf"})
+        self.assertEqual(F.sub_modes(), [])
+        self.assertEqual(F.sub_mode_signals({"positions": []}), ([], []))
+
+    def test_the_operating_mode_is_never_duplicated(self):
+        """運用モードと同じ副モードは落とす（同じ通知が二重に飛ぶため）。"""
+        F.MODE = "mtf"
+        self._mode_file({"mode": "mtf", "sub": [{"mode": "mtf"}, {"mode": "day"}]})
+        self.assertEqual([x["mode"] for x in F.sub_modes()], ["day"])
+
+    def test_day_defaults_to_the_adx_filter(self):
+        """デイを指定したら、既定で ADX40以上 に絞る。
+
+        絞り込み無しのデイは1年4,069件で負けが確定しているので、
+        既定を「そのまま全部流す」にしてはいけない。"""
+        F.MODE = "mtf"
+        self._mode_file({"mode": "mtf", "sub": ["day"]})
+        self.assertEqual(F.sub_modes(), [{"mode": "day", "filter": "adx40"}])
+
+    def test_unknown_mode_and_filter_are_rejected(self):
+        F.MODE = "mtf"
+        self._mode_file({"mode": "mtf", "sub": [{"mode": "nope"},
+                                                {"mode": "day", "filter": "でたらめ"}]})
+        self.assertEqual(F.sub_modes(), [{"mode": "day", "filter": "all"}])
+
+    def test_adx_filter_blocks_weak_trends(self):
+        self.assertTrue(F.SUB_FILTERS["adx40"][0]({"adx": 40.0}))
+        self.assertTrue(F.SUB_FILTERS["adx40"][0]({"adx": 55.0}))
+        self.assertFalse(F.SUB_FILTERS["adx40"][0]({"adx": 39.9}))
+        self.assertFalse(F.SUB_FILTERS["adx40"][0]({"adx": None}))
+
+    def _fake_score(self, adx, side="買い"):
+        return {"price": 154.0, "adx": adx, "rsi": 60.0, "score": 0.55,
+                "tp_pips": 24.0, "sl_pips": 15.0, "side": side,
+                "tech": 0.5, "fund": 0.1}
+
+    def test_filtered_out_signals_are_not_notified(self):
+        self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
+        self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
+        F.in_blackout = lambda sym: False
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F.score_pair = lambda sym, oh: self._fake_score(20.0)
+        parts, _ = F.sub_mode_signals({"positions": []},
+                                      subs=[{"mode": "day", "filter": "adx40"}])
+        self.assertEqual(parts, [], "ADXが足りないのに参考通知を出している")
+        F.score_pair = lambda sym, oh: self._fake_score(45.0)
+        parts, ev = F.sub_mode_signals({"positions": []},
+                                       subs=[{"mode": "day", "filter": "adx40"}])
+        self.assertEqual(len(parts), len(F.SYMBOLS))
+        self.assertEqual(len(ev), len(F.SYMBOLS))
+
+    def test_the_text_says_it_is_not_the_operating_mode(self):
+        """参考であること・実測値・登録時のモードを必ず本文に入れること。
+
+        ここが抜けると、運用モードの合図と同じものだと思って入ってしまう。"""
+        self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
+        self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
+        F.in_blackout = lambda sym: False
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F.score_pair = lambda sym, oh: self._fake_score(45.0)
+        txt = F.sub_mode_signals({"positions": []},
+                                 subs=[{"mode": "day", "filter": "adx40"}])[0][0]
+        self.assertIn("参考", txt)
+        self.assertIn("運用は", txt)
+        self.assertIn("前向き検証にも記録されません", txt)
+        self.assertIn("ADX40以上に限定", txt)
+        self.assertIn("+0.04R", txt)
+        self.assertIn("-0.077R", txt)
+        self.assertIn("デイ", txt)
+
+    def test_held_symbols_are_skipped(self):
+        """保有中の通貨は本体と同じ理由で見送る（重複・両建てを避ける）。"""
+        self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
+        self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
+        F.in_blackout = lambda sym: False
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F.score_pair = lambda sym, oh: self._fake_score(45.0)
+        data = {"positions": [{"symbol": F.SYMBOLS[0], "side": "short",
+                               "status": "open"}]}
+        parts, _ = F.sub_mode_signals(data, subs=[{"mode": "day", "filter": "adx40"}])
+        self.assertEqual(len(parts), len(F.SYMBOLS) - 1)
+        self.assertNotIn(F.SYMBOLS[0], "".join(parts))
+
+    def test_the_operating_mode_verdict_is_untouched(self):
+        """副通知を出しても、運用モードの設定が書き換わっていないこと。"""
+        self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
+        self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
+        F.in_blackout = lambda sym: False
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F.score_pair = lambda sym, oh: self._fake_score(45.0)
+        F.sub_mode_signals({"positions": []}, subs=[{"mode": "day", "filter": "adx40"}])
+        self.assertEqual(F.MODE, "mtf")
+        self.assertIs(F.P, F.PARAMS["mtf"])
+
+    def test_at_most_two_sub_modes(self):
+        F.MODE = "mtf"
+        self._mode_file({"mode": "mtf", "sub": ["day", "swing", "scalp"]})
+        self.assertEqual(len(F.sub_modes()), 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

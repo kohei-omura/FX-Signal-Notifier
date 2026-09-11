@@ -1375,6 +1375,105 @@ def mtf_view(symbol):
     return out
 
 
+# ===== 副通知（運用モード以外のモードからの参考通知） =====
+# mtfは「戻りを待つ」ルールなので、戻りの無い一方向相場では通知が一度も
+# 出ない。実際 9/3〜9/9 は全通貨が500pips前後の一方向で、上位足は全期間
+# 4h↓、15分足RSIが60以上になったのは全体の5.8%だけ。ルールは正しく
+# 動いていて、相場が条件を出さなかった（7,088サンプルで確認）。
+#
+# そこで運用モードはmtfのまま、別モードのシグナルを『参考』として足せる
+# ようにする。ただしデイ全体は1年4,069件で -0.077R [-0.115,-0.039]＝
+# 負けが確定しているので、そのまま流すと通知1件ごとに期待値マイナスを積む。
+# 前半で測って後半で当てる検証で、唯一そのまま通用したのが ADX40以上だった。
+#   絞り込みなし 前半 -0.083 → 後半 -0.071（どちらも負け）
+#   ADX40以上   前半 +0.043 → 後半 +0.041（どちらもプラス・ほぼ同値）
+#   上位足と一致  前半 -0.042 → 後半 -0.092（効かない）
+# 条件は仕組みから説明が付く3つに固定してあり、後から探したものではない。
+SUB_FILTERS = {
+    # 名前: (判定, 説明, 実測の期待R)
+    "adx40": (lambda sc: (sc.get("adx") or 0) >= 40,
+              "ADX40以上に限定", "+0.04R"),
+    "all": (lambda sc: True, "絞り込みなし", None),
+}
+SUB_DEFAULT_FILTER = {"day": "adx40", "scalp": "adx40", "swing": "all", "mtf": "all"}
+
+
+def sub_modes():
+    """mode.json の sub 指定を読む。[{"mode":"day","filter":"adx40"}] の形。
+
+       運用モードと同じものは黙って落とす（同じ通知が二重に飛ぶため）。"""
+    out = []
+    try:
+        with open(MODE_FILE, encoding="utf-8") as f:
+            raw = (json.load(f) or {}).get("sub") or []
+    except FileNotFoundError:
+        return out
+    except Exception as e:
+        warn(f"mode.json の副通知設定を読めませんでした: {e}", tag="sub", surface=False)
+        return out
+    for item in raw if isinstance(raw, list) else []:
+        m = (item.get("mode") if isinstance(item, dict) else item) or ""
+        m = str(m).lower()
+        if m not in PARAMS or m == MODE:
+            continue
+        fname = (item.get("filter") if isinstance(item, dict) else None) \
+            or SUB_DEFAULT_FILTER.get(m, "all")
+        if fname not in SUB_FILTERS:
+            fname = "all"
+        if not any(x["mode"] == m for x in out):
+            out.append({"mode": m, "filter": fname})
+    return out[:2]            # 増やしすぎると通知が埋もれるので2つまで
+
+
+def sub_mode_signals(data, subs=None):
+    """副モードのシグナルを本文の断片にして返す。運用モードの判定には触らない。
+
+       保有中の重複/両建ては本体と同じ理由で避ける。副モードで入った建玉を
+       そのモードで監視できるよう、通知文にモード名を必ず入れる。"""
+    subs = sub_modes() if subs is None else subs
+    if not subs:
+        return [], []
+    held = {(p.get("symbol"), p.get("side")) for p in data.get("positions", [])
+            if p.get("status", "open") == "open"}
+    out, events = [], []
+    for cfg in subs:
+        m, fname = cfg["mode"], cfg["filter"]
+        ok, flabel, fr = SUB_FILTERS[fname]
+        with use_mode(m):
+            for sym in SYMBOLS:
+                if in_blackout(sym):
+                    continue
+                try:
+                    sc = score_pair(sym, get_ohlc(sym))
+                except Exception as e:
+                    warn(f"副通知 {m}/{sym} の判定に失敗: {e}",
+                         tag="sub-calc", surface=False)
+                    continue
+                if not sc or not sc.get("side") or not ok(sc):
+                    continue
+                sig = sc["side"]
+                side = "long" if sig == "買い" else "short"
+                if (sym, side) in held or any(hs == sym for hs, _ in held):
+                    continue
+                d = 1 if sig == "買い" else -1
+                tp = sc["price"] + d * sc["tp_pips"] * PIP_SIZE
+                sl = sc["price"] - d * sc["sl_pips"] * PIP_SIZE
+                out.append(
+                    f"🔎 参考：{MODE_LABEL.get(m, m)} {sym} {sig}\n"
+                    f"  ※運用は{MODE_LABEL.get(MODE, MODE)}です。これは別モードの合図で、"
+                    f"前向き検証にも記録されません\n"
+                    f"  条件：{flabel}"
+                    + (f"（この条件での実測 {fr}／絞り込み前は -0.077R）" if fr else "")
+                    + f"\n"
+                    f"  ADX{sc.get('adx')} RSI{sc.get('rsi')} スコア{sc['score']:+.2f}\n"
+                    f"  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
+                    f"  📍{sc['price']:.3f}で建てた場合のOCO → TP {tp:.3f} / SL {sl:.3f}\n"
+                    f"  ▶登録するときは必ずモードを「{MODE_LABEL.get(m, m)}」にしてください"
+                    f"（別モードの物差しで監視すると利確/損切りの判断がずれます）")
+                events.append((sig, sym))
+    return out, events
+
+
 def load_news_events():
     """news_blackout.json を読み、(country, datetime(JST), title) のリストを返す（1回キャッシュ）。"""
     global _NEWS_CACHE
@@ -2518,6 +2617,12 @@ def main():
         notify, sig_events = [], []
         warn("価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）", tag="skip-status")
         save_degraded_status()   # 表示内容は残したまま「今おかしい」ことだけ画面に伝える
+    # 副通知（運用モード以外の参考シグナル）。運用モードの判定には触れない。
+    sub_parts, sub_events = [], []
+    try:
+        sub_parts, sub_events = sub_mode_signals(data)
+    except Exception as e:
+        warn(f"副通知の作成に失敗: {e}", tag="sub", surface=False)
     # 前向き検証の決着判定。通知の可否とは無関係なので、通知が無い回でも必ず通す。
     try:
         resolve_forward()
@@ -2527,9 +2632,11 @@ def main():
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
     # LINE: シグナル通知だけ。保有中サインは NOTIFY_POSITION_TO_LINE=True の時のみ追加。
     line_parts = (((list(notify) if NOTIFY_ENTRY_TO_LINE else [])
+                   + (list(sub_parts) if NOTIFY_ENTRY_TO_LINE else [])
                    + (list(m2_line) if NOTIFY_POSITION_TO_LINE else [])) if LINE_ENABLED else [])
     # メール: 推奨レベル設定 + 保有監視(利確/損切り/利確検討) + エントリー、すべて送る。
-    mail_parts = list(m1) + list(m2_mail) + (list(notify) if NOTIFY_ENTRY_TO_MAIL else [])
+    mail_parts = (list(m1) + list(m2_mail)
+                  + ((list(notify) + list(sub_parts)) if NOTIFY_ENTRY_TO_MAIL else []))
 
     if not market_open:
         print(f"[INFO] {now_str} 市場クローズ（エントリー判定スキップ）")

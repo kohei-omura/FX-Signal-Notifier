@@ -1894,9 +1894,49 @@ async function syncModeJson(){
     +'エントリー通知の判定がこのモードのものに変わります。\n'
     +'保有中の建玉は登録時のモードで評価され続けるため影響しません。\n\n'
     +'変更しますか？'))return;
-  try{await ghPutFile(c,'data/mode.json',{mode:m,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
+  try{await ghPutFile(c,'data/mode.json',{mode:m,sub:SUBNOTIFY,updated_at:new Date().toISOString()},'sync mode '+m+' [skip ci]');
     MODEJSON=m;renderModeWarn();toast('通知モードを'+(MODE_LABEL[m]||m)+'に同期しました（次回実行から反映）');}
   catch(e){toast('同期失敗: '+e.message);}
+}
+
+/* ===== 参考通知（運用モード以外からの合図）=====
+   mtfは「戻りを待つ」ルールなので、戻りの無い一方向相場では通知が
+   一度も出ない。実際 9/3〜9/9 は全通貨が500pips前後の一方向で、
+   7,088サンプル中ずっと 4h↓、15分足RSIが60以上は5.8%だけだった。
+   ルールは正しく動いていて、相場が条件を出さなかった。
+   そこで運用はmtfのまま、別モードの合図を参考として受け取れるようにする。
+   デイ全体は1年4,069件で -0.077R[-0.115,-0.039]＝負けが確定しているので、
+   そのまま流してはいけない。前半で測って後半で当てる検証で唯一
+   そのまま通用した ADX40以上 を既定の絞り込みにしてある。
+     絞り込みなし 前半 -0.083 → 後半 -0.071（どちらも負け）
+     ADX40以上   前半 +0.043 → 後半 +0.041（どちらもプラス・ほぼ同値） */
+var SUBNOTIFY=[];
+var SUB_INFO={day:{lab:'デイ',filter:'adx40',note:'ADX40以上に限定（この条件で 前半+0.043→後半+0.041R。絞り込み前は -0.077R＝負けが確定）'},
+              swing:{lab:'スイング',filter:'all',note:'絞り込みなし（全体 +0.018R。前半+0.049→後半-0.022と安定しません）'},
+              scalp:{lab:'スキャル',filter:'adx40',note:'全体 -0.300R。ADX40以上に絞っても -0.21R で、どの条件でもマイナスです'}};
+function subLabel(){ return SUBNOTIFY.length
+  ? SUBNOTIFY.map(function(x){return (SUB_INFO[x.mode]||{}).lab||x.mode;}).join('・') : 'なし'; }
+async function toggleSub(mode){
+  const c=cfg();
+  if(!(c&&c.token&&c.owner&&c.repo)){toast('⚙でGitHub設定をすると変更できます');togglePanel('setPanel');return;}
+  const info=SUB_INFO[mode]; if(!info) return;
+  const on=SUBNOTIFY.some(function(x){return x.mode===mode;});
+  if(on){ SUBNOTIFY=SUBNOTIFY.filter(function(x){return x.mode!==mode;}); }
+  else{
+    if(!confirm('参考通知に「'+info.lab+'」を追加します。\n\n'
+      +'実測：'+info.note+'\n\n'
+      +'・運用モードは変わりません（判定・前向き検証は今のまま）\n'
+      +'・通知には「参考」と出所が必ず付きます\n'
+      +'・登録するときはモードを'+info.lab+'に合わせてください\n\n'
+      +'追加しますか？'))return;
+    if(SUBNOTIFY.length>=2){toast('参考通知は2つまでです');return;}
+    SUBNOTIFY=SUBNOTIFY.concat([{mode:mode,filter:info.filter}]);
+  }
+  try{
+    await ghPutFile(c,'data/mode.json',{mode:MODEJSON||S.mode||'mtf',sub:SUBNOTIFY,
+      updated_at:new Date().toISOString()},'sub notify '+subLabel()+' [skip ci]');
+    renderModeWarn();toast('参考通知：'+subLabel()+'（次回実行から反映）');
+  }catch(e){ toast('変更失敗: '+e.message); }
 }
 // mode.json（通知モード）と画面モードの不一致を警告表示
 function renderModeWarn(){
@@ -1910,8 +1950,23 @@ function renderModeWarn(){
       <div style="margin-top:6px">
         <button class="btn sm" onclick="adoptServerMode()">表示を運用モードに戻す</button>
         <button class="btn ghost sm" style="margin-left:6px" onclick="syncModeJson()">運用を${MODE_LABEL[screen]||screen}に変更する</button>
-      </div></div>`;
-  }else{el.innerHTML='';}
+      </div></div>`+subBox();
+  }else{el.innerHTML=subBox();}
+}
+/* 参考通知の設定。運用モードは変えずに、別モードの合図だけ足す。 */
+function subBox(){
+  const btn=function(m){
+    const i=SUB_INFO[m],on=SUBNOTIFY.some(function(x){return x.mode===m;});
+    return '<button class="btn '+(on?'sm':'ghost sm')+'" style="margin:0 6px 0 0" '
+      +'onclick="toggleSub(\''+m+'\')">'+(on?'✓ ':'＋ ')+i.lab+'</button>';};
+  const cur=SUBNOTIFY.map(function(x){
+    const i=SUB_INFO[x.mode]||{};
+    return '<div style="margin-top:4px">・<b>'+(i.lab||x.mode)+'</b>：'+(i.note||'')+'</div>';}).join('');
+  return `<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.03);font-size:12px;color:var(--mut)">
+    🔎 <b>参考通知</b>（運用は<b>${MODE_LABEL[MODEJSON]||MODEJSON||'—'}</b>のまま）：現在 <b>${subLabel()}</b>
+    <div style="margin-top:6px">${btn('day')}${btn('swing')}</div>${cur}
+    <div style="margin-top:6px;font-size:11px">別モードの合図を「参考」として受け取ります。判定・前向き検証は運用モードのままです。登録するときはモードを合わせてください。</div>
+  </div>`;
 }
 // サーバー更新(status.json)とライブ価格(ticker)の停止を検知して警告
 function parseGenAt(s){if(!s)return null;const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
@@ -3047,7 +3102,7 @@ async function load(){
     S.pairs.forEach((p,i)=>{if(LIVE_PAIRS[p.symbol])S.pairs[i]=LIVE_PAIRS[p.symbol];});
     Object.keys(LIVE_PAIRS).forEach(sym=>{if(!S.pairs.some(p=>p.symbol===sym))S.pairs.push(LIVE_PAIRS[sym]);});
   }
-  try{const mr=await fetch('./data/mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();}}catch(e){}
+  try{const mr=await fetch('./data/mode.json?t='+Date.now(),{cache:'no-store'});if(mr.ok){const mj=await mr.json();if(mj&&mj.mode)MODEJSON=String(mj.mode).toLowerCase();SUBNOTIFY=(mj&&Array.isArray(mj.sub))?mj.sub.filter(function(x){return x&&SUB_INFO[x.mode];}):[];}}catch(e){}
   applyModeOverride();
   if(!POS_BUSY){const np=await loadPositions(); if(np){POS=np;pruneLocal();}}
   setPriceFromStatus();render();applyLive();liveSignals();refreshStats();
