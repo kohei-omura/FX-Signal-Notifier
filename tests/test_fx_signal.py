@@ -2879,5 +2879,76 @@ class ReachableThresholdTest(unittest.TestCase):
         self.assertNotIn("売り", side, "売りが出た＝到達範囲が変わっている")
 
 
+class CanSignalTest(RunTestCase):
+    """出せない向きを「優勢」とだけ出さないこと。
+
+    スイングは構造上、売りシグナルを出せない（スコアの下限 -0.175〜-0.230、
+    売りに必要なのは -0.45）。それを「売り優勢」とだけ表示すると、
+    絶対に出ない合図をユーザーに待たせることになる。
+    """
+
+    def test_score_range_is_fixed_per_mode(self):
+        F.MODE = "swing"; F.P = F.PARAMS["swing"]; F.TECH_W, F.FUND_W = 0.45, 0.55
+        lo, hi = F.score_range("USD_JPY")
+        self.assertAlmostEqual(lo, -0.175, places=6)
+        self.assertAlmostEqual(hi, 0.725, places=6)
+        F.MODE = "day"; F.P = F.PARAMS["day"]; F.TECH_W, F.FUND_W = 0.85, 0.15
+        lo, hi = F.score_range("USD_JPY")
+        self.assertAlmostEqual(lo, -0.775, places=6)
+        self.assertAlmostEqual(hi, 0.925, places=6)
+
+    def test_swing_cannot_sell_but_others_can(self):
+        F.MODE = "swing"; F.P = F.PARAMS["swing"]; F.TECH_W, F.FUND_W = 0.45, 0.55
+        self.assertTrue(F.can_signal(1))
+        self.assertFalse(F.can_signal(-1), "スイングで売りが出せることになっている")
+        for m in ("scalp", "day"):
+            F.MODE = m; F.P = F.PARAMS[m]; F.TECH_W, F.FUND_W = 0.85, 0.15
+            self.assertTrue(F.can_signal(1), m)
+            self.assertTrue(F.can_signal(-1), m)
+
+    def test_mtf_is_always_allowed(self):
+        """mtfはRSIで判定するので th を使わない＝範囲の制約を受けない。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]; F.TECH_W, F.FUND_W = 0.85, 0.15
+        self.assertTrue(F.can_signal(1))
+        self.assertTrue(F.can_signal(-1))
+
+    def test_the_card_says_so_instead_of_just_sell_bias(self):
+        F.MODE = "swing"; F.P = F.PARAMS["swing"]; F.TECH_W, F.FUND_W = 0.45, 0.55
+        self.assertIn("買いしか出せません", F.pair_bias(-0.10, 40.0, 0))
+        self.assertEqual(F.pair_bias(0.30, 60.0, 0), "買い優勢")
+        F.MODE = "day"; F.P = F.PARAMS["day"]; F.TECH_W, F.FUND_W = 0.85, 0.15
+        self.assertEqual(F.pair_bias(-0.10, 40.0, 0), "売り優勢")
+
+    def test_the_dashboard_agrees(self):
+        """画面側 canSignalJs() と Python can_signal() が一致すること。"""
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function scoreRangeJs(")
+        end = src.index("\n}", src.index("function canSignalJs(")) + 2
+        tfw = src[src.index("function tfw(P){"):src.index("\n", src.index("function tfw(P){"))]
+        head = ("const SYMS=" + json.dumps(list(F.SYMBOLS)) + ";\n"
+                "const FUND_BIAS=" + json.dumps(F.FUND_BIAS) + ";\nlet S={mode:'day'};\n")
+        cases = [{"mode": m, "th": F.PARAMS[m]["th"],
+                  **({"rule": "mtf_pullback"} if F.PARAMS[m].get("rule") else {})}
+                 for m in F.PARAMS]
+        script = (head + tfw + "\n" + src[i:end]
+                  + "\nconsole.log(JSON.stringify(" + json.dumps(cases)
+                  + ".map(P=>[canSignalJs(1,P),canSignalJs(-1,P)])));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        js = json.loads(out.stdout)
+        for mode, (jb, js_) in zip(F.PARAMS, js):
+            with F.use_mode(mode):
+                self.assertEqual(F.can_signal(1), jb, f"{mode} 買い")
+                self.assertEqual(F.can_signal(-1), js_, f"{mode} 売り")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -2712,7 +2712,26 @@ function pairBias(score,rsi,P,aligned){
     if(aligned===-1)return rsi!=null?`戻り待ち RSI${rsi.toFixed(1)}→${hi}以上で売り`:`戻り待ち（RSI${hi}以上で売り）`;
     return '対象外（上位足がレンジ）';
   }
+  /* スイングは構造上、売りシグナルを出せない。スコアの到達範囲は
+     0.45*tech + 0.55*fund で、fund は通貨ごとの固定値(USD/JPY +0.5 等)。
+     下限は -0.175〜-0.230 にしかならず、売りに必要な -0.45 に届かない。
+     実測1年386件はすべて買いだった。「売り優勢」とだけ出すと、
+     絶対に出ない合図を待たせることになる。 */
+  if((score||0)<0&&!canSignalJs(-1,P)) return '売り優勢（ただし'+(MODE_LABEL[P&&P.mode]||'このスタイル')+'は買いしか出せません）';
   return (score||0)>=0?'買い優勢':'売り優勢';
+}
+// fx_signal.py の can_signal() と同じ。到達範囲としきい値の突き合わせ。
+function scoreRangeJs(P,sym){
+  const tf=tfw(P),syms=sym?[sym]:SYMS;
+  let lo=Infinity,hi=-Infinity;
+  syms.forEach(function(s2){const fb=FUND_BIAS[s2]||0;
+    lo=Math.min(lo,tf.t*-1+tf.f*fb); hi=Math.max(hi,tf.t*1+tf.f*fb);});
+  return [lo,hi];
+}
+function canSignalJs(want,P){
+  if(P&&P.rule==='mtf_pullback')return true;   // mtfはRSI判定なのでthを使わない
+  const r=scoreRangeJs(P),th=(P&&P.th)!=null?P.th:0.40;
+  return want>0?(r[1]>=th):(r[0]<=-th);
 }
 function entrySide(total,rv,P,aligned){
   if(P&&P.rule==='mtf_pullback'){

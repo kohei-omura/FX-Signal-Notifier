@@ -1650,6 +1650,33 @@ def _hold_basis(score, aligned_raw):
     return f"スコア{score:+.2f}"
 
 
+def score_range(symbol=None):
+    """今のモードで total(スコア) が取り得る範囲。
+
+       total = TECH_W*tech + FUND_W*fund で、tech は [-1,1]、fund は
+       FUND_BIAS の固定値。つまり範囲は固定で、この外のしきい値は
+       一度も通らない（スイングの売りが実際そうなっていた）。
+       symbol を省いた時は、全通貨のうち最も外側まで届く範囲を返す。"""
+    syms = [symbol] if symbol else list(SYMBOLS)
+    los, his = [], []
+    for sym in syms:
+        fb = FUND_BIAS.get(sym, 0.0)
+        los.append(TECH_W * -1 + FUND_W * fb)
+        his.append(TECH_W * 1 + FUND_W * fb)
+    return min(los), max(his)
+
+
+def can_signal(want, symbol=None):
+    """今のモードで、その向きのシグナルが構造的に出せるか。
+
+       mtf は RSI で判定するので th を使わない＝常に出せる。"""
+    if P.get("rule") == "mtf_pullback":
+        return True
+    lo, hi = score_range(symbol)
+    th = P.get("th", 0.40)
+    return (hi >= th) if want > 0 else (lo <= -th)
+
+
 def pair_bias(score, rsi, aligned):
     """シグナルが出ていない時にカードへ出す『今どんな状態か』。
 
@@ -1667,6 +1694,14 @@ def pair_bias(score, rsi, aligned):
             return (f"戻り待ち RSI{rsi:.1f}→{hi}以上で売り" if rsi is not None
                     else f"戻り待ち（RSI{hi}以上で売り）")
         return "対象外（上位足がレンジ）"
+    # スイングは構造上、売りシグナルを出せない。
+    # スコアの到達範囲は 0.45*tech + 0.55*fund で、fund は通貨ごとの固定値
+    # （USD/JPY +0.5 等）。下限は -0.175〜-0.230 にしかならず、売りに必要な
+    # -0.45 に届かない。実測1年386件はすべて買いだった。
+    # それを「売り優勢」と出すと、絶対に出ない合図を待たせることになる。
+    if not can_signal(-1):
+        return ("買い優勢" if (score or 0) >= 0
+                else f"売り優勢（ただし{MODE_LABEL.get(MODE, MODE)}は買いしか出せません）")
     return "買い優勢" if (score or 0) >= 0 else "売り優勢"
 
 
