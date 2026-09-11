@@ -1676,6 +1676,13 @@ def _entry_strength(score, rsi, side, th):
             ("標準" if abs(score) >= th else "弱"))
 
 
+def _strength_in_mode(mode, score, rsi, side, th):
+    """シグナルの強さは、その建玉のモードの物差しで測る。
+       mtf は押し目の深さ、他はスコアの倍率で測るので、取り違えると区分がずれる。"""
+    with use_mode(mode):
+        return _entry_strength(score, rsi, side, th)
+
+
 def stamp_new_entries(data):
     """新しく登録された保有ポジションに、その時点の判断材料をスタンプして記録簿へ追記する。
        ポジションを『削除』しても記録は残るので、後からGMOのCSVと突き合わせて検証できる。
@@ -1696,11 +1703,20 @@ def stamp_new_entries(data):
             continue
         if (pid and pid in known) or ((sym, entry) in known_key):
             continue
-        sc = score_pair(sym, get_ohlc(sym))
+        # ★その建玉のモードで記録する。運用モードではない。
+        #   以前は MODE（運用モード）をそのまま書いていたため、スイングの参考通知で
+        #   建てた玉が「mtf」として残っていた（実際 9/11 の USD/JPY 2件がそうなった。
+        #   tp_pips 73〜76 はスイングの値幅で、mtfなら20〜30pips）。
+        #   モードが違えば足も指標もスコアの配分も閾値も違う。ここを取り違えると、
+        #   モード別の成績がそのまま混ざって使い物にならなくなる。
+        pmode = pos_mode(p)
+        with use_mode(pmode):
+            sc = score_pair(sym, get_ohlc(sym))
+            th = P.get("th", 0.40)
+            tw, fw = TECH_W, FUND_W
         mtf = mtf_view(sym) or {}
         side = p.get("side", "long")
         want = 1 if side == "long" else -1
-        th = P.get("th", 0.40)
         # 記録簿は5分ごとの実行時に書くので、ここで指標を取り直すと
         # 「エントリーした時」ではなく「記録した時」の値が残る。値動きが出た後に
         # 記録されると、押し目で入ったはずのものが極値で入ったように見えてしまう
@@ -1711,8 +1727,9 @@ def stamp_new_entries(data):
         from_entry = None not in (ent_rsi, ent_tech, ent_fund)
         if from_entry:
             rsi_v, tech_v, fund_v = ent_rsi, ent_tech, ent_fund
-            # スコアはそのモードの比率で組み直す（_compose_score と同じ式）
-            score = clamp(TECH_W * tech_v + FUND_W * fund_v)
+            # スコアはそのモードの比率で組み直す（_compose_score と同じ式）。
+            # 比率は建玉のモードのものを使う（swing は 0.45/0.55、他は 0.85/0.15）。
+            score = clamp(tw * tech_v + fw * fund_v)
             adx_v = sc.get("adx") if sc else None      # ADXはエントリー時の保存が無い
         else:
             # 判定材料が取れなかった回に 0.0 を書くと「スコア0の弱シグナルで入った」記録が
@@ -1728,7 +1745,7 @@ def stamp_new_entries(data):
             "symbol": sym,                      # ← CSVの「銘柄名」と対応
             "side": "買" if side == "long" else "売",
             "entry": entry,                     # ← CSVの「建単価」と対応（突き合わせキー）
-            "mode": MODE,
+            "mode": pmode,
             "score": round(score, 3) if score is not None else None,
             "tech": round(tech_v, 3) if tech_v is not None else None,
             "fund": round(fund_v, 3) if fund_v is not None else None,
@@ -1737,7 +1754,8 @@ def stamp_new_entries(data):
             "ctx_src": "entry" if from_entry else "logged",
             # アプリが記録した総合判定（confluence）。エントリー時点の値。
             "conf_pct": p.get("entry_score"), "conf_mark": p.get("entry_mark"),
-            "strength": _entry_strength(score, rsi_v, side, th),
+            "strength": (lambda: _entry_strength(score, rsi_v, side, th))()
+                        if pmode == MODE else _strength_in_mode(pmode, score, rsi_v, side, th),
             "mtf_label": mtf.get("label"),
             "mtf_aligned": mtf.get("aligned"),
             # 上位足との関係：順張り / 逆行 / レンジ

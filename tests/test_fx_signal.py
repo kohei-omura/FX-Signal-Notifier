@@ -1400,9 +1400,41 @@ class EntryLogContextTest(RunTestCase):
         self.assertEqual(rec["ctx_src"], "entry")
         self.assertEqual(rec["conf_pct"], 58)
         self.assertEqual(rec["conf_mark"], "🟡 保留・検討")
-        # スコアはそのモードの比率で組み直す
+        # スコアはその建玉のモードの比率で組み直す。
+        # 以前は差し替えられたグローバルの TECH_W をそのまま使っていたため、
+        # 直前に別モードを触っていると比率がずれていた（既定0.9/0.1のまま等）。
+        self.assertEqual(rec["mode"], "mtf")
         self.assertAlmostEqual(rec["score"], round(F.clamp(
-            F.TECH_W * -0.30 + F.FUND_W * 0.40), 3), places=3)
+            0.85 * -0.30 + 0.15 * 0.40), 3), places=3)
+
+    def test_the_entry_log_uses_the_position_mode_not_the_operating_mode(self):
+        """建玉のモードで記録すること（運用モードではない）。
+
+        実際に起きたこと: 運用mtfのままスイングの参考通知で建てた USD/JPY 2件が、
+        記録簿に mode='mtf' として残っていた。tp_pips 73〜76 はスイングの値幅で、
+        mtfなら20〜30pips。モードが違えば足も指標もスコアの配分も閾値も違うので、
+        ここを取り違えるとモード別の成績がそのまま混ざる。"""
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        F.TECH_W, F.FUND_W = 0.85, 0.15
+        data = {"positions": [self._pos(mode="swing", entry_rsi=62.3,
+                                        entry_tech=-0.30, entry_fund=0.40,
+                                        tp_pips=75.9, sl_pips=42.2)]}
+        self.assertEqual(F.stamp_new_entries(data), 1)
+        rec = self.read(F.ENTRY_LOG_FILE)["entries"][-1]
+        self.assertEqual(rec["mode"], "swing", "運用モードで記録している")
+        # スイングは テク0.45 / ファンダ0.55
+        self.assertAlmostEqual(rec["score"], round(F.clamp(
+            0.45 * -0.30 + 0.55 * 0.40), 3), places=3)
+        # 記録後に運用モードの設定が戻っていること
+        self.assertEqual(F.MODE, "mtf")
+        self.assertIs(F.P, F.PARAMS["mtf"])
+        self.assertEqual((F.TECH_W, F.FUND_W), (0.85, 0.15))
+
+    def test_entry_mode_alone_also_decides_the_log_mode(self):
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        data = {"positions": [self._pos(entry_mode="swing")]}
+        self.assertEqual(F.stamp_new_entries(data), 1)
+        self.assertEqual(self.read(F.ENTRY_LOG_FILE)["entries"][-1]["mode"], "swing")
 
     def test_falls_back_to_current_values_without_entry_context(self):
         """アプリ以外から登録された建玉は、従来どおり現在値で記録する。"""
