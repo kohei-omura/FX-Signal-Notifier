@@ -1022,18 +1022,23 @@ function kellyRec(mode){var m=modeStats(mode);if(m.n<30)return{status:'acc',n:m.
   return{status:'ok',rec:Math.round(Math.min(2,f/4*100)*100)/100,f:f,n:m.n,p:m.p,b:m.b};}
 // 機能6: Wilson信頼下限（z=1.96）＋仮想エクイティカーブ（fxnavi_forward_v1・最大300件ローテ）
 function wilsonLower(wins,n,z){if(!n)return 0;z=z||1.96;var p=wins/n,z2=z*z;return (p+z2/(2*n)-z*Math.sqrt((p*(1-p)+z2/(4*n))/n))/(1+z2/n);}
-/* 素性が信用できない記録。鍵は fwdCloseKey と同じ ts|sym|side。
-   2026-09-11 20:46 の EUR_JPY 売り(ts=1789127207637)は、足の取得中にモードが変わった回に
-   作られたもので、デイの係数(SL15.9pips)で計算した合図が mode:'mtf' として
-   記録されていた。運用mtf・画面デイの場面なので、本来は記録されない
-   （記録は運用モードと画面モードが一致する時だけ）。
-   混ざったまま残すとモード別の検証がそのまま狂うので、明示して落とす。 */
-var FWD_DROP={'1789127207637|EUR_JPY|short':'2026-09-11 20:46 モード切替と競合して混入'};
+/* 取り違えて記録されたモードを直す。鍵は fwdCloseKey と同じ ts|sym|side。
+   2026-09-11 20:46 の EUR/JPY 売り(ts=1789127207637)は、足の取得中に
+   モードが変わった回に作られ、デイの係数で計算した合図が mode:'mtf' として
+   記録された（SL15.9pips は デイの15分ATR×1.3。mtfなら×1.95で約23pips）。
+   中身はデイとして完全に整合しており、総合判定の配点も day と swing で
+   同一(合計12)なので、壊れていたのは mode の札だけ。
+   捨てると実際にあった検証が1件消えるので、正しいモードに直して残す。 */
+var FWD_FIX={'1789127207637|EUR_JPY|short':'day'};
 function loadFwd(){try{
   var a=JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]')||[];
-  var keep=a.filter(function(x){ return !FWD_DROP[[x.ts,x.sym,x.side].join('|')]; });
-  if(keep.length!==a.length){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(keep));}catch(e){}}
-  return keep;
+  var ch=false;
+  a.forEach(function(x){
+    var m=FWD_FIX[[x.ts,x.sym,x.side].join('|')];
+    if(m&&x.mode!==m){x.mode=m;x.modeFixed=true;ch=true;}
+  });
+  if(ch){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(a));}catch(e){}}
+  return a;
 }catch(e){return[];}}
 function saveFwd(a){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(a.slice(-300)));}catch(e){}
   fwdCloudSaveLater();}

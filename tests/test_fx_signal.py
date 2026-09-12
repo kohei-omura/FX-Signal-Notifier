@@ -3088,22 +3088,31 @@ class ForwardRecordModeTest(unittest.TestCase):
         self.assertIn("const m=mode||S.mode;", body)
         self.assertIn("mode:m,", body, "記録するモードが受け取った値でない")
 
-    def test_the_corrupt_record_is_dropped_on_load(self):
-        """素性が信用できない記録を読み込み時に落とすこと。"""
-        src = self._src()
-        self.assertIn("1789127207637|EUR_JPY|short", src,
-                      "混入した記録の鍵が登録されていない")
-        i = src.index("function loadFwd(){")
-        self.assertIn("FWD_DROP[", src[i:i + 400], "loadFwd が除外していない")
+    def test_the_mislabelled_record_is_repaired_on_load(self):
+        """取り違えたモードを読み込み時に直すこと（捨てない）。
 
-    def test_the_repo_copy_no_longer_has_it(self):
+        中身はデイとして完全に整合していて、総合判定の配点も day と swing で
+        同一（合計12）だった。壊れていたのは mode の札だけなので、
+        捨てると実際にあった検証が1件失われる。"""
+        src = self._src()
+        self.assertIn("FWD_FIX={'1789127207637|EUR_JPY|short':'day'}", src,
+                      "取り違えた記録の直し方が登録されていない")
+        i = src.index("function loadFwd(){")
+        self.assertIn("FWD_FIX[", src[i:i + 500], "loadFwd が直していない")
+        self.assertNotIn("FWD_DROP", src, "捨てる実装が残っている")
+
+    def test_the_repo_copy_has_it_with_the_right_mode(self):
         path = os.path.join(ROOT, "data", "forward_log.json")
         if not os.path.exists(path):
             self.skipTest("forward_log.json が無い")
         with open(path, encoding="utf-8") as f:
             ent = (json.load(f) or {}).get("entries") or []
-        self.assertFalse([x for x in ent if x.get("ts") == 1789127207637],
-                         "リポジトリ側に混入した記録が残っている")
+        got = [x for x in ent if x.get("ts") == 1789127207637]
+        self.assertEqual(len(got), 1, "直した記録がリポジトリ側に無い")
+        self.assertEqual(got[0]["mode"], "day", "モードが直っていない")
+        # SL幅がデイの係数(15分ATR×1.3)と辻褄が合うこと
+        sl_pips = abs(got[0]["entry"] - got[0]["sl"]) / 0.01
+        self.assertAlmostEqual(sl_pips, 15.9, places=1)
 
     def test_every_remaining_record_matches_its_mode_stop_width(self):
         """残っている記録のSL幅が、そのモードの係数と辻褄が合うこと。
@@ -3125,6 +3134,73 @@ class ForwardRecordModeTest(unittest.TestCase):
             # 円ペアの15分/1時間ATRが取り得るおおよその幅。桁違いを拾うための粗い網。
             self.assertTrue(0.01 <= atr <= 1.0,
                             f"{x['sym']} {m}: SL幅から逆算したATR {atr:.4f} が現実的でない")
+
+
+class EdgeNeedTest(unittest.TestCase):
+    """学習補正が出ない理由を、画面で区別できること。
+
+    「全く反映されない」のが、条件が厳しいからなのか、勝率が基準と
+    変わらないからなのかが分からなかった。実データ427件では
+    15区分すべてが「偶然の範囲」で、補正は0だった。
+    今の勝率のまま件数だけ増えた場合に補正が出るまでの件数を出す。
+    """
+
+    def _run(self, cases):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            src = f.read()
+        wil = src[src.index("function wilsonCI("):src.index("function _eStat(")]
+        i = src.index("  var needFor=function(st){")
+        end = src.index("  var out=function(m){", i)
+        script = ("var EDGE_MIN=30,EDGE_Z=1.96;\n" + wil
+                  + "var baseWr=39.6;\n" + src[i:end]
+                  + "console.log(JSON.stringify(" + json.dumps(cases)
+                  + ".map(function(c){return needFor(c);})));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_a_rate_equal_to_the_base_never_qualifies(self):
+        """基準勝率と同じ区分は、件数を貯めても出ない（差が無いということ）。"""
+        got = self._run([{"n": 194, "wr": 39.6}, {"n": 500, "wr": 39.4}])
+        self.assertEqual(got, [None, None], "差が無いのに『あと◯件』と出している")
+
+    def test_a_clear_difference_reports_a_reachable_count(self):
+        """実データのUSD/JPY(147件46%)は、あと数十件で条件を満たす。"""
+        got = self._run([{"n": 147, "wr": 46.0}])
+        self.assertIsNotNone(got[0])
+        self.assertGreater(got[0], 147, "今の件数で既に出ていることになっている")
+        self.assertLess(got[0], 400, "到達が非現実的な件数になっている")
+
+    def test_small_buckets_start_from_the_minimum(self):
+        """30件未満の区分は、まず30件から数えること。"""
+        got = self._run([{"n": 1, "wr": 0.0}])
+        self.assertIsNotNone(got[0])
+        self.assertGreaterEqual(got[0], 30)
+
+    def test_the_column_exists(self):
+        with open(os.path.join(ROOT, "tools.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn("<th>あと</th>", html, "『あと』の列が無い")
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("need:needFor(st)", js, "profile に need を載せていない")
+        self.assertIn("colspan=5", js, "列を増やしたのに空表示の colspan が古い")
+
+    def test_the_note_explains_the_multiple_comparison_risk(self):
+        """条件を緩めたら何が起きるかを書いておくこと。
+
+        区分15前後×5% ≒ 0.75区分は、差が無くても「差あり」と出る。"""
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("平均0.75区分", js)
+        self.assertIn("条件を緩めると", js)
 
 
 if __name__ == "__main__":

@@ -1450,11 +1450,27 @@ function buildEdgeProfile(){
     if(st.hi<baseWr) return Math.max(-EDGE_CAP,Math.min(-1,Math.round((st.hi-baseWr)/2)));
     return 0;
   };
+  /* あと何件で補正が有効になるか。今の勝率のまま件数だけ増えたと仮定して、
+     Wilson区間が基準勝率を跨がなくなる最小件数を探す。
+     「全く反映されない」が、条件が厳しいからなのか、勝率が基準と変わらない
+     からなのかを、画面で区別できるようにするための数字。
+     勝率が基準とほぼ同じ区分は、件数をいくら増やしても跨いだままなので null。 */
+  var needFor=function(st){
+    if(!st.n) return null;
+    var p=st.wr/100;
+    if(Math.abs(st.wr-baseWr)<0.5) return null;     // 基準と同じ＝何件貯めても出ない
+    for(var m2=Math.max(st.n,EDGE_MIN); m2<=20000; m2++){
+      var ci=wilsonCI(Math.round(p*m2),m2);
+      if(ci[0]*100>baseWr||ci[1]*100<baseWr) return m2;
+    }
+    return null;
+  };
   var out=function(m){var o={};Object.keys(m).forEach(function(k){var st=_eStat(m[k]);
     o[k]={n:st.n,wr:Math.round(st.wr),net:Math.round(st.net),
-          lo:Math.round(st.lo*10)/10,hi:Math.round(st.hi*10)/10,adj:adjOf(st)};});return o;};
+          lo:Math.round(st.lo*10)/10,hi:Math.round(st.hi*10)/10,adj:adjOf(st),
+          need:needFor(st)};});return o;};
   var prof={
-    v:7, updated:Date.now(), n:t.length, baseWr:Math.round(baseWr*10)/10,
+    v:8, updated:Date.now(), n:t.length, baseWr:Math.round(baseWr*10)/10,
     ready:ready, need:{total:EDGE_TOTAL_MIN,bucket:EDGE_MIN}, cap:EDGE_CAP,
     sessions:out(grp(function(x){return _tSess(_tHour(_tOpen(x)));})),
     zones:out(grp(function(x){var h=_tHour(_tOpen(x));return h==null?null:EDGE_ZONE_OF_HOUR[h];})),
@@ -1480,15 +1496,19 @@ function renderEdgeProfile(){
     keys.forEach(function(k){var v=map[k];
       var nm=labeler?(labeler[k]||k):k;
       var short=v.n<EDGE_MIN;
+      // 補正が出ていない区分は「あと何件で出るか」を出す。出ない見込みなら「—」。
+      var more=v.adj?'':(v.need==null?'<span style="color:#566">—</span>'
+        :(short&&v.need<EDGE_MIN?('あと'+(EDGE_MIN-v.n)):('あと'+Math.max(0,v.need-v.n))));
       rows.push('<tr'+(v.adj?' style="background:#141b24"':'')+'><td>'+label+' '+nm+(suffix||'')
         +'</td><td>'+v.n+(short?'<span style="color:#8893a4">/'+EDGE_MIN+'</span>':'')+'</td><td>'+v.wr+'%'
         +'<span style="color:#8893a4;font-size:10px"> ('+v.lo+'〜'+v.hi+')</span></td>'
-        +'<td class="'+(v.adj>0?'good':(v.adj<0?'warn':''))+'">'+(v.adj>0?'+':'')+(v.adj||0)+'</td></tr>');});
+        +'<td class="'+(v.adj>0?'good':(v.adj<0?'warn':''))+'">'+(v.adj>0?'+':'')+(v.adj||0)+'</td>'
+        +'<td style="color:#8893a4;font-size:10.5px">'+more+'</td></tr>');});
   };
   add('市場',prof.sessions,ordS,'',null);
   add('時間',prof.zones,ordZ,'',prof.zoneLabel);
   add('ペア',prof.pairs,null,'',null);
-  el.innerHTML=rows.length?rows.join(''):'<tr><td colspan=4 style="text-align:center;color:#566">日時つきの記録がまだありません</td></tr>';
+  el.innerHTML=rows.length?rows.join(''):'<tr><td colspan=5 style="text-align:center;color:#566">日時つきの記録がまだありません</td></tr>';
   if(stEl){
     var on=false; try{on=localStorage.getItem('fxnavi_edge_on')==='1';}catch(e){}
     var msg;
@@ -1504,6 +1524,11 @@ function renderEdgeProfile(){
       msg='学習済み '+prof.n+'件 / 基準勝率 '+prof.baseWr+'% / 有効な補正 '+live+'区分（上限±'+EDGE_CAP+'pt）';
     }
     msg+='<br>括弧内は勝率の95%信頼区間。区間が基準勝率を跨ぐ区分は「偶然の範囲」とみなし補正しません。';
+    msg+='<br>「あと」は、<b>今の勝率のまま件数だけ増えた場合</b>に補正が出るまでの件数です。'
+       +'「—」は勝率が基準勝率とほぼ同じ区分で、件数を貯めても出ません（差が無いということです）。';
+    msg+='<br>区分は15前後あるので、1区分あたり5%の誤りを許すと、'
+       +'<b>何も差が無くても平均0.75区分は「差あり」と出ます</b>。'
+       +'条件を緩めると、その偶然を拾って判定が動きます。';
     msg+='<br>この補正は現在ダッシュボードで<b class="'+(on?'good':'warn')+'">'+(on?'使用中':'未使用（既定OFF）')+'</b>です。';
     stEl.innerHTML=msg;
   }
