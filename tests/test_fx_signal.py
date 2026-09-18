@@ -10,7 +10,7 @@
   - 価格が取れない回に画面の表示内容を消さないこと
   - API障害でクラッシュしたり通知が二重に飛んだりしないこと
 """
-import json, os, random, re, shutil, subprocess, sys, tempfile, types, unittest
+import json, os, random, re, shutil, subprocess, sys, tempfile, time, types, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
@@ -3798,6 +3798,247 @@ class ModeSrcRelinkTest(unittest.TestCase):
         body = src[i:src.index("function _elLoad(", i)]
         self.assertIn("x.modeSrc='snap-operating'", body,
                       "画面モードをそのまま建玉のモードとして残している")
+
+
+class ConfirmedBarTest(unittest.TestCase):
+    """上位足の判定に、形成中の足を混ぜないこと。
+
+    実際に起きたこと: 運用mtfで10日近く合図が1件も出なかった。
+    9/10〜9/19 の status.json 3,139サンプル（上位足が揃っていた分）を数えると、
+    押し目/戻りのRSI条件を満たしたものは0件。RSIが必要な60に最も近づいた値は
+    52.5〜55.5で、毎回あと5〜8足りない。原因はRSIではなく、揃っている状態が
+    続かないことだった。
+    htf_trend はAPIが返す最後の足＝【いま形成中】の足まで含めてEMAの傾きを
+    見ていたため、現在値が少し動くだけで上位足の向きが反転していた。
+    バックテスト(htf_aligned_series)は最初から確定足だけで判定しているので、
+    ライブだけが検証していない別のルールを動かしていたことになる。
+    """
+
+    H = 3600 * 1000
+
+    def test_the_forming_bar_is_dropped(self):
+        now = 10 * self.H + 30 * 60000            # 10時半 → 10時台の足は形成中
+        rows = {i * self.H: 100.0 for i in range(11)}
+        got = F.confirmed_bars(rows, "1hour", now)
+        self.assertEqual(got[-1], 9 * self.H, "形成中の足が残っている")
+        self.assertEqual(len(got), 10)
+
+    def test_a_just_closed_bar_is_kept(self):
+        now = 10 * self.H                          # ちょうど10時＝9時台の足は確定
+        rows = {i * self.H: 100.0 for i in range(10)}
+        got = F.confirmed_bars(rows, "1hour", now)
+        self.assertEqual(got[-1], 9 * self.H, "確定した足まで捨てている")
+
+    def test_at_most_one_bar_is_dropped(self):
+        """時計がずれても系列を空にしないこと。
+
+        全部落とすと上位足が判定できず、黙って『レンジ』に倒れる
+        ＝上位足フィルタが効かなくなる。"""
+        rows = {i * self.H: 100.0 for i in range(10)}
+        got = F.confirmed_bars(rows, "1hour", 0)   # 時計が大きく過去にずれた状況
+        self.assertEqual(len(got), 9)
+
+    def test_the_four_hour_bar_uses_its_own_length(self):
+        dur = 4 * self.H
+        rows = {i * dur: 100.0 for i in range(6)}
+        now = 5 * dur + 60000                      # 最後の足は始まったばかり
+        self.assertEqual(F.confirmed_bars(rows, "4hour", now)[-1], 4 * dur)
+
+    def _trend(self, closes, extra=None):
+        """htf_trend を、与えた終値列だけで動かす。
+
+        足の時刻は【いまの時刻】を基準に並べる。過去の適当な時刻にすると
+        最後の足まで「確定済み」に見えてしまい、何も確かめられない。
+        extra は、いま形成中の足の現在値。"""
+        H = self.H
+        now = int(time.time() * 1000)
+        cur = (now // H) * H                       # いま形成中の足の開始時刻
+        n = len(closes)
+        rows = {cur - (n - i) * H: c for i, c in enumerate(closes)}
+        if extra is not None:
+            rows[cur] = extra                      # 形成中の足
+        self.addCleanup(setattr, F, "_htf_closes", F.__dict__["_htf_closes"])
+        F._htf_closes = lambda sym, interval, keys: dict(rows)
+        return F.htf_trend("USD_JPY", "1hour"), cur
+
+    def test_the_forming_bar_cannot_flip_the_trend(self):
+        """形成中の足が逆に動いても、上位足の向きが変わらないこと。
+
+        ef[-1]>ef[-2] は現在値ひとつで反転する。ここが反転すると
+        『上位足が揃っている』状態が消え、mtfの合図がその場で流れる。"""
+        up = [100.0 + i * 0.5 for i in range(60)]        # はっきりした上昇
+        base, _ = self._trend(up)
+        self.assertEqual(base, 1, "上昇と判定できていない（前提が崩れた）")
+        # 最後に、形成中の足として大きく下げた現在値を足す
+        drop, _ = self._trend(up, extra=up[-1] - 6.0)
+        self.assertEqual(drop, 1,
+                         "形成中の足で上位足の向きが反転した（mtfの合図が消える原因）")
+
+    def test_a_confirmed_reversal_still_flips_the_trend(self):
+        """確定した足で本当に転換したら、ちゃんと向きは変わること。"""
+        up = [100.0 + i * 0.5 for i in range(60)]
+        down = up + [up[-1] - 3.0 * i for i in range(1, 12)]
+        got, _ = self._trend(down, extra=down[-1])
+        self.assertEqual(got, -1, "確定足の転換まで無視している")
+
+
+class JsPythonParamsTest(unittest.TestCase):
+    """画面(JS)とサーバー(Python)のモード設定が一致していること。
+
+    同じ数字を2か所に書いている以上、片方だけ直すといつか必ずズレる。
+    ズレると、画面が出したTP/SLとサーバーが出したTP/SLが食い違い、
+    どちらの実績なのか誰にも分からなくなる。
+    """
+
+    KEYS = ("interval", "ema_f", "ema_s", "rsi", "adx", "atr", "th", "slm", "tsr")
+
+    def _js(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const JS_PARAMS={")
+        body = src[i:src.index("};", i) + 2]
+        out = {}
+        for m in re.finditer(r"(\w+):\{mode:'(\w+)'(.*?)\}(?=,\n|\};)", body, re.S):
+            name, fields = m.group(1), m.group(3)
+            d = {}
+            for k, v in re.findall(r"(\w+):(-?[\d.]+|'[^']*'|\[[^\]]*\])", fields):
+                d[k] = v.strip("'")
+            out[name] = d
+        return out
+
+    def test_every_mode_exists_on_both_sides(self):
+        self.assertEqual(set(self._js()), set(F.PARAMS), "モードの顔ぶれが違う")
+
+    def test_the_numbers_match(self):
+        js = self._js()
+        bad = []
+        for mode, py in F.PARAMS.items():
+            for k in self.KEYS:
+                if k not in py:
+                    continue
+                want = py[k]
+                got = js[mode].get(k)
+                if got is None:
+                    bad.append(f"{mode}.{k}: JS に無い")
+                elif isinstance(want, str):
+                    if got != want:
+                        bad.append(f"{mode}.{k}: JS={got} / Python={want}")
+                elif abs(float(got) - float(want)) > 1e-9:
+                    bad.append(f"{mode}.{k}: JS={got} / Python={want}")
+        self.assertEqual(bad, [], "画面とサーバーで設定が食い違っている: " + str(bad))
+
+    def test_the_pullback_rule_is_marked_on_both_sides(self):
+        js = self._js()
+        for mode, py in F.PARAMS.items():
+            self.assertEqual(js[mode].get("rule"), py.get("rule"),
+                             f"{mode}: ルール名が食い違っている")
+
+
+class SubNotifyGateTest(unittest.TestCase):
+    """参考通知は、画面をどのモードで見ていても出ること。
+
+    実際に起きたこと: 運用mtf・参考通知にスイングとデイを入れていたのに、
+    画面をスイングにして確認している間は参考通知が1件も飛ばなかった。
+    subLiveSignals が本体と同じ liveNotifyBlock()（画面と運用が一致していないと
+    送らない）を通していたため。参考通知は別モードの合図を出す仕組みなので、
+    このガードは「いちばん見ている時にいちばん止まる」という形で効いていた。
+    """
+
+    def _body(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("async function subLiveSignals(base){")
+        return src[i:src.index("\nasync function liveSignals(){", i)]
+
+    def test_it_does_not_gate_on_the_screen_mode(self):
+        body = re.sub(r"/\*.*?\*/", "", self._body(), flags=re.S)   # 説明文は除く
+        body = re.sub(r"//[^\n]*", "", body)
+        self.assertNotIn("liveNotifyBlock", body,
+                         "画面と運用の一致を要求している（別モードの合図なのに）")
+
+    def test_it_still_needs_the_operating_mode(self):
+        """運用モードが確定していない時は送らないこと（文面に載せるため）。"""
+        self.assertIn("if(!MODEJSON||!MODES.includes(MODEJSON)) return;", self._body())
+
+    def test_it_records_into_the_forward_test(self):
+        """参考通知の合図も前向き検証に残すこと。実際に入る対象なので。"""
+        b = self._body()
+        self.assertIn("fwdRecord(pair,cfg.mode)", b, "記録していない")
+        self.assertIn("cf.cls==='ok'", b, "本体と条件がそろっていない（🟢だけ）")
+
+    def test_the_text_does_not_claim_it_is_unrecorded(self):
+        self.assertNotIn("前向き検証には記録されません", self._body(),
+                         "記録しているのに『記録されません』と書いている")
+
+    def test_it_builds_the_same_materials_as_the_card(self):
+        """総合判定の材料を揃えること。揃えないと参考通知だけ点が低く出る。"""
+        b = self._body()
+        for fn in ("dowStructure(oh)", "granville(oh,P,cfg.mode)", "LONGENV[sym]"):
+            self.assertIn(fn, b, f"{fn} を作っていない")
+
+
+class SlFallbackTest(unittest.TestCase):
+    """SL幅の代用値を、固定値ではなく検証結果から出すこと。
+
+    実際に起きたこと: デイのSL幅を 9.0pips 固定にしていたが、1年の実測は12.3、
+    いまの値幅では25前後。SL幅で割るR倍数が2倍以上ずれ、実測の棒が
+    検証の棒と比べものにならなくなっていた。
+    バックテストは1件ごとに spread/SL幅 を cost_r として残しているので、
+    スプレッドを割り戻せば通貨ごとの平均SL幅が出る。
+    """
+
+    def _run(self, bt, cases):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            src = f.read()
+        part = src[src.index("var SPREAD_PIPS_T"):src.index("function _tradeClusters")]
+        script = (part + "BT_CACHE=" + json.dumps(bt) + ";\n"
+                  + "console.log(JSON.stringify(" + json.dumps(cases)
+                  + ".map(function(c){return slFallback(c[0],c[1]);})));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    BT = {"modes": {"day": {"symbols": {
+        "USD_JPY": {"policies": {"advice": {"cost_r": 0.018}}},
+        "GBP_JPY": {"policies": {"advice": {"cost_r": 0.058}}}}}}}
+
+    def test_it_inverts_the_cost_per_symbol(self):
+        got = self._run(self.BT, [["day", "USD/JPY"], ["day", "GBP/JPY"]])
+        self.assertAlmostEqual(got[0], 0.2 / 0.018, places=3)   # 約11.1pips
+        self.assertAlmostEqual(got[1], 0.9 / 0.058, places=3)   # 約15.5pips
+
+    def test_symbols_differ_enough_to_matter(self):
+        """通貨をまとめて1つの値にしてはいけないこと（1.4倍違う）。"""
+        got = self._run(self.BT, [["day", "USD/JPY"], ["day", "GBP/JPY"]])
+        self.assertGreater(got[1] / got[0], 1.3)
+
+    def test_it_falls_back_when_the_backtest_is_missing(self):
+        got = self._run({}, [["day", "USD/JPY"], ["swing", "EUR/JPY"]])
+        self.assertAlmostEqual(got[0], 12.3, places=3)
+        self.assertAlmostEqual(got[1], 33.1, places=3)
+
+    def test_the_constants_are_not_the_old_wrong_ones(self):
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertNotIn("{scalp:1.5, day:9.0", js, "古い固定値が残っている")
+
+
+class RiskCapTest(unittest.TestCase):
+    """合計リスク上限(riskCap)を、資金設定の保存で消さないこと。"""
+
+    def test_set_risk_carries_it_over(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function setRisk(){")
+        body = src[i:src.index("function ", i + 10)]
+        self.assertIn("riskCap:", body, "保存のたびに riskCap が消える")
 
 
 if __name__ == "__main__":

@@ -1333,6 +1333,28 @@ def _htf_closes(symbol, interval, keys):
     return rows
 
 
+def confirmed_bars(rows, interval, now_ms=None):
+    """終値が確定した足だけを、時刻順に返す。形成中の足は捨てる。
+
+       なぜ捨てるか。APIが返す最後の足は【いま形成中】で、その終値は現在値そのもの。
+       それを含めて EMA の傾き(ef[-1]>ef[-2])を見ると、現在値が少し上下しただけで
+       上位足の向きが反転する。実際そうなっていて、mtf の「上位足が揃っている」状態が
+       数分おきに消えていた（9/10〜9/19 の実測で、揃っているサンプル3,139件のうち
+       押し目/戻りのRSI条件を満たしたものは0件。ADXでもRSIでもなく、揃った状態が
+       続かないことが原因だった）。
+       バックテスト側の htf_aligned_series は最初から確定足だけで判定している。
+       ここが食い違っていると、ライブは『検証していない別のルール』を動かすことになる。"""
+    dur = BARMIN.get(interval, 60) * 60000
+    if now_ms is None:
+        now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+    ts = sorted(rows)
+    # 形成中になり得るのは最後の1本だけ。条件で丸ごと絞ると、時計がずれていた時に
+    # 系列が空になって「上位足が判定できない＝レンジ」に倒れる。落とすのは1本まで。
+    if ts and ts[-1] + dur > now_ms:
+        ts = ts[:-1]
+    return ts
+
+
 def htf_trend(symbol, interval):
     """上位足のトレンド方向を返す。1=上昇 / -1=下降 / 0=どちらでもない(レンジ)。
        EMA(12/26)の位置関係と、速いEMAの傾きの両方が揃った時だけ方向を確定する。"""
@@ -1350,7 +1372,7 @@ def htf_trend(symbol, interval):
     # ＝上位足フィルタが黙って効かなくなる。足りない時だけ前年も取りに行く。
     if year_mode and len(rows) < need:
         rows.update(_htf_closes(symbol, interval, [{"date": str(today.year - 1)}]))
-    closes = [rows[t] for t in sorted(rows)]
+    closes = [rows[t] for t in confirmed_bars(rows, interval)]
     if len(closes) < need:
         # ここで0を返すと「レンジ」と区別が付かず、上位足フィルタが黙って効かなくなる
         warn(f"{symbol} の{interval}足が{len(closes)}本しか取れず、上位足の判定ができません",

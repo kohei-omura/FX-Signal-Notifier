@@ -1420,7 +1420,10 @@ function dowStructure(o){const n=o.length;if(n<11)return {trend:'range',label:'�
   return {trend,label,icon,lastHigh:r3(h2[1]),lastLow:r3(l2[1])};}
 
 // 機能D: グランビルの法則（基準MA=EMA75、日足系swingはEMA200優先／表示のみ）
-function granville(o,P){const c=o.map(r=>r[2]),baseP=(S&&S.mode==='swing'&&c.length>=200)?200:75;
+/* baseP は「そのモードの基準MA」。以前は S.mode を直に読んでいたため、
+   参考通知のように別モードの足を渡した時に、画面のモードで基準が決まっていた。 */
+function granville(o,P,mode){const _m=mode||(P&&P.mode)||(S&&S.mode);
+  const c=o.map(r=>r[2]),baseP=(_m==='swing'&&c.length>=200)?200:75;
   if(c.length<baseP+6)return null;
   const ma=emaSeries(c,baseP),atr=atrC(o,P.atr)||0,n=c.length,price=c[n-1],m=ma[n-1];
   if(m==null||!atr)return null;
@@ -1954,7 +1957,7 @@ function posCard(p,i){const cls=p.pips==null?'':(p.pips>=0?'up':'down'),sideTxt=
   const advBox=adv?`<div class="entry ${adv.cls}"><div class="ev">${adv.label}</div><div class="er">${adv.reason}${
     adv.cross?`<br><span style="opacity:.7">※<b>${MODE_LABEL[adv.pm]||adv.pm}</b>で建てた玉なので、画面のスタイルに関係なく${MODE_LABEL[adv.pm]||adv.pm}の物差しで判定しています${adv.src==='server'?'（サーバーの判定・約5分ごと）':''}</span>`:''}</div></div>`:'';
   // 機能7: タイムストップ注意（想定保有中央値の2倍超で膠着警告・表示のみ）
-  var _st7=STATS[((p.mode||S.mode)||'scalp')+p.symbol],_tsBox='';
+  var _st7=STATS[posMode(p)+p.symbol],_tsBox='';
   if(_st7&&_st7.tpMin){var _om=parseInt(String(p.id).replace(/^p/,''),10);
     if(_om&&isFinite(_om)){var _el=(Date.now()-_om)/60000;
       if(_el>2*_st7.tpMin)_tsBox=`<div class="entry down"><div class="er">⏱ 想定の2倍膠着中（想定${holdTxt(_st7.tpMin)}／経過${holdTxt(Math.round(_el))}）。統計の前提から外れています＝手仕舞いサインに特に注意</div></div>`;}}
@@ -2839,7 +2842,10 @@ function holdTxt(min){if(min==null)return'—';if(min<120)return'約'+min+'分';
 // リスク基準の数量計算（JPYペア: 1pip=0.01円/通貨）
 let RISK={cap:10000,risk:1,lev:25,riskCap:5};   // riskCap=合計リスクの上限(資金比%)
 function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk,lev:+(o.lev||25),riskCap:+(o.riskCap||5)};}catch(e){}}
-function setRisk(){const cap=Math.max(0,parseFloat(($('#r_cap')||{}).value)||0),risk=Math.max(0,parseFloat(($('#r_risk')||{}).value)||0),lev=Math.max(1,parseFloat(($('#r_lev')||{}).value)||25);RISK={cap,risk,lev};try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}render();}
+function setRisk(){const cap=Math.max(0,parseFloat(($('#r_cap')||{}).value)||0),risk=Math.max(0,parseFloat(($('#r_risk')||{}).value)||0),lev=Math.max(1,parseFloat(($('#r_lev')||{}).value)||25);
+  // riskCap(合計リスクの上限)は画面に入力欄が無い。ここで作り直すと黙って消え、
+  // 保存されるので次回以降も既定値に戻ったままになる。持ち越す。
+  RISK={cap,risk,lev,riskCap:(RISK&&RISK.riskCap!=null?RISK.riskCap:5)};try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}render();}
 // 必要証拠金(1,000通貨)=価格×1000÷レバ。推奨=リスク上限と証拠金上限の小さい方・1,000通貨刻み
 function recLot(slPips,price){if(!slPips||slPips<=0||!RISK.cap||!price)return null;
   const riskYen=RISK.cap*RISK.risk/100,riskUnits=riskYen/(slPips*PS_);
@@ -3067,8 +3073,14 @@ async function posModeLive(base){
 }
 async function subLiveSignals(base){
   if(!SUBNOTIFY.length) return;
-  // 画面と運用モードがズレている時は送らない（本体の liveNotifyBlock と同じ、閉じる側）
-  if(liveNotifyBlock()) return;
+  /* ★ここで画面モードを見てはいけない。
+     参考通知は mode.json に設定したモードの合図で、計算にも P=JS_PARAMS[cfg.mode]
+     しか使っていない。画面が何であろうと中身は変わらない。
+     以前は本体と同じ liveNotifyBlock() を通していたため、運用mtfのまま画面を
+     スイングやデイにして確認している間は参考通知が【まるごと止まっていた】。
+     いちばん見ている時にいちばん止まる、という壊れ方だった。
+     必要なのは運用モードが確定していることだけ（文面に載せるため）。 */
+  if(!MODEJSON||!MODES.includes(MODEJSON)) return;
   if(!S.market_open) return;
   const notified=loadNotified(), now=Date.now(); let changed=false;
   for(const cfg of SUBNOTIFY){
@@ -3092,13 +3104,27 @@ async function subLiveSignals(base){
       const ref=PRICE[sym]?PRICE[sym].bid:r3(sc.price);
       const tp=r3(sc.side==='買い'?ref+sc.tp_pips*PS_:ref-sc.tp_pips*PS_);
       const sl=r3(sc.side==='買い'?ref-sc.sl_pips*PS_:ref+sc.sl_pips*PS_);
+      /* 本体のカードと同じ材料を揃える。総合判定(confluence)は長期環境・ダウ・
+         グランビルも見るので、ここで作らないと参考通知だけ常に点が低く出て、
+         同じ合図なのに画面と食い違う。足(oh)はもう手元にあるので作れる。 */
+      const pair={symbol:sym,bid:ref,ask:(PRICE[sym]?PRICE[sym].ask:null),
+        rsi:sc.rsi,adx:sc.adx,atr:sc.atr,tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
+        score:sc.score,tech:sc.tech,fund:sc.fund,signal:sc.side,entry_ref:ref};
+      try{ pair.dow=dowStructure(oh); pair.grv=granville(oh,P,cfg.mode);
+           pair.longEnv=LONGENV[sym]||null; pair.regime=atrRegime(oh,P); }catch(e){}
+      var cf=null; try{ cf=confluence(pair,STATS[cfg.mode+sym],cfg.mode); }catch(e){}
+      /* ★参考通知の合図も前向き検証に記録する。実際に入る対象なのに記録しないと、
+         あとで「このモードは効いていたのか」を測る材料が残らない。
+         記録するのは本体と同じ 🟢エントリーOK だけ。 */
+      if(cf&&cf.cls==='ok'){ try{ fwdRecord(pair,cfg.mode); }catch(e){} }
       const txt='🔎 参考：'+info.lab+' '+sym+' '+sc.side+'\n'
-        +'※運用は'+(MODE_LABEL[MODEJSON]||MODEJSON)+'です。別モードの合図で、前向き検証には記録されません\n'
+        +'※運用は'+(MODE_LABEL[MODEJSON]||MODEJSON)+'です。登録するときはモードを'
+        +'「'+info.lab+'」にしてください\n'
+        +(cf?('総合判定 '+cf.mark+'（'+cf.pct+'%）\n'):'')
         +'条件：'+info.note+'\n'
         +'ADX'+(Math.round(sc.adx*10)/10)+' RSI'+(Math.round(sc.rsi*10)/10)+' スコア'+(sc.score>=0?'+':'')+sc.score.toFixed(2)+'\n'
         +'▶'+ref+' / TP+'+sc.tp_pips+'p / SL-'+sc.sl_pips+'p（'+validMin+'分以内）\n'
-        +'📍'+ref+'で建てた場合 → TP '+tp+' / SL '+sl+'\n'
-        +'▶登録するときはモードを「'+info.lab+'」にしてください';
+        +'📍'+ref+'で建てた場合 → TP '+tp+' / SL '+sl;
       notifyLive(txt);
       notified[key]={side:sc.side,ts:now}; changed=true;
     }

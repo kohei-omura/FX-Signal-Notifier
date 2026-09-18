@@ -780,7 +780,13 @@ async function entryLogSync(){
    期待値がゼロ近辺である以上、損益を動かせるのはコストだけなので、
    どの設定なら1件あたりいくら払うのかを円で並べる。 */
 var SPREAD_PIPS_T = {USD_JPY:0.2, EUR_JPY:0.4, GBP_JPY:0.9, AUD_JPY:0.5};
-var MODE_SL_PIPS  = {scalp:1.5, day:9.0, swing:36.0, mtf:21.0};   // 1R(=SL幅)の目安
+/* 1R(=SL幅)の最終手段の目安。SL幅は ATR×係数 なので相場の値幅で動く。
+   ここに固定値を置いていた頃は、デイを 9.0pips としていた（実測は12.3、
+   いまの値幅なら25前後）。1件あたりのRが2倍以上ずれて、実測の棒が
+   検証の棒と比べものにならなくなる。
+   まず backtest.json から通貨ごとに逆算し（下の slFallback）、それも
+   無い時だけこの値を使う。値は1年ぶんの実測から出したもの。 */
+var MODE_SL_PIPS  = {scalp:2.1, day:12.3, swing:33.1, mtf:16.9};
 var MODE_LABEL_T  = {scalp:'スキャル(1分)', day:'デイ(15分)', swing:'スイング(1時間)', mtf:'mtf(上位足押し目)'};
 var MODE_ORDER_T  = ['mtf','swing','day','scalp'];
 // モードの出所として信用できるもの（それ以外は当時の画面モードの写し）
@@ -803,10 +809,24 @@ var MODE_TRADES_PER_MONTH = {scalp:1990, day:81, swing:8, mtf:15};
    件数と独立イベント数を必ず一緒に出す。 */
 var BT_CACHE=null;
 function _tradeYen(x){ return (x.close_yen!=null)?+x.close_yen:(+x.yen||0); }
+/* SL幅の代用値。バックテストは1件ごとに spread/SL幅 をコスト(cost_r)として
+   残しているので、スプレッドを割り戻せば通貨ごとの平均SL幅が出る。
+   固定値と違って、検証をやり直すたびに今の値幅へ追従する。 */
+function slFallback(mode,pair){
+  try{
+    var sym=String(pair||'').replace('/','_');
+    var v=((BT_CACHE&&BT_CACHE.modes)||{})[mode];
+    var c=v&&v.symbols&&v.symbols[sym]&&v.symbols[sym].policies
+          &&v.symbols[sym].policies.advice&&v.symbols[sym].policies.advice.cost_r;
+    var sp=SPREAD_PIPS_T[sym];
+    if(c>0&&sp>0) return sp/c;
+  }catch(e){}
+  return MODE_SL_PIPS[mode];
+}
 function _tradeR(x){
-  // 1R = その取引のSL幅。記録簿から取れない時はモードの目安で代用する。
+  // 1R = その取引のSL幅。記録簿から取れない時だけ、通貨ごとの平均で代用する。
   var p=(x.pips!=null&&x.pips!=='')?+x.pips:null; if(p==null||!isFinite(p)) return null;
-  var sl=(x.sl_pips!=null&&x.sl_pips!=='')?+x.sl_pips:MODE_SL_PIPS[x.mode];
+  var sl=(x.sl_pips!=null&&x.sl_pips!=='')?+x.sl_pips:slFallback(x.mode,x.pair);
   return (sl&&isFinite(sl))?p/sl:null;
 }
 /* 同じ時間帯に同じ方向で持った取引は、4通貨とも対円なので一斉に同じ結果になる。
@@ -950,7 +970,7 @@ function renderCostPanel(){
   var rows='';
   Object.keys(MODE_SL_PIPS).forEach(function(mode){
     Object.keys(SPREAD_PIPS_T).forEach(function(sym){
-      var sp=SPREAD_PIPS_T[sym], sl=MODE_SL_PIPS[mode];
+      var sp=SPREAD_PIPS_T[sym], sl=slFallback(mode,sym);
       var per=sp*pipYen, mon=per*MODE_TRADES_PER_MONTH[mode];
       rows+='<tr data-c="'+mon+'"><td>'+MODE_LABEL_T[mode]+'</td><td>'+sym.replace('_','/')+'</td>'
         +'<td>'+Math.round(per).toLocaleString()+'円</td>'
