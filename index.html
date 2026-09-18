@@ -455,6 +455,7 @@
       <div class="dcnt-c"><i>最高連チャン</i><b id="dc-run">0</b></div>
     </div>
   </div>
+  <div id="subsig"></div>
   <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
 
   <h2>保有ポジション（利確ナビ）<span class="sp"></span>
@@ -2192,8 +2193,40 @@ function renderStale(){
     ? `<div style="margin:0 0 10px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:rgba(205,168,106,.10);font-size:12.5px;color:var(--ink);line-height:1.7">${msgs.join('<br>')}</div>`
     : '';
 }
+/* 参考モード（mode.json の sub）で出ている合図を、運用モードの画面に出す。
+   モードを切り替えないと他モードの様子が分からない、という状態をなくす。
+   通知はサーバーが送るので、ここは「いま何が出ているか」を見るためのもの。 */
+function renderSubSignals(){
+  var el=document.getElementById('subsig'); if(!el) return;
+  var now=Date.now(), rows=[];
+  Object.keys(SUB_LAST).forEach(function(k){
+    var v=SUB_LAST[k]; if(!v) return;
+    var life=Math.max(15,(v.validMin||60))*60000;      // 有効時間を過ぎたら消す
+    if(now-v.ts>life) return;
+    var m=k.split(':')[1], sym=k.split(':')[2];
+    rows.push({mode:m,sym:sym,v:v});
+  });
+  if(!rows.length){ el.innerHTML=''; return; }
+  var rank={'🟢 エントリーOK':0,'🟡 保留・検討':1,'🔴 見送り':2};
+  rows.sort(function(a,b){ return (rank[a.v.mark]==null?3:rank[a.v.mark])-(rank[b.v.mark]==null?3:rank[b.v.mark]); });
+  el.innerHTML='<div class="card" style="margin-bottom:10px">'
+    +'<div class="row"><span class="sym" style="font-size:14px">🔎 参考モードの合図</span>'
+    +'<span class="tag">運用は'+(MODE_LABEL[MODEJSON]||MODEJSON||'—')+'</span></div>'
+    +rows.map(function(r){
+      var v=r.v, side=v.side==='買い'?'<span style="color:var(--up)">買</span>':'<span style="color:var(--down)">売</span>';
+      return '<div class="reasons" style="font-size:12.5px;line-height:1.9;opacity:1">'
+        +'<b>'+(MODE_LABEL[r.mode]||r.mode)+'</b> '+r.sym.replace('_','/')+' '+side
+        +(v.mark?' <b>'+v.mark+'</b>'+(v.pct!=null?'('+v.pct+'%)':''):'')
+        +' ／ '+v.ref+' → TP '+v.tp+' / SL '+v.sl
+        +' <span style="opacity:.6">'+new Date(v.ts).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5)+'</span>'
+        +'</div>';
+    }).join('')
+    +'<div class="er" style="opacity:.7">登録するときはモードを合わせてください。'
+    +'通知はサーバーが5分ごとに送っています（アプリを閉じていても届きます）。</div></div>';
+}
 function render(){
   renderModeSw();
+  try{renderSubSignals();}catch(e){}
   renderModeWarn();
   renderStale();
   try{renderRiskBar();}catch(e){}
@@ -3125,6 +3158,8 @@ async function posModeLive(base){
       score:sc.score,tech:sc.tech,fund:sc.fund,tp_pips:sc.tp_pips,sl_pips:sc.sl_pips}};
   }
 }
+/* 参考モードで直近に見つけた合図（画面表示用）。LINEはサーバーが送る。 */
+var SUB_LAST={}, SUB_RUN_AT=0;
 async function subLiveSignals(base){
   if(!SUBNOTIFY.length) return;
   /* ★ここで画面モードを見てはいけない。
@@ -3136,14 +3171,23 @@ async function subLiveSignals(base){
      必要なのは運用モードが確定していることだけ（文面に載せるため）。 */
   if(!MODEJSON||!MODES.includes(MODEJSON)) return;
   if(!S.market_open) return;
+  /* 参考モードは本体と同じ45秒間隔で回す必要がない。通知はサーバーが送っていて、
+     ここは記録と表示のためだけ。同じ合図は3分間まとめる作りなので、
+     それより短く回しても足を取り直すだけになる（1周で 2モード×4通貨＝8本）。 */
+  if(Date.now()-SUB_RUN_AT<150000) return;
+  SUB_RUN_AT=Date.now();
   const notified=loadNotified(), now=Date.now(); let changed=false;
   for(const cfg of SUBNOTIFY){
     const info=SUB_INFO[cfg.mode], P=JS_PARAMS[cfg.mode];
     if(!info||!P) continue;
     const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30;
     const barMin=BARMIN[P.interval]||1, validMin=VALID_BARS*barMin;
-    for(const sym of SYMS){
-      let oh; try{ oh=await fetchKlines(base,sym,P,need); }catch(e){ continue; }
+    // 4通貨は並列で取る（直列だと1周で最大8往復ぶん待たされる）
+    const datas=await Promise.all(SYMS.map(function(sym){
+      return fetchKlines(base,sym,P,need).then(function(oh){return {sym:sym,oh:oh};})
+             .catch(function(){return {sym:sym,oh:[]};});
+    }));
+    for(const {sym,oh} of datas){
       if(!oh||oh.length<30) continue;
       const sc=scorePair(sym,oh,P);
       if(!sc||!sc.side) continue;
@@ -3171,15 +3215,16 @@ async function subLiveSignals(base){
          あとで「このモードは効いていたのか」を測る材料が残らない。
          記録するのは本体と同じ 🟢エントリーOK だけ。 */
       if(cf&&cf.cls==='ok'){ try{ fwdRecord(pair,cfg.mode); }catch(e){} }
-      const txt='🔎 参考：'+info.lab+' '+sym+' '+sc.side+'\n'
-        +'※運用は'+(MODE_LABEL[MODEJSON]||MODEJSON)+'です。登録するときはモードを'
-        +'「'+info.lab+'」にしてください\n'
-        +(cf?('総合判定 '+cf.mark+'（'+cf.pct+'%）\n'):'')
-        +'条件：'+info.note+'\n'
-        +'ADX'+(Math.round(sc.adx*10)/10)+' RSI'+(Math.round(sc.rsi*10)/10)+' スコア'+(sc.score>=0?'+':'')+sc.score.toFixed(2)+'\n'
-        +'▶'+ref+' / TP+'+sc.tp_pips+'p / SL-'+sc.sl_pips+'p（'+validMin+'分以内）\n'
-        +'📍'+ref+'で建てた場合 → TP '+tp+' / SL '+sl;
-      notifyLive(txt);
+      /* ★ここからLINEへは送らない。
+         参考通知は fx_signal.py（5分ごと・サーバー側）が送っている。
+         アプリからも送ると、同じ合図が2通届く。しかもサーバー側は
+         アプリを開いていなくても動くので、通知はサーバーに任せた方が確実。
+         ここでやる仕事は「前向き検証に残すこと」だけにする。
+         以前は画面モードが運用モードと違うと丸ごと止まっていたため、
+         参考通知のモードで入った取引が検証に残らなかった。 */
+      SUB_LAST[key]={side:sc.side,ts:now,mark:(cf?cf.mark:null),pct:(cf?cf.pct:null),
+                     tp:tp,sl:sl,ref:ref,validMin:validMin};
+      try{ renderSubSignals(); }catch(e){}
       notified[key]={side:sc.side,ts:now}; changed=true;
     }
   }

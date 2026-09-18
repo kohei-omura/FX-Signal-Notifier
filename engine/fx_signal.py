@@ -1518,8 +1518,8 @@ def sub_mode_signals(data, subs=None):
                 sl = sc["price"] - d * sc["sl_pips"] * PIP_SIZE
                 out.append(
                     f"🔎 参考：{MODE_LABEL.get(m, m)} {sym} {sig}\n"
-                    f"  ※運用は{MODE_LABEL.get(MODE, MODE)}です。これは別モードの合図で、"
-                    f"前向き検証にも記録されません\n"
+                    f"  ※運用は{MODE_LABEL.get(MODE, MODE)}です。これは別モードの合図です"
+                    f"（アプリを開いていれば前向き検証にも残ります）\n"
                     f"  条件：{flabel}"
                     + (f"（この条件での実測 {fr}／絞り込み前は -0.077R）" if fr else "")
                     + f"\n"

@@ -2386,7 +2386,10 @@ class SubNotifyTest(RunTestCase):
                                  subs=[{"mode": "day", "filter": "adx40"}])[0][0]
         self.assertIn("参考", txt)
         self.assertIn("運用は", txt)
-        self.assertIn("前向き検証にも記録されません", txt)
+        # 記録されないと書いてはいけない。参考モードの合図も、アプリを開いていれば
+        # 前向き検証に残る（subLiveSignals が fwdRecord を呼ぶ）。
+        self.assertNotIn("記録されません", txt)
+        self.assertIn("前向き検証にも残ります", txt)
         self.assertIn("ADX40以上に限定", txt)
         self.assertIn("+0.04R", txt)
         self.assertIn("-0.077R", txt)
@@ -4123,6 +4126,56 @@ class AdxBandScoreTest(unittest.TestCase):
         with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
             js = f.read()
         self.assertNotIn("pair.adx>=30&&pair.adx<=40", js, "決め打ちの採点が残っている")
+
+
+class SubNotifyNoDuplicateTest(unittest.TestCase):
+    """参考通知をアプリからも送らないこと。
+
+    fx_signal.py（5分ごと・サーバー側）が既に参考通知を送っている。
+    アプリからも送ると同じ合図が2通届く。しかもサーバー側はアプリを
+    開いていなくても動くので、通知はサーバーに任せた方が確実。
+    アプリ側の仕事は、参考モードの合図を前向き検証に残すことだけにする。
+    """
+
+    def _body(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("async function subLiveSignals(base){")
+        return src[i:src.index("\nasync function liveSignals(){", i)]
+
+    def test_the_app_does_not_send_it(self):
+        body = re.sub(r"/\*.*?\*/", "", self._body(), flags=re.S)
+        body = re.sub(r"//[^\n]*", "", body)
+        self.assertNotIn("notifyLive", body, "サーバーと二重に送っている")
+
+    def test_the_server_still_sends_it(self):
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("🔎 参考：", src, "サーバー側の参考通知が消えている")
+
+    def test_the_app_still_records_it(self):
+        self.assertIn("fwdRecord(pair,cfg.mode)", self._body(),
+                      "通知もしないし記録もしないなら、この処理は何もしていない")
+
+    def test_it_is_shown_on_the_operating_screen(self):
+        """参考モードの合図を、運用モードの画面にも出すこと。
+
+        モードを切り替えないと他モードの様子が分からない、という状態をなくす。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('id="subsig"', src, "置き場所が無い")
+        self.assertIn("function renderSubSignals()", src, "描画していない")
+        i = src.index("function render(){")
+        self.assertIn("renderSubSignals()", src[i:i + 400], "render から呼んでいない")
+
+    def test_it_does_not_refetch_every_cycle(self):
+        """本体と同じ45秒間隔で足を取り直さないこと。
+
+        参考モードは2モード×4通貨＝8本ぶん取る。通知はサーバーが送っていて
+        同じ合図は3分まとめるので、それより短く回しても通信が増えるだけ。"""
+        b = self._body()
+        self.assertIn("SUB_RUN_AT", b, "間隔の制御が無い")
+        self.assertIn("Promise.all", b, "4通貨を直列で取っている")
 
 
 if __name__ == "__main__":
