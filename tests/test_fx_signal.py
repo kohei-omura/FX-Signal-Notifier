@@ -4041,5 +4041,89 @@ class RiskCapTest(unittest.TestCase):
         self.assertIn("riskCap:", body, "保存のたびに riskCap が消える")
 
 
+class AdxBandScoreTest(unittest.TestCase):
+    """総合判定のADX採点が、実測と逆を向いていないこと。
+
+    もとは全モード共通で「30〜40が満点・25〜30と40〜50が半分・他は0点」。
+    1年ぶんの実測ではその満点の帯がどのモードでも一番悪かった。
+      デイ  適正(30〜40) -0.132 / 強(40〜50) +0.043 / 極端(50〜) +0.040
+      mtf   適正(30〜40) -0.084（唯一のマイナス）/ 弱(20〜25) +0.150
+      swing 強(40〜50) -0.127 / 弱め(25〜30) +0.436
+    ただし帯ごとの95%区間はほとんど0をまたぐ。6帯×4モード=24通り見ているので
+    符号だけで決めると偶然を拾う。区間が0を跨がず、かつ150件以上ある帯だけを
+    ✓/✗にし、残りは△(半分)とする。
+    """
+
+    def _run(self, cases, table=None):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const ADX_BANDS_JS=")
+        body = src[i:src.index("/* backtest.json は大きいので", i)]
+        pre = ("var localStorage={getItem:function(){return null;},setItem:function(){}};\n")
+        post = ""
+        if table is not None:
+            post = "ADX_BAND_R=" + json.dumps(table, ensure_ascii=False) + ";\n"
+        script = (pre + body + post + "console.log(JSON.stringify("
+                  + json.dumps(cases) + ".map(function(c){return adxScore(c[0],c[1]);})));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_a_clearly_losing_band_scores_zero(self):
+        """区間がまるごとマイナスなら0点。デイの30〜40がこれ。"""
+        self.assertEqual(self._run([[35, "day"]])[0], 0)
+
+    def test_a_clearly_winning_band_scores_full(self):
+        t = {"day": {"強(40〜50)": [500, 0.20, 0.05, 0.35]}}
+        self.assertEqual(self._run([[45, "day"]], t)[0], 1)
+
+    def test_an_interval_crossing_zero_is_half(self):
+        """0をまたぐ＝分からない。断定しないこと。"""
+        t = {"day": {"強(40〜50)": [500, 0.20, -0.05, 0.45]}}
+        self.assertEqual(self._run([[45, "day"]], t)[0], 0.5)
+
+    def test_too_few_samples_is_half(self):
+        """件数が少ない帯は、区間が0を外れていても断定しない（多重比較）。"""
+        t = {"swing": {"弱め(25〜30)": [76, 0.436, 0.147, 0.725]}}
+        self.assertEqual(self._run([[27, "swing"]], t)[0], 0.5)
+
+    def test_it_no_longer_rewards_the_worst_band(self):
+        """実測で一番悪い帯に満点を付けないこと（これが元の壊れ方）。"""
+        for mode in ("day", "mtf", "swing"):
+            got = self._run([[35, mode]])[0]
+            self.assertNotEqual(got, 1, f"{mode}: 適正(30〜40)に満点を付けている")
+
+    def test_mtf_uses_its_own_measurements(self):
+        """mtfは配点こそswingを借りるが、ADXの実測は自分のものを使うこと。"""
+        t = {"mtf": {"無風(〜20)": [325, 0.30, 0.10, 0.50]},
+             "swing": {"無風(〜20)": [325, -0.30, -0.50, -0.10]}}
+        self.assertEqual(self._run([[15, "mtf"]], t)[0], 1)
+
+    def test_an_unknown_adx_is_not_scored(self):
+        self.assertIsNone(self._run([[None, "day"]])[0])
+
+    def test_the_bands_match_the_engine(self):
+        """帯の区切りをサーバーと同じにしておくこと。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            js = f.read()
+        i = js.index("const ADX_BANDS_JS=")
+        body = js[i:js.index(";", i)]
+        for need, label in F.ADX_BANDS:
+            self.assertIn(f"[{need},'{label}']", body.replace(" ", "").replace("\n", ""),
+                          f"{label} の区切りが食い違っている")
+
+    def test_the_old_hardcoded_rule_is_gone(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertNotIn("pair.adx>=30&&pair.adx<=40", js, "決め打ちの採点が残っている")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
