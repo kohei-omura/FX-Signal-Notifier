@@ -52,7 +52,10 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
 <h1>FX Navi ツール</h1><div class="sub">JOURNAL ・ RISK ・ BACKTEST</div>
 <div id="syncbar" style="display:none;margin:0 0 12px;padding:9px 12px;border:1px solid var(--gold);border-radius:10px;background:var(--card);font-size:13px"></div>
 <div id="todaybar" style="margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px"></div>
-<script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";const NOTIFY_KEY="高坂麗奈ちゃん";</script>
+<script>const LIVE_PRICE_URL="https://fx-navi.koheiomura5414.workers.dev";
+/* 通知キーはソースに書かない（このリポジトリは公開されている）。
+   ダッシュボードの⚙で入れた値を同じ端末の localStorage から読む。 */
+function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnavi_gh"))||{}).notifyKey||""); }catch(e){ return ""; } }</script>
 
 <div class="sec" data-sec="0" onclick="toggleSection('0')" style="cursor:pointer">① 成績分析（トレード記録）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
 <div class="card">

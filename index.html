@@ -497,6 +497,9 @@
       <div class="fld"><label>リポジトリ名</label><input class="inp" id="s_repo"></div>
     </div>
     <div class="fld"><label>ブランチ</label><input class="inp" id="s_branch" value="main"></div>
+    <div class="fld"><label>通知キー（Workerの NOTIFY_KEY と同じ値／端末ごとに保存）</label>
+      <input class="inp" id="s_notifykey" type="password" placeholder="Workerに設定した値"></div>
+    <div class="er" style="opacity:.75;margin:-4px 0 8px">公開リポジトリにキーを書かないため、ここで入力します。未設定だと⚡ライブ通知は送られません（サーバーからの通知は影響しません）。</div>
     <div class="fld" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="s_zonesupp" onchange="try{this.checked?localStorage.setItem('fxnavi_zonesupp','1'):localStorage.removeItem('fxnavi_zonesupp');}catch(e){}">
       🕒 時間帯の新規通知を抑制（LINEの時間帯行を出さない・既定OFF）</label></div>
@@ -777,8 +780,14 @@ let MODEJSON=null; // mode.json（サーバー通知が使うモード）の現�
 let LAST_TICK_TS=0; // 最後にライブ価格(ticker)を取得できた時刻。古ければ警告
 let POS_BUSY=false; // 追加/決済/削除の書込中はポーリングで上書きしない
 const LIVE_PRICE_URL = "https://fx-navi.koheiomura5414.workers.dev";
-// WorkerにNOTIFY_KEYを設定した場合のみ同じ値を入れる（任意）
-const NOTIFY_KEY = "高坂麗奈ちゃん";
+/* ★通知キーはソースに書かない。
+   このリポジトリは公開されているので、ここに書いた値は誰でも読める。
+   このキーがあれば Worker 経由で本人のLINEへ好きな文面を送れるし、
+   ?action=cron-test で GitHub Actions を叩くこともできる（GH_PATはWorker側）。
+   端末ごとに ⚙ から入力して localStorage に置く。
+   なお過去に書いてあった値は履歴に残り続けるので、Worker側の
+   NOTIFY_KEY は必ず作り直すこと（作り直すまで、古い値は生きている）。 */
+function notifyKey(){ try{ return String((cfg()||{}).notifyKey||''); }catch(e){ return ''; } }
 const PS = 0.01; // 円ペア 1pips
 
 const fmt=n=>(n===null||n===undefined)?'—':n;
@@ -801,7 +810,8 @@ function setCfg(c){localStorage.setItem(LS,JSON.stringify(c));}
 function detect(){const h=location.hostname,p=location.pathname.split('/').filter(Boolean);let o='',r='';
   if(h.endsWith('github.io')){o=h.split('.')[0];r=p[0]||(o+'.github.io');}return{owner:o,repo:r,branch:'main'};}
 function fillSet(){const c=cfg(),d=detect();$('#s_token').value=c.token||'';$('#s_owner').value=c.owner||d.owner||'';
-  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';const zs=document.getElementById('s_zonesupp');if(zs)zs.checked=suppressZoneNotify();const os=document.getElementById('s_oppsupp');if(os)os.checked=suppressOppNotify();const ls=document.getElementById('s_lossstop');if(ls)ls.checked=lossStopOn();var ns=document.getElementById('s_nosort');if(ns){try{ns.checked=localStorage.getItem('fxnavi_nosort')==='1';}catch(e){}}
+  $('#s_repo').value=c.repo||d.repo||'';$('#s_branch').value=c.branch||d.branch||'main';
+  var _nk=document.getElementById('s_notifykey'); if(_nk)_nk.value=c.notifyKey||'';const zs=document.getElementById('s_zonesupp');if(zs)zs.checked=suppressZoneNotify();const os=document.getElementById('s_oppsupp');if(os)os.checked=suppressOppNotify();const ls=document.getElementById('s_lossstop');if(ls)ls.checked=lossStopOn();var ns=document.getElementById('s_nosort');if(ns){try{ns.checked=localStorage.getItem('fxnavi_nosort')==='1';}catch(e){}}
   // 🧠 学習補正トグル：統計条件（全体100件以上）を満たさない間は選択自体を無効化する
   var eo=document.getElementById('s_edgeon'), en=document.getElementById('s_edgenote');
   if(eo){ var _p=edgeProfile(); var _ok=!!(_p&&_p.ready);
@@ -809,7 +819,8 @@ function fillSet(){const c=cfg(),d=detect();$('#s_token').value=c.token||'';$('#
     if(en){ en.innerHTML=_ok
       ? ('学習済み '+_p.n+'件・基準勝率'+_p.baseWr+'%。95%信頼区間が基準を上回る/下回る区分のみ、最大1つだけ反映します。')
       : ('学習には全体'+((_p&&_p.need&&_p.need.total)||100)+'件必要（現在'+((_p&&_p.n)||0)+'件）。条件を満たすまで使用できません。'); } }}
-function saveSet(){const c={token:$('#s_token').value.trim(),owner:$('#s_owner').value.trim(),repo:$('#s_repo').value.trim(),branch:($('#s_branch').value.trim()||'main')};
+function saveSet(){const c={token:$('#s_token').value.trim(),owner:$('#s_owner').value.trim(),repo:$('#s_repo').value.trim(),branch:($('#s_branch').value.trim()||'main'),
+  notifyKey:((document.getElementById('s_notifykey')||{}).value||'').trim()};
   if(!c.token||!c.owner||!c.repo){toast('トークン・オーナー・リポジトリを入力してください');return;}
   setCfg(c);toast('保存しました');togglePanel('setPanel');}
 function needCfg(){const c=cfg();if(!c.token||!c.owner||!c.repo){toast('先に⚙でGitHub連携を設定してください');togglePanel('setPanel');return null;}return c;}
@@ -3107,7 +3118,9 @@ function liveNotifyBlock(mode){
 async function notifyLive(text){
   if(!LIVE_PRICE_URL)return;
   try{
-    const r=await fetch(notifyBase()+'?action=notify'+(NOTIFY_KEY?('&key='+encodeURIComponent(NOTIFY_KEY)):''),
+    const _k=notifyKey();
+    if(!_k){ LIVE_NOTIFY_LAST='通知キーが未設定です。⚙で設定してください'; try{renderStale();}catch(e){} return; }
+    const r=await fetch(notifyBase()+'?action=notify&key='+encodeURIComponent(_k),
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
     let j=null; try{ j=await r.json(); }catch(e){}
     if(!r.ok){ LIVE_NOTIFY_LAST={ts:Date.now(),reason:'HTTP '+r.status}; }

@@ -4178,5 +4178,56 @@ class SubNotifyNoDuplicateTest(unittest.TestCase):
         self.assertIn("Promise.all", b, "4通貨を直列で取っている")
 
 
+class NotifyKeySecretTest(unittest.TestCase):
+    """公開リポジトリに通知キーを書かないこと。
+
+    このリポジトリは公開されている。ソースに書いた通知キーは誰でも読めるし、
+    それがあれば Worker 経由で本人のLINEへ好きな文面を送れる。
+    ?action=cron-test で GitHub Actions を叩くこともできる（GH_PATはWorker側）。
+    端末ごとに⚙から入力し、localStorage に置く。
+    ※過去に書いてあった値はコミット履歴に残り続けるので、
+      Worker側の NOTIFY_KEY を作り直すまでは古い値が生きている。
+    """
+
+    FILES = ("index.html", "tools.html", "tools.js", "worker.js", "README.md")
+
+    def test_no_literal_key_is_committed(self):
+        bad = []
+        for f in self.FILES:
+            path = os.path.join(ROOT, f)
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding="utf-8") as fh:
+                src = fh.read()
+            for m in re.finditer(r"NOTIFY_KEY\s*[=:]\s*([\"'])(.*?)\1", src):
+                if m.group(2):
+                    bad.append(f"{f}: {m.group(2)[:8]}...")
+            for m in re.finditer(r"const\s+NOTIFY_KEY\s*=\s*([\"'])(.*?)\1", src):
+                if m.group(2):
+                    bad.append(f"{f}: {m.group(2)[:8]}...")
+        self.assertEqual(bad, [], f"ソースに通知キーが書かれている: {bad}")
+
+    def test_the_key_comes_from_the_device(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("function notifyKey()", src, "端末から読む口が無い")
+        self.assertIn('id="s_notifykey"', src, "入力欄が無い")
+        self.assertIn("notifyKey:", src, "保存していない")
+
+    def test_it_does_not_send_without_a_key(self):
+        """キーが無いまま送ろうとしないこと（Workerに弾かれるだけで理由が残らない）。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("async function notifyLive(text){")
+        body = src[i:i + 900]
+        self.assertIn("if(!_k)", body, "未設定でも送りに行っている")
+        self.assertIn("通知キーが未設定", body, "理由を残していない")
+
+    def test_the_worker_still_checks_it(self):
+        with open(os.path.join(ROOT, "worker.js"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("env.NOTIFY_KEY", src, "Worker側の照合が消えている")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

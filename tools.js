@@ -1137,7 +1137,9 @@ async function workerCheck(){
                 :'⛔ <b>価格中継が応答しません。</b>ライブ価格とライブ通知が止まります。');
 
   // 2) 配置されている版（LINEには送らない文面で判別する）
-  var key=(typeof NOTIFY_KEY!=='undefined'&&NOTIFY_KEY)?('&key='+encodeURIComponent(NOTIFY_KEY)):'';
+  var _k=(typeof notifyKey==='function')?notifyKey():'';
+  if(!_k){ out.push('⚠️ 通知キーが未設定です（ダッシュボードの⚙で設定）。Workerの版を確認できません。'); }
+  var key=_k?('&key='+encodeURIComponent(_k)):'';
   try{
     var pr=await fetch(base+'?action=notify'+key,{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({text:WORKER_PROBE})});
@@ -1267,16 +1269,27 @@ var COVERED_PAIRS = ['USD/JPY','EUR/JPY','GBP/JPY','AUD/JPY'];   // fx_signal.py
 function systemVerdict(){
   var t=loadTrades(); if(t.length<20) return null;
   var yen=function(x){ return (x.close_yen!=null)?+x.close_yen:(+x.yen||0); };
-  var win=t.filter(function(x){return yen(x)>0;}), lose=t.filter(function(x){return yen(x)<=0;});
-  var gp=win.reduce(function(a,x){return a+yen(x);},0), gl=-lose.reduce(function(a,x){return a+yen(x);},0);
-  var wr=win.length/t.length;
-  var payoff=(win.length&&lose.length)?((gp/win.length)/(gl/lose.length)):null;
+  /* ★ペイオフは【R倍数】で出す。円で出すと、数量の違いがそのまま混ざる。
+     同じ+20pipsでも1,000通貨なら200円、10,000通貨なら2,000円。数量を変えながら
+     取引していると、勝ちの平均÷負けの平均が「どの入り方が良かったか」ではなく
+     「どの時に大きく張ったか」を測ってしまう。
+     R倍数(= 損益pips ÷ その取引のSL幅)なら数量にも通貨にも依存しない。
+     R倍数が取れない取引が多い時だけ、円に落として、その旨を出す。 */
+  var rs=t.map(function(x){ var r=_tradeR(x); return (r==null)?null:{x:x,v:r}; })
+          .filter(function(v){return v!=null;});
+  var byR=(rs.length>=20 && rs.length>=t.length*0.6);
+  var val=byR?function(o){return o.v;}:function(o){return yen(o);};
+  var rows=byR?rs:t;
+  var win=rows.filter(function(o){return val(o)>0;}), lose=rows.filter(function(o){return val(o)<=0;});
+  var gp=win.reduce(function(a,o){return a+val(o);},0), gl=-lose.reduce(function(a,o){return a+val(o);},0);
+  var wr=win.length/rows.length;
+  var payoff=(win.length&&lose.length&&gl>0)?((gp/win.length)/(gl/lose.length)):null;
   var be=payoff?1/(1+payoff):null;                       // 損益分岐勝率
   var expR=payoff?(wr*payoff-(1-wr)):null;               // 1トレードあたりの期待R
   // 判定材料を持たないペア（アプリが計算していない通貨）は別枠にする
   var off=t.filter(function(x){ return x.pair && COVERED_PAIRS.indexOf(x.pair)<0; });
-  return {n:t.length, wr:wr, payoff:payoff, be:be, expR:expR,
-          net:gp-gl, pf:gl?gp/gl:null,
+  return {n:rows.length, byR:byR, wr:wr, payoff:payoff, be:be, expR:expR,
+          net:t.reduce(function(a,x){return a+yen(x);},0), pf:gl?gp/gl:null,
           needWr:be, needPayoff:wr?((1-wr)/wr):null,
           off:{n:off.length, yen:off.reduce(function(a,x){return a+yen(x);},0),
                pairs:Array.from(new Set(off.map(function(x){return x.pair;})))}};
@@ -1291,7 +1304,9 @@ function renderVerdict(){
     ? '✅ 現在の実績はプラス期待値です（' + v.expR.toFixed(3) + 'R/回）'
     : '⛔ このまま同じ入り方・降り方を続けると負けます（期待値 ' + v.expR.toFixed(3) + 'R/回）';
   var lines=[];
-  lines.push('実績: '+v.n+'件 ／ 勝率 <b>'+(v.wr*100).toFixed(1)+'%</b> ／ ペイオフ <b>'+v.payoff.toFixed(2)+'</b>');
+  lines.push('実績: '+v.n+'件 ／ 勝率 <b>'+(v.wr*100).toFixed(1)+'%</b> ／ ペイオフ <b>'+v.payoff.toFixed(2)+'</b>'
+    +(v.byR?' <span style="opacity:.7">（R倍数で計算＝数量の違いを含みません）</span>'
+           :' <span class="warn">（SL幅が分からない取引が多いため円で計算しています。数量を変えていると歪みます）</span>'));
   lines.push('いまのペイオフ '+v.payoff.toFixed(2)+' でプラスにするには勝率 <b>'
     +(v.needWr*100).toFixed(1)+'% 以上</b> が必要（現在 '+(v.wr*100).toFixed(1)+'%）');
   lines.push('いまの勝率 '+(v.wr*100).toFixed(1)+'% でプラスにするにはペイオフ <b>'
