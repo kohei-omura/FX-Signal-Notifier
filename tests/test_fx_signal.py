@@ -3334,5 +3334,82 @@ class ForwardSubModeTest(unittest.TestCase):
         self.assertIn("運用モード＋参考通知に設定したモード", src)
 
 
+class ForwardBackfillTest(unittest.TestCase):
+    """後から復元した記録が、正しい形で入っていて、それと分かること。
+
+    2026-09-18 にスイングで🟢OKが3通貨出たが、当時の記録ルールが
+    運用モードだけを対象にしていたため1件も残らなかった。
+    画面の写しに時刻と建値が写っており、リポジトリには5分ごとの
+    スナップショット履歴があるので、両方を突き合わせて復元した。
+    生で取れた記録より弱い証拠なので、混ぜたまま黙らないこと。
+    """
+
+    EXPECT = {
+        "AUD_JPY": {"entry": 112.336, "tp": 113.130, "sl": 111.895},
+        "EUR_JPY": {"entry": 181.119, "tp": 182.249, "sl": 180.491},
+        "GBP_JPY": {"entry": 210.844, "tp": 212.280, "sl": 210.046},
+    }
+
+    def _entries(self):
+        path = os.path.join(ROOT, "data", "forward_log.json")
+        if not os.path.exists(path):
+            self.skipTest("forward_log.json が無い")
+        with open(path, encoding="utf-8") as f:
+            return (json.load(f) or {}).get("entries") or []
+
+    def _backfilled(self):
+        return [x for x in self._entries() if x.get("src") == "backfill"]
+
+    def test_the_three_swing_signals_are_there(self):
+        got = self._backfilled()
+        self.assertEqual(len(got), 3, "復元した記録の数が違う")
+        self.assertEqual(sorted(x["sym"] for x in got),
+                         ["AUD_JPY", "EUR_JPY", "GBP_JPY"])
+        for x in got:
+            self.assertEqual(x["mode"], "swing")
+            self.assertEqual(x["side"], "long")
+            self.assertTrue(x["open"], "決着済で作ってはいけない（サーバが判定する）")
+
+    def test_the_levels_match_the_screenshots(self):
+        """建値とTP/SLが画面の写しどおりであること。"""
+        for x in self._backfilled():
+            want = self.EXPECT[x["sym"]]
+            self.assertAlmostEqual(x["entry"], want["entry"], places=3, msg=x["sym"])
+            self.assertAlmostEqual(x["tp"], want["tp"], places=3, msg=x["sym"])
+            self.assertAlmostEqual(x["sl"], want["sl"], places=3, msg=x["sym"])
+
+    def test_the_stop_width_matches_the_swing_multiplier(self):
+        """SL幅がスイングの係数(1時間ATR×1.8)と辻褄が合うこと。
+
+        別モードの値を取り違えて復元していないかの検算。"""
+        for x in self._backfilled():
+            atr = abs(x["entry"] - x["sl"]) / 1.8
+            self.assertTrue(0.15 <= atr <= 0.8,
+                            f"{x['sym']}: 逆算した1時間足ATR {atr:.4f} が現実的でない")
+            self.assertAlmostEqual((x["tp"] - x["entry"]) / (x["entry"] - x["sl"]),
+                                   1.8, places=2, msg=f"{x['sym']} のTP:SL比")
+
+    def test_the_buy_fill_pays_the_spread(self):
+        """買いの約定はask。建値より不利な側に入っていること。"""
+        for x in self._backfilled():
+            self.assertGreater(x["fill"], x["entry"], x["sym"])
+            self.assertAlmostEqual(x["fill"] - x["entry"], x["sp"], places=5)
+
+    def test_the_timestamps_are_on_the_right_day(self):
+        import datetime as _dt
+        jst = _dt.timezone(_dt.timedelta(hours=9))
+        for x in self._backfilled():
+            t = _dt.datetime.fromtimestamp(x["ts"] / 1000, jst)
+            self.assertEqual(t.strftime("%Y-%m-%d"), "2026-09-18", x["sym"])
+
+    def test_the_panel_says_how_many_were_backfilled(self):
+        """後から復元した件数を必ず画面に出すこと。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("後から復元した記録です", src)
+        self.assertIn("x.src==='backfill'", src)
+        self.assertIn("'(後追い'", src, "モード別の内訳で区別していない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -2704,9 +2704,17 @@ function renderFwdPanel(){
   var em=edge.status==='proven'?'<b class="up">✅ エッジ実証</b>（独立'+edge.ni+'回・Wilson下限 '+edge.wl+'% ＞ 分岐 '+edge.be+'%）'
         :'🔬 検証中（独立イベント '+(edge.ni||0)+'/30回）';
   var byMode={};s.closed.forEach(function(x){var k=x.mode||'?';
-    byMode[k]=byMode[k]||{n:0,w:0,sub:0};byMode[k].n++;if(x.R>0)byMode[k].w++;if(x.src==='sub')byMode[k].sub++;});
+    byMode[k]=byMode[k]||{n:0,w:0,sub:0,bf:0};byMode[k].n++;if(x.R>0)byMode[k].w++;
+    if(x.src==='sub')byMode[k].sub++; if(x.src==='backfill')byMode[k].bf++;});
   var mb=Object.keys(byMode).map(function(k){var d=byMode[k];
-    return (MODE_LABEL[k]||k)+(d.sub?'(参考)':'')+' '+(d.n?Math.round(d.w/d.n*100):0)+'%('+d.n+')';}).join(' ／ ')||'—';
+    return (MODE_LABEL[k]||k)+(d.sub?'(参考)':'')+(d.bf?'(後追い'+d.bf+')':'')
+      +' '+(d.n?Math.round(d.w/d.n*100):0)+'%('+d.n+')';}).join(' ／ ')||'—';
+  /* 後から復元した記録は、生で取れた記録より証拠として弱い。
+     ・取りこぼしを後から足しているので、足さなかった合図があれば母集団が偏る
+     ・建値は画面の写しから復元しているので秒までは合っていない
+     結果を見てから足したものではない（合図が出た時点の記録が元）が、
+     混ぜたまま黙っていると強さを取り違えるので、件数を必ず出す。 */
+  var bfAll=loadFwd().filter(function(x){return x.src==='backfill';}).length;
   fp.innerHTML='<h2>📈 前向き検証（実弾不要のエッジ実証）</h2>'
     +'<div style="padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'
     +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 決着済 <b>'+s.n+'</b>件'
@@ -2716,6 +2724,9 @@ function renderFwdPanel(){
     +'<div style="font-size:12px;color:var(--mut)">'+em+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">モード別：'+mb+'</div>'
     +(_fwdEdgeSplit(s.closed)?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">学習補正別：'+_fwdEdgeSplit(s.closed)+'</div>':'')
+    +(bfAll?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">'
+        +'うち<b>'+bfAll+'件</b>は後から復元した記録です（取りこぼしを画面の写しと5分ごとの履歴から復元）。'
+        +'足さなかった合図があれば母集団が偏るので、生で取れた記録より弱い証拠として見てください。</div>':'')
     +(s.pol?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">出口別の平均R：'+s.pol+'</div>':'')
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">未決着 '+s.open+'件'
       +(s.timed?' ／ 時間切れ決済 '+s.timed+'件':'')
