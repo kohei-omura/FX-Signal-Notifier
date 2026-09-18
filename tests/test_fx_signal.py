@@ -3434,14 +3434,15 @@ class ForwardBackfillTest(unittest.TestCase):
 
 
 class ModeProvenanceTest(unittest.TestCase):
-    """記録簿のモードが「建玉自身のもの」か「当時の運用モード」かを区別すること。
+    """記録簿のモードが、建玉自身のものだと言えるかを区別すること。
 
     2026-09-11 より前は stamp_new_entries が MODE（運用モード）を
-    そのまま書いていた。記録簿は 2026-08-10 から、mode.json は 8/26 からなので、
-    8月ぶんは運用モードという概念すら無い時期のもの。
-    実害の証拠: mtf と記録された6件は 9/02〜9/08 のものだが、その期間の mtf は
-    7,088サンプル中シグナル1件しか出していない＝mtfの取引ではあり得ない。
-    間違ったモードはモード不明より悪い（比較を黙って壊す）。
+    そのまま書いていた。運用mtfのまま画面をデイに切り替えて入った取引も
+    「mtf」と記録される。間違ったモードはモード不明より悪い。
+
+    ただしTP/SL幅はモードごとの係数だけで決まり、入った瞬間の値が
+    そのまま残っているので、そこからモードを割り出せる
+    （engine/recover_modes.py）。割り出せたものは信用してよい。
     """
 
     def _entries(self):
@@ -3456,7 +3457,16 @@ class ModeProvenanceTest(unittest.TestCase):
         miss = [x.get("logged_at") for x in self._entries() if not x.get("mode_src")]
         self.assertEqual(miss, [], f"出所の無い記録がある: {miss[:5]}")
 
-    def test_records_before_the_fix_are_marked_unreliable(self):
+    def test_the_source_is_one_of_the_known_kinds(self):
+        ok = {"position", "recovered", "operating"}
+        bad = [(x.get("logged_at"), x.get("mode_src"))
+               for x in self._entries() if x.get("mode_src") not in ok]
+        self.assertEqual(bad, [], f"知らない出所がある: {bad[:5]}")
+
+    def test_records_the_engine_stamped_itself_are_never_downgraded(self):
+        """建玉ごとにモードを保存し始めた後の記録は position のままにすること。
+
+        割り出しの方が確かなわけではないので、上書きしない。"""
         import datetime as _dt
         fix = _dt.datetime(2026, 9, 11, 12, 0)
         for x in self._entries():
@@ -3464,20 +3474,20 @@ class ModeProvenanceTest(unittest.TestCase):
             if not la:
                 continue
             t = _dt.datetime.strptime(la[:16], "%Y-%m-%d %H:%M")
-            want = "position" if t >= fix else "operating"
-            self.assertEqual(x.get("mode_src"), want,
-                             f"{la}: 出所の判定が違う")
+            if t >= fix and x.get("mode_src") == "operating":
+                self.fail(f"{la}: 建玉のモードを保存できる時期なのに運用モードのまま")
 
-    def test_the_mtf_records_are_all_from_the_unreliable_period(self):
-        """mtfと記録された分がすべて修正前であること。
+    def test_no_mtf_record_predates_the_mtf_mode(self):
+        """mtfと判定された記録が、mtf実装より前に無いこと。
 
-        ここが崩れたら、本当にmtfで取引した記録が混ざったということなので、
-        扱いを見直す必要がある。"""
-        mtf = [x for x in self._entries() if x.get("mode") == "mtf"]
-        self.assertTrue(mtf, "mtfの記録が消えている（前提が変わった）")
-        for x in mtf:
-            self.assertEqual(x.get("mode_src"), "operating",
-                             f"{x.get('logged_at')}: 信用できるmtf記録が現れた")
+        mtf は 2026-09-02 14:53 JST が初出。それ以前に mtf の建玉は存在しない。"""
+        import datetime as _dt
+        born = _dt.datetime(2026, 9, 2, 14, 53)
+        for x in self._entries():
+            if x.get("mode") != "mtf" or x.get("mode_src") == "operating":
+                continue
+            t = _dt.datetime.strptime(x["logged_at"][:16], "%Y-%m-%d %H:%M")
+            self.assertGreaterEqual(t, born, f"{x['logged_at']}: mtf実装前のmtf記録")
 
     def test_the_engine_stamps_the_provenance(self):
         with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
@@ -3485,12 +3495,80 @@ class ModeProvenanceTest(unittest.TestCase):
         self.assertIn('"mode_src": "position",', src,
                       "エンジンが出所を残していない")
 
-    def test_the_tools_screen_treats_them_as_unknown(self):
+    def test_the_tools_screen_only_counts_a_known_source(self):
         with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
             js = f.read()
-        self.assertIn("x.modeSrc!=='position'", js,
+        self.assertIn("MODE_SRC_OK", js,
                       "出所が当てにならない取引をモード別に混ぜている")
+        self.assertIn("{position:1, recovered:1}", js)
         self.assertIn("x.modeSrc=e.mode_src", js, "出所を取引へ持ち回っていない")
+
+
+class ModeFromLevelsTest(unittest.TestCase):
+    """TP/SL幅からモードを割り出せること（engine/recover_modes.py）。
+
+    sl_pips = slm * ATR(そのモードの足) / pip、tp_pips = sl_pips * tsr。
+      scalp slm1.00 tsr1.5 ／ day slm1.30 tsr1.6
+      swing slm1.80 tsr1.8 ／ mtf slm1.95 tsr1.6
+    TP/SL比だけで scalp と swing は決まる。day と mtf は比が同じなので
+    15分ATRとの比（1.30 か 1.95 か）で分ける。
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "engine"))
+        import recover_modes
+        self.rm = recover_modes
+
+    def test_the_ratio_alone_identifies_swing_and_scalp(self):
+        self.assertEqual(self.rm.mode_from_levels(89.7, 49.8)[0], "swing")
+        self.assertEqual(self.rm.mode_from_levels(9.0, 6.0)[0], "scalp")
+
+    def test_day_and_mtf_need_the_atr(self):
+        """比が1.6のものは、ATRが無ければ割り出さない（当てずっぽうにしない）。"""
+        import datetime as _dt
+        after = _dt.datetime(2026, 9, 8, 8, 30)
+        got, why = self.rm.mode_from_levels(35.6, 22.2, after, None)
+        self.assertIsNone(got, why)
+
+    def test_the_atr_multiple_separates_day_from_mtf(self):
+        import datetime as _dt
+        after = _dt.datetime(2026, 9, 8, 8, 30)
+        # 15分ATRが11.4pips なら day は14.8、mtf は22.2
+        self.assertEqual(self.rm.mode_from_levels(23.7, 14.8, after, 11.4)[0], "day")
+        self.assertEqual(self.rm.mode_from_levels(35.6, 22.2, after, 11.4)[0], "mtf")
+
+    def test_nothing_is_mtf_before_the_mtf_mode_existed(self):
+        import datetime as _dt
+        before = _dt.datetime(2026, 8, 19, 4, 46)
+        got, why = self.rm.mode_from_levels(35.6, 22.2, before, 11.4)
+        self.assertEqual(got, "day", why)
+
+    def test_a_shape_that_matches_nothing_is_left_alone(self):
+        got, why = self.rm.mode_from_levels(30.0, 10.0)
+        self.assertIsNone(got, why)
+
+    def test_it_reproduces_every_known_good_label(self):
+        """建玉自身のモードが分かっている記録を、幅だけで言い当てられること。
+
+        これが崩れたら割り出しは信用できない。"""
+        path = os.path.join(ROOT, "data", "entry_log.json")
+        if not os.path.exists(path):
+            self.skipTest("entry_log.json が無い")
+        with open(path, encoding="utf-8") as f:
+            rows = json.load(f)["entries"]
+        known = [x for x in rows if x.get("mode_src") == "position"]
+        self.assertGreaterEqual(len(known), 10, "検証の材料が足りない")
+        import datetime as _dt
+        bad = []
+        for x in known:
+            t = _dt.datetime.strptime(x["logged_at"], "%Y-%m-%d %H:%M:%S")
+            # day と mtf を分ける必要があるものは、比だけで判定できる形に限る
+            got, why = self.rm.mode_from_levels(x["tp_pips"], x["sl_pips"], t, None)
+            if got is None and abs(x["tp_pips"] / x["sl_pips"] - 1.6) < 0.06:
+                continue      # ATRが要る＝ここでは判定対象外
+            if got != x["mode"]:
+                bad.append((x["logged_at"], x["mode"], got, why))
+        self.assertEqual(bad, [], f"幅から割り出せない既知の記録がある: {bad[:3]}")
 
 
 class HoldTimeRegimeTest(unittest.TestCase):
@@ -3630,6 +3708,7 @@ class ModeSrcRelinkTest(unittest.TestCase):
         i = src.index("  var by={}, unknown=[], stale=0;")
         block = src[i:src.index("  var rows='', any=false;", i)]
         script = ("var MODE_LABEL_T={scalp:'s',day:'d',swing:'w',mtf:'m'};\n"
+                  + src[src.index("var MODE_SRC_OK"):src.index("\n", src.index("var MODE_SRC_OK"))] + "\n"
                   "var t=" + json.dumps(trades) + ";\n" + block
                   + "console.log(JSON.stringify({by:Object.keys(by).reduce("
                   "function(a,k){a[k]=by[k].length;return a;},{}),"
@@ -3666,16 +3745,22 @@ class ModeSrcRelinkTest(unittest.TestCase):
         two = self._attach(one, log)
         self.assertEqual(one, two)
 
-    def test_only_a_position_labelled_trade_is_counted(self):
-        """建玉自身のモードと確認できたものだけを、モード別に数えること。"""
+    def test_only_a_confirmed_mode_is_counted(self):
+        """出所が確認できたものだけを、モード別に数えること。
+
+        position  = 建玉ごとにモードを保存したもの
+        recovered = 記録されたTP/SL幅から割り出したもの
+        それ以外（当時の画面モードの写し・出所不明）は数えない。"""
         got = self._classify([
             {"mode": "swing", "modeSrc": "position"},
-            {"mode": "mtf", "modeSrc": "operating"},
+            {"mode": "mtf", "modeSrc": "recovered"},
+            {"mode": "day", "modeSrc": "operating"},
             {"mode": "day", "modeSrc": "snap-operating"},
             {"mode": "day"},                     # 出所不明の古い記録
             {},                                  # モードそのものが無い
         ])
-        self.assertEqual(got["by"], {"swing": 1}, "確認できないモードを数えている")
+        self.assertEqual(got["by"], {"swing": 1, "mtf": 1},
+                         "確認できないモードを数えている")
         self.assertEqual(got["stale"], 3)
         self.assertEqual(got["unknown"], 4)
 

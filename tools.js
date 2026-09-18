@@ -647,15 +647,17 @@ async function entryLogFetch(quiet){
     if(!quiet) alert('entry_log.json を取得できませんでした: '+e.message);
     return 0;
   }
-  // 端末側と統合（pos_id、無ければ ペア+建値+時刻 で一意化）
+  /* 端末側と統合（pos_id、無ければ ペア+建値+時刻 で一意化）。
+     同じ記録があれば【サーバ側を優先】する。端末側を優先すると、
+     サーバで記録を直しても端末には一生届かない（モードの出所がまさにそれだった）。 */
   var cur=_elLoad(), seen={}, out=[];
-  cur.concat(got).forEach(function(x){
+  got.concat(cur).forEach(function(x){
     if(!x) return;
     var k=x.pos_id||[x.symbol,x.entry,x.logged_at].join('|');
     if(seen[k]) return; seen[k]=1; out.push(x);
   });
   _elSave(out);
-  return out.length-cur.length;
+  return Math.max(0, out.length-cur.length);
 }
 
 /* 記録簿を既存トレードへ紐付ける。ペア＋建値が一致し、まだ判断材料が無いものだけ埋める。 */
@@ -781,6 +783,8 @@ var SPREAD_PIPS_T = {USD_JPY:0.2, EUR_JPY:0.4, GBP_JPY:0.9, AUD_JPY:0.5};
 var MODE_SL_PIPS  = {scalp:1.5, day:9.0, swing:36.0, mtf:21.0};   // 1R(=SL幅)の目安
 var MODE_LABEL_T  = {scalp:'スキャル(1分)', day:'デイ(15分)', swing:'スイング(1時間)', mtf:'mtf(上位足押し目)'};
 var MODE_ORDER_T  = ['mtf','swing','day','scalp'];
+// モードの出所として信用できるもの（それ以外は当時の画面モードの写し）
+var MODE_SRC_OK   = {position:1, recovered:1};
 // 1通貨あたり月あたりのシグナル数。backtest.json の実測から算出（営業日21日換算）。
 //   scalp 4550件/12日/4通貨 = 94.8件/日 → 約1,990件/月
 //   day   4033件/261日/4通貨 = 3.86件/日 → 約81件/月
@@ -834,9 +838,13 @@ function renderModeCompare(){
   if(!t.length){ el.innerHTML=''; return; }
   var by={}, unknown=[], stale=0;
   t.forEach(function(x){
-    // 出所が operating（当時の運用モードを書いただけ）のものは信用しない。
-    // 実際に取引したモードとは限らないので、モード不明として扱う。
-    if(x.mode&&x.modeSrc!=='position'){ stale++; unknown.push(x); return; }
+    /* 信用するのは出所が分かっているものだけ。
+         position  = 建玉ごとにモードを保存したもの（9/11以降）
+         recovered = 記録されたTP/SL幅からモードを割り出したもの
+       operating（当時の運用モードを書いただけ）や snap-operating
+       （その時に画面で開いていたモード）は、実際に取引したモードとは
+       限らないので、モード不明として扱う。 */
+    if(x.mode&&!MODE_SRC_OK[x.modeSrc]){ stale++; unknown.push(x); return; }
     if(x.mode&&MODE_LABEL_T[x.mode]) (by[x.mode]=by[x.mode]||[]).push(x);
     else unknown.push(x);
   });
@@ -903,10 +911,10 @@ function renderModeCompare(){
     +(stale?'<br><span class="warn">うち<b>'+stale+'件</b>は、モードらしきものは残っているが、'
         +'それが<b>建玉自身のモードだと確認できない</b>ものです。'
         +'2026-09-11 より前は、記録簿にもスナップショットにも「その時に画面で開いていたモード」を'
-        +'そのまま書いていました。'
-        +'（例: mtfと記録された6件は 9/02〜9/08 のものですが、その期間のmtfは7,088サンプル中1件しか'
-        +'合図を出していません。）間違ったモードは比較を黙って壊すので、モード不明として扱っています。'
-        +'上の集計に残るのは 9/11 以降の、建玉ごとにモードを保存した取引だけです。</span>':'')
+        +'そのまま書いていました。間違ったモードは比較を黙って壊すので、モード不明として扱っています。'
+        +'記録簿に残っているぶんは、記録されたTP/SL幅からモードを割り出し直してあります'
+        +'（TP/SL幅はモードごとの係数だけで決まるため）。ここに残るのは、記録簿そのものが無い取引です。'
+        +'</span>':'')
     +(BT_CACHE?'':'<br><span class="warn">検証Rが「—」です。「🧠 記録簿を取込」を押すと読み込まれます。</span>')
     +'</div></div>';
 }
@@ -1969,6 +1977,20 @@ try{if(localStorage.getItem('fxnavi_spr_auto')==='1'){var _sa=document.getElemen
    ボタンを押さないと直らない修正は、直っていないのと同じ。
    通信はせず localStorage のぶんだけ。二度当てても結果は変わらない。 */
 try{ entryLogAttach(); }catch(e){}
+/* そのうえで、開いた直後に静かに取り直す。記録簿はサーバ側で直ることがある
+   （モードの割り出し直しがまさにそれ）ので、端末の写しだけ見ていると古いままになる。 */
+async function bootRefresh(){
+  var c=_ghCfg(); if(!c.owner||!c.repo) return;
+  try{ await entryLogFetch(true); }catch(e){}
+  try{ entryLogAttach(); }catch(e){}
+  try{
+    var base='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+(c.branch||'main')+'/';
+    var br=await fetch(base+'data/backtest.json?t='+Date.now(),{cache:'no-store'});
+    if(br.ok) BT_CACHE=await br.json();
+  }catch(e){}
+  try{ renderJournal(); }catch(e){}
+}
+try{ setTimeout(function(){ bootRefresh(); }, 600); }catch(e){}
 renderJournal();
 try{applySections();}catch(e){}
 try{ setTimeout(function(){ autoSyncCheck(); }, 400); }catch(e){}
