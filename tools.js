@@ -879,12 +879,29 @@ function renderModeCompare(){
     var rs=g.map(_tradeR).filter(function(v){return v!=null;});
     var avgR=rs.length?rs.reduce(function(a,b2){return a+b2;},0)/rs.length:null;
     var ind=n?_tradeClusters(g):0;
+    /* 件数が少ないモードは、平均だけ見ても意味が分からない。
+       「5件」が別々の5回なのか、同じ日に同じ方向へ並べた1回なのかで
+       まるで話が違うので、期間と売買の内訳を必ず添える。 */
+    var span='';
+    if(n&&n<20){
+      var ds=g.map(function(x){var o=_tOpen(x);return o?o.getTime():(x.ts||0);})
+              .filter(function(v){return v>0;}).sort(function(a,b2){return a-b2;});
+      var buy=g.filter(function(x){return String(x.side||'').indexOf('買')>=0;}).length;
+      var sell=g.filter(function(x){return String(x.side||'').indexOf('売')>=0;}).length;
+      var md=function(v){return new Date(v).toLocaleString('ja-JP',
+        {timeZone:'Asia/Tokyo',month:'numeric',day:'numeric'});};
+      var days={}; ds.forEach(function(v){days[md(v)]=1;});
+      if(ds.length) span=md(ds[0])+(ds.length>1&&md(ds[0])!==md(ds[ds.length-1])
+          ?'〜'+md(ds[ds.length-1]):'')+'の'+Object.keys(days).length+'日'
+          +(buy&&sell?('・買'+buy+'/売'+sell):(buy?'・すべて買い':(sell?'・すべて売り':'')));
+    }
     rows+='<div class="mrow">'
       +'<div class="mhead"><span class="mname">'+MODE_LABEL_T[m]+'</span>'
       +'<span class="mnet '+(net>0?'good':(net<0?'warn':''))+'">'
       +(n?(net>=0?'+':'')+Math.round(net).toLocaleString()+'円':'取引なし')+'</span></div>'
       +'<div class="mmeta">'+(n?(n+'件'+(ind<n?'（独立'+ind+'）':'')+' ／ 勝率'+Math.round(wins/n*100)+'%'
-           +(rs.length<n?' ／ R算出'+rs.length+'件':'')):'—')+'</div>'
+           +(rs.length<n?' ／ R算出'+rs.length+'件':'')
+           +(span?'<br>'+span:'')):'—')+'</div>'
       +'<div class="mbar"><span class="l">実測</span>'
       +'<span class="v '+cls(avgR)+'">'+(avgR!=null?f(avgR,2)+'R':'—')+'</span>'
       +bar(avgR,'var(--gold)')+'</div>'
@@ -907,7 +924,9 @@ function renderModeCompare(){
         +small.map(function(m){return MODE_LABEL_T[m]+' '+by[m].length+'件';}).join('・')
         +'）。この段階では実測より検証値の方が当てになります。</span>':'')
     +(unknown.length?'<br><span class="warn">モード不明が'+unknown.length+'件あります（上の集計に入っていません）。'
-        +'「🧠 記録簿を取込」を押すと紐付きます。記録簿はエントリーを記録し始めた後のぶんしかありません。</span>':'')
+        +'うち'+(unknown.length-stale)+'件は、記録簿に該当する記録が無いものです。'
+        +'記録を付け始めたのが 2026-08-10 なので、それより前の取引には材料そのものがありません。'
+        +'（記録簿をまだ取り込んでいない場合は「🧠 記録簿を取込」で減ります。）</span>':'')
     +(stale?'<br><span class="warn">うち<b>'+stale+'件</b>は、モードらしきものは残っているが、'
         +'それが<b>建玉自身のモードだと確認できない</b>ものです。'
         +'2026-09-11 より前は、記録簿にもスナップショットにも「その時に画面で開いていたモード」を'

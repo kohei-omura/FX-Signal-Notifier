@@ -2739,6 +2739,33 @@ class ModeCompareTest(unittest.TestCase):
         self.assertIn("モード不明が5件", html)
         self.assertNotIn("2件（独立1）", html, "出所の無い札をモード別に数えている")
 
+    def test_a_small_sample_says_when_and_which_way(self):
+        """件数が少ないモードは、期間と売買の内訳を必ず添えること。
+
+        実際に起きたこと: mtf 5件・勝率80%・+0.61R と出たが、
+        中身は9/02〜9/03のすべて売りで、実質ひとつの相場だった。
+        平均だけ見せると、5回別々に確かめたように読めてしまう。"""
+        html = self._render()
+        self.assertIn("すべて買い", html, "売買の内訳が出ていない")
+        self.assertIn("9/8", html.replace("9月8日", "9/8"), "期間が出ていない")
+
+    def test_a_large_sample_does_not_carry_the_note(self):
+        """件数が十分なモードには付けない（意味が無いうえに場所を食う）。"""
+        keep = self.TRADES
+        try:
+            self.TRADES = [dict(keep[3]) for _ in range(25)]
+            for i, x in enumerate(self.TRADES):
+                x["opened_at"] = "2026-09-%02d 00:37 JST" % (i % 28 + 1)
+            html = self._render()
+        finally:
+            self.TRADES = keep
+        self.assertNotIn("すべて売り", html)
+
+    def test_the_unknown_note_does_not_promise_a_link_that_cannot_happen(self):
+        """記録簿に無い取引を「押せば紐付く」と書かないこと。"""
+        html = self._render()
+        self.assertIn("材料そのものがありません", html)
+
     def test_the_backtest_expectation_is_shown_next_to_it(self):
         """実測のとなりにバックテストの期待値を置くこと。
 
