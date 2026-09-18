@@ -3471,5 +3471,93 @@ class ModeProvenanceTest(unittest.TestCase):
         self.assertIn("x.modeSrc=e.mode_src", js, "出所を取引へ持ち回っていない")
 
 
+class HoldTimeRegimeTest(unittest.TestCase):
+    """想定保有時間を、いまの値幅で読み替えられるようにすること。
+
+    2026-09-18 のスイング3件はすべて発注レベルどおりのOCO約定だったのに、
+    想定保有時間よりかなり早く決着した。
+      GBP/JPY 11:59→14:14 TP+89.7pips 到達（2h15m）
+      EUR/JPY 14:19→15:43 SL-45.4pips 到達（1h24m）
+      AUD/JPY 15:48→17:13 TP+72.1pips 到達（1h25m）
+    TP/SLは【建てた時点のATR】で決まるが、想定保有時間は直近20日の中央値
+    ＝普段の値幅が前提。この日は1時間足ATRが
+      GBP/JPY 0.277(11:59) → 0.443(20:10)  約1.6倍
+    と広がっており（画面にも レジーム クライマックス96〜99% と出ていた）、
+    同じ距離を短い時間で到達した。不具合ではなく前提の違い。
+    """
+
+    def _src(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_regime_reports_how_wide_it_is_now(self):
+        src = self._src()
+        i = src.index("function atrRegime(o,P){")
+        body = src[i:src.index("\n// 機能4", i)]
+        self.assertIn("var rel=med?cur/med:1;", body,
+                      "普段の値幅との比を出していない")
+        self.assertIn("rel:Math.round(rel*100)/100", body,
+                      "比を返していない")
+
+    def test_the_card_rescales_the_expected_time(self):
+        src = self._src()
+        self.assertIn("st.tpMin/_rel", src, "利確までの時間を読み替えていない")
+        self.assertIn("st.slMin/_rel", src, "損切りまでの時間を読み替えていない")
+        self.assertIn("Math.abs(_rel-1)>=0.15", src,
+                      "普段と変わらない時まで出している")
+
+    def test_the_rescale_matches_the_real_day(self):
+        """実例の倍率で読み替えると、実際の決着時間に近づくこと。
+
+        距離÷速度なので、値幅がr倍なら時間は1/r倍。"""
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        src = self._src()
+        i = src.index("function atrRegime(o,P){")
+        fn = src[i:src.index("\n// 機能4", i)]
+        # 直近200本のうち、最後だけ普段の1.6倍にしたATR系列を作って渡す
+        script = ("function atrSeries(){return SER;}\n"
+                  "const SER=[];for(let k=0;k<200;k++)SER.push(0.277);"
+                  "SER.push(0.443);\n" + fn
+                  + "\nconsole.log(JSON.stringify(atrRegime([], {atr:14})));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        r = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertAlmostEqual(got["rel"], 1.6, places=1,
+                               msg="普段の値幅との比が合わない")
+        self.assertEqual(got["lab"], "クライマックス")
+
+    def test_the_september_18_levels_were_oco_hits(self):
+        """あの3件が発注レベルどおりの約定だったことを記録に残す。
+
+        私は当初『手前で手動決済された』と述べたが誤りだった。
+        記録簿の発注レベルと実約定は一致している。"""
+        path = os.path.join(ROOT, "data", "entry_log.json")
+        if not os.path.exists(path):
+            self.skipTest("entry_log.json が無い")
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        ent = d["entries"] if isinstance(d, dict) else d
+        want = {  # 建値: (tp_pips, sl_pips, 実際の決済pips, どちらに当たったか)
+            209.318: (89.7, 49.8, 89.7, "tp"),
+            180.610: (81.7, 45.4, -45.5, "sl"),
+            111.668: (72.1, 40.1, 72.1, "tp"),
+        }
+        for entry, (tp, sl, real, side) in want.items():
+            rec = [x for x in ent if abs((x.get("entry") or 0) - entry) < 0.001]
+            self.assertTrue(rec, f"建値{entry}の記録が無い")
+            e = rec[0]
+            self.assertAlmostEqual(e["tp_pips"], tp, places=1, msg=str(entry))
+            self.assertAlmostEqual(e["sl_pips"], sl, places=1, msg=str(entry))
+            hit = tp if side == "tp" else -sl
+            self.assertAlmostEqual(real, hit, places=0,
+                                   msg=f"建値{entry}: 発注レベルと実約定が一致しない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

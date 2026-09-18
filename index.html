@@ -979,9 +979,18 @@ function confW(mode){
 function atrRegime(o,P){var a=atrSeries(o,P.atr);if(!a||a.length<50)return null;var cur=a[a.length-1];if(cur==null)return null;
   var win=a.slice(-200).filter(function(v){return v!=null;});if(win.length<30)return null;
   var c=0;for(var i=0;i<win.length;i++)if(win[i]<=cur)c++;var pct=Math.round(c/win.length*100);
+  /* いまの値幅が普段の何倍か。想定保有時間の目盛りに使う。
+     TP/SLは【建てた時点のATR】で決まるが、想定保有時間は直近20日の中央値
+     ＝普段の値幅が前提。値幅が広がれば同じ距離を短い時間で到達する。
+     実例 2026-09-18: GBP/JPY の1時間足ATRが 0.277(11:59)→0.443(20:10) と
+     6割広がり、+89.7pipsのTPに2時間15分で到達した（想定より大幅に早い）。
+     不具合ではなく前提の違いなので、倍率を出して読み替えられるようにする。 */
+  var srt=win.slice().sort(function(x,y){return x-y;});
+  var med=srt[srt.length>>1]||cur;
+  var rel=med?cur/med:1;
   // 区分名はバックテストの atr_bands と同じ。良し悪しの評価は付けない（検証で差が出なかった）。
   var cls,ic,lab;if(pct<20){cls='weak';ic='⚪';lab='閑散';}else if(pct<=80){cls='ok';ic='🟢';lab='適正';}else if(pct<=95){cls='';ic='🔵';lab='拡大';}else{cls='warn';ic='🟡';lab='クライマックス';}
-  return{pct:pct,cls:cls,ic:ic,lab:lab};}
+  return{pct:pct,cls:cls,ic:ic,lab:lab,rel:Math.round(rel*100)/100};}
 // 機能4: 連敗サーキットブレーカー（決済履歴からモード別直近連敗を集計・表示のみ）
 /* 直近の連敗数。アプリで決済した記録と、ツールに取り込んだCSVの決済履歴の
    両方を見る。アプリ決済は0件でCSVだけ、という運用が普通なので、
@@ -1639,7 +1648,12 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     else if(st.winRate>=be){cls='';verdict='🟡 ほぼ分岐点（僅差・慎重に）';}
     else{cls='down';verdict='⛔ 期待値マイナス・エントリー見送り推奨';}
     const evTxt=(ev>=0?'+':'')+ev.toFixed(2)+'R';
-    statBox=`<div class="entry ${cls}"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b><br>📊 TP勝率 <b>${st.winRate}%</b> ／ 損益分岐 <b>${beR}%</b>（RR 1:${rr.toFixed(1)}・直近${st.n}回）<br><b>${verdict}</b> <span style="opacity:.75">期待値 ${evTxt}/回</span></div></div>`;
+    /* 想定保有時間は普段の値幅が前提の中央値。いまの値幅が普段と違えば、
+       その比で読み替える。速さは 距離÷速度 なので、値幅がr倍なら時間は1/r倍。 */
+    const _rel=(p.regime&&p.regime.rel)||1;
+    const _adj=(Math.abs(_rel-1)>=0.15&&st.tpMin!=null)
+      ? `<br><span style="opacity:.85">⚡ いまの値幅は普段の<b>${_rel.toFixed(2)}倍</b>。この値幅が続けば 利確まで <b>${holdTxt(Math.round(st.tpMin/_rel))}</b> ／ 損切りまで <b>${holdTxt(Math.round(st.slMin/_rel))}</b> の目安です</span>` : '';
+    statBox=`<div class="entry ${cls}"><div class="er">⏱ 想定保有（中央値）— 利確まで <b>${holdTxt(st.tpMin)}</b> ／ 損切りまで <b>${holdTxt(st.slMin)}</b>${_adj}<br>📊 TP勝率 <b>${st.winRate}%</b> ／ 損益分岐 <b>${beR}%</b>（RR 1:${rr.toFixed(1)}・直近${st.n}回）<br><b>${verdict}</b> <span style="opacity:.75">期待値 ${evTxt}/回</span></div></div>`;
   }
   const fastBox=fastProfileBox(p);
   let entryBox='';
