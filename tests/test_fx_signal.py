@@ -1601,6 +1601,12 @@ class DuplicateAndHedgeTest(RunTestCase):
         self.addCleanup(setattr, F, "entry_side", F.entry_side)
         F.entry_side = lambda s_, t_, r_, th_, aligned=None, pullback=None: (
             sig if s_ == sym else None)
+        # ここで見たいのは重複/両建ての見送りだけ。上位足フィルタが先に
+        # 見送ると skip_reason が「上位足と逆行」になり、日によって
+        # 落ちたり通ったりする（モックの上位足が実行日で変わるため）。
+        # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
         F.main()
         st = self.status()
         return next(p for p in st["pairs"] if p["symbol"] == sym)
@@ -3201,6 +3207,131 @@ class EdgeNeedTest(unittest.TestCase):
             js = f.read()
         self.assertIn("平均0.75区分", js)
         self.assertIn("条件を緩めると", js)
+
+
+class ForwardSubModeTest(unittest.TestCase):
+    """参考通知に設定したモードの合図も前向き検証に記録すること。
+
+    実際に起きたこと: 運用mtf・参考通知にスイングとデイを設定した状態で、
+    スイングで🟢OKが3通貨出たのに1件も記録されなかった。
+    記録の条件が「運用モードと画面モードが一致」だけだったため。
+    参考通知を入れた今は、スイングもデイも実際に合図が飛ぶ＝入る対象なので、
+    まさに入ろうとしている合図が検証から漏れていた。
+    """
+
+    def _src(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def _body(self):
+        src = self._src()
+        i = src.index("function fwdRecord(pair,mode){")
+        return src[i:src.index("saveFwd(f);}catch(e){}}", i)]
+
+    def test_the_operating_mode_is_still_recorded(self):
+        body = self._body()
+        self.assertIn("if(m!==MODEJSON){", body,
+                      "運用モードが素通りする道が無い")
+
+    def test_a_configured_sub_mode_is_recorded(self):
+        body = self._body()
+        self.assertIn("SUBNOTIFY", body, "参考通知の設定を見ていない")
+        self.assertIn("if(!sub)return;", body,
+                      "設定していないモードまで記録してしまう")
+
+    def test_a_sub_mode_filter_is_applied(self):
+        """参考通知に絞り込みがあれば、記録も同じ条件にそろえること。
+
+        デイは ADX40以上に絞って通知している。そろえないと
+        「通知しない場面」まで検証に混ざり、測る母集団がずれる。"""
+        body = self._body()
+        self.assertIn("subFilterOK(sub.filter,{adx:pair.adx})", body,
+                      "参考通知の絞り込みを記録に適用していない")
+
+    def test_open_records_are_limited_per_symbol_and_mode(self):
+        """開いている記録は銘柄×モードで1件。モードが違えば塞がないこと。
+
+        以前は銘柄だけで見ていたので、mtfのUSD/JPYが
+        スイングのUSD/JPYを締め出していた。"""
+        body = self._body()
+        self.assertIn("(f[i].mode||m)===m", body,
+                      "銘柄だけで締め出している")
+
+    def test_the_record_remembers_where_it_came_from(self):
+        src = self._src()
+        self.assertIn("src:(sub?'sub':'main')", src, "出所を残していない")
+        self.assertIn("subFilter:(sub?sub.filter:null)", src,
+                      "どの絞り込みで記録したかを残していない")
+
+    def test_it_still_fails_closed_without_the_operating_mode(self):
+        body = self._body()
+        self.assertIn("if(!MODEJSON||!MODES.includes(MODEJSON))return;", body,
+                      "運用モードが分からない時に記録してしまう")
+
+    def test_it_actually_records_the_right_cases(self):
+        """ソースの見た目ではなく、実際に動かして通る/通らないを確かめる。
+
+        運用mtf・参考通知[スイング(絞り込みなし), デイ(ADX40以上)] の設定で、
+        どの合図が記録されるか。"""
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        src = self._src()
+
+        def grab(a, b):
+            i = src.index(a)
+            return src[i:src.index(b, i) + len(b)]
+
+        harness = (
+            "let store={};\n"
+            "global.localStorage={getItem:k=>store[k]||null,setItem:(k,v)=>{store[k]=v}};\n"
+            "global.MODES=['scalp','day','swing','mtf'];global.PS_=0.01;global.PRICE={};\n"
+            "global.FWD_SPREAD_PIPS={USD_JPY:0.2,EUR_JPY:0.4,GBP_JPY:0.9,AUD_JPY:0.5};\n"
+            "global.FWD_SPREAD_DEF=0.5;global.S={mode:'mtf'};global.STATS={};\n"
+            "global.confluence=()=>({pct:71,rawPct:71,edge:0});global.edgeOn=()=>false;\n"
+            "global.fwdCloudSaveLater=()=>{};\n"
+            + grab("var FWD_FIX=", "}catch(e){return[];}}") + "\n"
+            "function saveFwd(a){try{localStorage.setItem('fxnavi_forward_v1',"
+            "JSON.stringify(a.slice(-300)));}catch(e){}}\n"
+            + grab("function subFilterOK(fname,sc){", "  return true;\n}") + "\n"
+            + grab("function fwdRecord(pair,mode){", "saveFwd(f);}catch(e){}}") + "\n"
+            "global.MODEJSON='mtf';\n"
+            "global.SUBNOTIFY=[{mode:'swing',filter:'all'},{mode:'day',filter:'adx40'}];\n"
+            "const P=(sym,adx)=>({symbol:sym,signal:'買い',entry_ref:100.0,"
+            "tp_pips:20,sl_pips:12,adx:adx,rsi:60});\n"
+            "const cs=[['mtf','USD_JPY',30],['swing','AUD_JPY',25],['day','EUR_JPY',35],"
+            "['day','EUR_JPY',45],['scalp','GBP_JPY',50],['swing','USD_JPY',25],"
+            "['mtf','USD_JPY',30]];\n"
+            "const out=[];\n"
+            "for(const [m,sym,adx] of cs){\n"
+            "  const b=JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]').length;\n"
+            "  fwdRecord(P(sym,adx),m);\n"
+            "  const a=JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]');\n"
+            "  out.push(a.length>b?(a[a.length-1].mode+'/'+a[a.length-1].src):null);\n"
+            "}\n"
+            "console.log(JSON.stringify(out));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(harness); path = f.name
+        self.addCleanup(os.unlink, path)
+        r = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got, [
+            "mtf/main",     # 運用モードは記録する
+            "swing/sub",    # 参考通知のスイング（絞り込みなし）
+            None,           # デイ ADX35 は参考通知の絞り込みで出ない
+            "day/sub",      # デイ ADX45 は条件を満たす
+            None,           # スキャルは参考通知に設定していない
+            "swing/sub",    # 同じ銘柄でもモードが違えば別枠
+            None,           # 同じ銘柄×同じモードは締め出す
+        ], "記録される場面が想定と違う")
+
+    def test_the_panel_text_matches_the_new_rule(self):
+        src = self._src()
+        self.assertNotIn("記録は「運用モードと画面モードが一致」", src,
+                         "説明が古いルールのまま")
+        self.assertIn("運用モード＋参考通知に設定したモード", src)
 
 
 if __name__ == "__main__":

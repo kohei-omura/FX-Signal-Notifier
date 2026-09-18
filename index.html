@@ -1107,9 +1107,25 @@ function fwdRecord(pair,mode){try{if(!pair||!pair.signal)return;
      係数なのに mode:'mtf' で記録された）。 */
   const m=mode||S.mode;
   if(!m||!MODES.includes(m))return;
-  if(!MODEJSON||!MODES.includes(MODEJSON)||MODEJSON!==m)return;
+  if(!MODEJSON||!MODES.includes(MODEJSON))return;
+  /* ★記録するのは「この仕組みが実際に合図を出すモード」だけ。
+     運用モード(mode.json)に加えて、参考通知に設定したモードも含める。
+     以前は運用モードだけにしていた。眺めているだけのモードを貯めない
+     ための制限だったが、参考通知を入れた今は、スイングやデイも
+     実際に合図が飛ぶ＝入る対象になっている。運用モードだけにしていると、
+     まさに入ろうとしている合図が検証から漏れる（実際そうなっていた）。
+     参考通知に絞り込み(ADX40以上など)があるなら、記録も同じ条件に
+     そろえる。そろえないと「通知しない場面」まで検証に混ざる。 */
+  var sub=null;
+  if(m!==MODEJSON){
+    sub=(SUBNOTIFY||[]).filter(function(x){return x&&x.mode===m;})[0];
+    if(!sub)return;
+    if(!subFilterOK(sub.filter,{adx:pair.adx}))return;
+  }
   var f=loadFwd();
-  for(var i=0;i<f.length;i++){if(f[i].open&&f[i].sym===pair.symbol)return;}
+  // 開いている記録は「銘柄×モード」で1件まで。モードが違えば別の検証なので
+  // 塞がない（mtfのUSD/JPYがスイングのUSD/JPYを締め出していた）。
+  for(var i=0;i<f.length;i++){if(f[i].open&&f[i].sym===pair.symbol&&(f[i].mode||m)===m)return;}
   var side=pair.signal==='買い'?'long':'short',entry=(pair.entry_ref!=null?pair.entry_ref:pair.bid);
   if(entry==null||!pair.tp_pips||!pair.sl_pips)return;
   var _p=PRICE[pair.symbol]||{},sp=(_p.ask!=null&&_p.bid!=null&&_p.ask>_p.bid)?(_p.ask-_p.bid)
@@ -1124,7 +1140,8 @@ function fwdRecord(pair,mode){try{if(!pair||!pair.signal)return;
     fill:Math.round((side==='long'?entry+sp:entry)*1e5)/1e5, sp:Math.round(sp*1e5)/1e5,
     tp:tp,sl:sl,b:pair.tp_pips/pair.sl_pips,ts:Date.now(),open:true,
     edgeOn:(typeof edgeOn==='function')?edgeOn():false,
-    rawPct:_cf?_cf.rawPct:null, pct:_cf?_cf.pct:null, edgeAdj:_cf?(_cf.edge||0):0});saveFwd(f);}catch(e){}}
+    rawPct:_cf?_cf.rawPct:null, pct:_cf?_cf.pct:null, edgeAdj:_cf?(_cf.edge||0):0,
+    src:(sub?'sub':'main'), subFilter:(sub?sub.filter:null)});saveFwd(f);}catch(e){}}
 
 /* ===== 決着の判定はサーバ側（engine/fx_signal.py・5分ごと）に移した =====
    以前はブラウザが9秒ごとの現在値で判定していた。2つの理由で勝ち側に倒れていた。
@@ -2686,8 +2703,10 @@ function renderFwdPanel(){
     spark='<svg width="'+W+'" height="'+H+'" style="display:block;margin:6px 0"><polyline points="'+pts+'" fill="none" stroke="var(--gold)" stroke-width="1.5"/></svg>';}
   var em=edge.status==='proven'?'<b class="up">✅ エッジ実証</b>（独立'+edge.ni+'回・Wilson下限 '+edge.wl+'% ＞ 分岐 '+edge.be+'%）'
         :'🔬 検証中（独立イベント '+(edge.ni||0)+'/30回）';
-  var byMode={};s.closed.forEach(function(x){var k=x.mode||'?';byMode[k]=byMode[k]||{n:0,w:0};byMode[k].n++;if(x.R>0)byMode[k].w++;});
-  var mb=Object.keys(byMode).map(function(k){var d=byMode[k];return (MODE_LABEL[k]||k)+' '+(d.n?Math.round(d.w/d.n*100):0)+'%('+d.n+')';}).join(' ／ ')||'—';
+  var byMode={};s.closed.forEach(function(x){var k=x.mode||'?';
+    byMode[k]=byMode[k]||{n:0,w:0,sub:0};byMode[k].n++;if(x.R>0)byMode[k].w++;if(x.src==='sub')byMode[k].sub++;});
+  var mb=Object.keys(byMode).map(function(k){var d=byMode[k];
+    return (MODE_LABEL[k]||k)+(d.sub?'(参考)':'')+' '+(d.n?Math.round(d.w/d.n*100):0)+'%('+d.n+')';}).join(' ／ ')||'—';
   fp.innerHTML='<h2>📈 前向き検証（実弾不要のエッジ実証）</h2>'
     +'<div style="padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'
     +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 決着済 <b>'+s.n+'</b>件'
@@ -2702,7 +2721,9 @@ function renderFwdPanel(){
       +(s.timed?' ／ 時間切れ決済 '+s.timed+'件':'')
       +' ／ サーバ判定済 '+s.srv+'/'+s.n+'件'+(s.srv<s.n?'（残りは旧ブラウザ判定。次のサーバ実行で上書きされます）':'')+'</div>'
     +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率（実測の平均勝ちR/平均負けRから算出）で実証。'
-      +'記録は「運用モードと画面モードが一致」かつ🟢OKの時だけ・最大300件ローテ。建値は実約定(買いはask)、決着はサーバが高安つきの足で順序どおりに判定します。</div>'
+      +'記録するのは<b>この仕組みが実際に合図を出すモード</b>だけです（運用モード＋参考通知に設定したモード）。'
+      +'参考通知に絞り込みがあれば、記録も同じ条件にそろえます。🟢OKの時だけ・銘柄×モードで1件・最大300件ローテ。'
+      +'建値は実約定(買いはask)、決着はサーバが高安つきの足で順序どおりに判定します。</div>'
     +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="exportHistoryCSV()">📤 決済履歴CSV</button><button class="dettog" style="width:auto;flex:1" onclick="exportForwardCSV()">📤 前向き検証CSV</button></div>'
     +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudSaveNow()">☁️ 今すぐクラウド保存</button><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudRestore()">♻️ クラウドから復元</button></div>'
     +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">⚙のGitHub連携が設定済みなら、記録は自動でリポジトリ（'+FWD_PATH+'）にも保存され、起動時に取り込まれます。端末を作り直しても記録が続きます。</div></div>';
