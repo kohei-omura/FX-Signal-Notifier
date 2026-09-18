@@ -601,7 +601,10 @@ function attachSnapScores(tolMin){
     { x.score=best.score; x.smark=best.mark; x.got=best.got;
       if(!x.signal) x.signal=best.signal; if(x.rsi==null||x.rsi==='') x.rsi=best.rsi;
       if(x.tech==null||x.tech==='') x.tech=best.tech; if(x.fund==null||x.fund==='') x.fund=best.fund;
-      if(!x.mode) x.mode=best.mode;
+      /* スナップショットの mode は【その時に画面で開いていたモード】であって、
+         この建玉のモードとは限らない。出所を残しておかないと、モード別の
+         比較にそのまま混ざる。 */
+      if(!x.mode){ x.mode=best.mode; x.modeSrc='snap-operating'; }
       // モード不明のまま採用した場合は、後から見分けられるようにしておく
       x.scoreSrc=(x.mode&&best.mode&&best.mode===x.mode)?'snap':'snap-modeunknown';
       filled++; }
@@ -675,7 +678,12 @@ function entryLogAttach(){
        限らない。実例: 9/10 19:33 の USD/JPY は記録簿では 🟡保留・検討(54%)
        なのに、履歴には 🔴 と出ていた。マーク別成績が狂う。 */
     var needFix=(x.markSrc!=='entrylog'&&e.conf_mark);
-    if(x.elSrc&&!needFix) return;
+    /* モードの出所(modeSrc)は後から足した項目なので、それ以前に紐付けた取引には
+       入っていない。入っていないと「当時の運用モードを書いただけ」の札を
+       建玉のモードとして数えてしまう(mtf 14件の誤り)ので、出所が記録簿と
+       合うまでは紐付け済みでも通す。 */
+    var needMode=(e.mode&&x.modeSrc!==(e.mode_src||'operating'));
+    if(x.elSrc&&!needFix&&!needMode) return;
     if(x.tp_pips==null&&e.tp_pips!=null) x.tp_pips=e.tp_pips;
     if(x.sl_pips==null&&e.sl_pips!=null) x.sl_pips=e.sl_pips;
     if(x.rawScore==null&&e.score!=null) x.rawScore=e.score;     // -1〜+1 の総合スコア
@@ -695,7 +703,7 @@ function entryLogAttach(){
        実害の証拠: mtf と書かれた6件は 9/02〜9/08 のものだが、その期間の mtf は
        7,088サンプル中シグナル1件しか出していない＝mtfの取引ではあり得ない。
        間違ったモードは、モード不明より悪い（比較を黙って壊す）。 */
-    if(!x.mode&&e.mode){ x.mode=e.mode; x.modeSrc=e.mode_src||'operating'; }
+    if(e.mode){ x.mode=e.mode; x.modeSrc=e.mode_src||'operating'; }
     /* 総合判定（マーク別成績の元）。
        記録簿の conf_* はアプリが【エントリーした瞬間】に保存した値なので、
        5分ごとのスナップショットより正確。既に入っていても上書きする。 */
@@ -828,7 +836,7 @@ function renderModeCompare(){
   t.forEach(function(x){
     // 出所が operating（当時の運用モードを書いただけ）のものは信用しない。
     // 実際に取引したモードとは限らないので、モード不明として扱う。
-    if(x.mode&&x.modeSrc==='operating'){ stale++; unknown.push(x); return; }
+    if(x.mode&&x.modeSrc!=='position'){ stale++; unknown.push(x); return; }
     if(x.mode&&MODE_LABEL_T[x.mode]) (by[x.mode]=by[x.mode]||[]).push(x);
     else unknown.push(x);
   });
@@ -892,10 +900,13 @@ function renderModeCompare(){
         +'）。この段階では実測より検証値の方が当てになります。</span>':'')
     +(unknown.length?'<br><span class="warn">モード不明が'+unknown.length+'件あります（上の集計に入っていません）。'
         +'「🧠 記録簿を取込」を押すと紐付きます。記録簿はエントリーを記録し始めた後のぶんしかありません。</span>':'')
-    +(stale?'<br><span class="warn">うち<b>'+stale+'件</b>は、記録簿に<b>当時の運用モード</b>が書かれていたものです。'
-        +'2026-09-11 より前は建玉自身のモードを残していなかったため、実際に取引したモードとは限りません。'
+    +(stale?'<br><span class="warn">うち<b>'+stale+'件</b>は、モードらしきものは残っているが、'
+        +'それが<b>建玉自身のモードだと確認できない</b>ものです。'
+        +'2026-09-11 より前は、記録簿にもスナップショットにも「その時に画面で開いていたモード」を'
+        +'そのまま書いていました。'
         +'（例: mtfと記録された6件は 9/02〜9/08 のものですが、その期間のmtfは7,088サンプル中1件しか'
-        +'合図を出していません。）間違ったモードは比較を黙って壊すので、モード不明として扱っています。</span>':'')
+        +'合図を出していません。）間違ったモードは比較を黙って壊すので、モード不明として扱っています。'
+        +'上の集計に残るのは 9/11 以降の、建玉ごとにモードを保存した取引だけです。</span>':'')
     +(BT_CACHE?'':'<br><span class="warn">検証Rが「—」です。「🧠 記録簿を取込」を押すと読み込まれます。</span>')
     +'</div></div>';
 }
@@ -1954,6 +1965,10 @@ async function runBacktestAll(){
 loadRisk&&(()=>{const r=loadRisk();$('#cap').value=r.cap;$('#rpct').value=r.rpct;$('#units').value=r.units;
   if($('#bcap'))$('#bcap').value=r.cap; if($('#brisk'))$('#brisk').value=r.rpct;})();
 try{if(localStorage.getItem('fxnavi_spr_auto')==='1'){var _sa=document.getElementById('sprAuto');if(_sa){_sa.checked=true;toggleSprAuto(_sa);}}}catch(e){}
+/* 端末に残っている記録簿を、集計前にもう一度当てておく。
+   ボタンを押さないと直らない修正は、直っていないのと同じ。
+   通信はせず localStorage のぶんだけ。二度当てても結果は変わらない。 */
+try{ entryLogAttach(); }catch(e){}
 renderJournal();
 try{applySections();}catch(e){}
 try{ setTimeout(function(){ autoSyncCheck(); }, 400); }catch(e){}

@@ -2639,15 +2639,21 @@ class ModeCompareTest(unittest.TestCase):
     これを1つの集計にまとめると、どの数字も意味を失う。
     """
 
+    # modeSrc='position' は「建玉自身のモードを保存した記録」。
+    # これが無いものは、当時の画面モードを写しただけかもしれないので数えない。
     TRADES = [
         # 同じ時間帯・同じ方向のmtf 2件（円が動けば一斉に同じ結果＝独立1回）
-        {"mode": "mtf", "side": "買い", "yen": 820, "pips": 12.4, "sl_pips": 21.0,
+        {"mode": "mtf", "modeSrc": "position", "side": "買い", "yen": 820,
+         "pips": 12.4, "sl_pips": 21.0,
          "opened_at": "2026-09-08 16:38 JST", "closed_at": "2026-09-08 20:10 JST"},
-        {"mode": "mtf", "side": "買い", "yen": -640, "pips": -9.8, "sl_pips": 21.0,
+        {"mode": "mtf", "modeSrc": "position", "side": "買い", "yen": -640,
+         "pips": -9.8, "sl_pips": 21.0,
          "opened_at": "2026-09-08 16:40 JST", "closed_at": "2026-09-08 20:02 JST"},
-        {"mode": "swing", "side": "買い", "yen": 99, "pips": 3.3, "sl_pips": 42.2,
+        {"mode": "swing", "modeSrc": "position", "side": "買い", "yen": 99,
+         "pips": 3.3, "sl_pips": 42.2,
          "opened_at": "2026-09-11 11:15 JST", "closed_at": "2026-09-11 11:22 JST"},
-        {"mode": "day", "side": "売り", "yen": -725, "pips": -8.1, "sl_pips": 15.0,
+        {"mode": "day", "modeSrc": "position", "side": "売り", "yen": -725,
+         "pips": -8.1, "sl_pips": 15.0,
          "opened_at": "2026-09-11 00:37 JST", "closed_at": "2026-09-11 01:10 JST"},
         {"side": "買い", "yen": 300, "pips": 5.0},          # モード不明
     ]
@@ -2716,6 +2722,22 @@ class ModeCompareTest(unittest.TestCase):
         """モード不明は集計に混ぜず、件数を出して気づけるようにすること。"""
         html = self._render()
         self.assertIn("モード不明が1件", html)
+
+    def test_a_mode_without_provenance_is_not_counted(self):
+        """出所の無いモード札は数えないこと。
+
+        実際に起きたこと: 画面には mtf 14件と出ていたが、その札は
+        「当時の運用モード」を写しただけで、mtfの取引ではなかった。"""
+        keep = self.TRADES
+        try:
+            self.TRADES = [dict(x) for x in keep]
+            for x in self.TRADES:
+                x.pop("modeSrc", None)
+            html = self._render()
+        finally:
+            self.TRADES = keep
+        self.assertIn("モード不明が5件", html)
+        self.assertNotIn("2件（独立1）", html, "出所の無い札をモード別に数えている")
 
     def test_the_backtest_expectation_is_shown_next_to_it(self):
         """実測のとなりにバックテストの期待値を置くこと。
@@ -3466,7 +3488,7 @@ class ModeProvenanceTest(unittest.TestCase):
     def test_the_tools_screen_treats_them_as_unknown(self):
         with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
             js = f.read()
-        self.assertIn("x.modeSrc==='operating'", js,
+        self.assertIn("x.modeSrc!=='position'", js,
                       "出所が当てにならない取引をモード別に混ぜている")
         self.assertIn("x.modeSrc=e.mode_src", js, "出所を取引へ持ち回っていない")
 
@@ -3557,6 +3579,113 @@ class HoldTimeRegimeTest(unittest.TestCase):
             hit = tp if side == "tp" else -sl
             self.assertAlmostEqual(real, hit, places=0,
                                    msg=f"建値{entry}: 発注レベルと実約定が一致しない")
+
+
+class ModeSrcRelinkTest(unittest.TestCase):
+    """モードの出所を、既に紐付け済みの取引にも付け直すこと。
+
+    実際に起きたこと: 「当時の運用モード」の札をモード不明に回す修正を入れたのに、
+    画面のモード別くらべは mtf 14件のまま変わらなかった。
+    entryLogAttach が「まだ紐付いていない取引」だけを見ていたため、
+    端末に既にある取引には modeSrc が入らず、判定が一度も働かなかった。
+    """
+
+    def _node(self, script):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def _src(self):
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            return f.read()
+
+    def _attach(self, trades, log):
+        """本物の entryLogAttach を、localStorage を差し替えて動かす。"""
+        src = self._src()
+        i = src.index("function entryLogAttach(){")
+        body = src[i:src.index("\n/* CSV取込だけで", i)]
+        script = ("var _S={};var localStorage={getItem:function(k){return _S[k]||null;},"
+                  "setItem:function(k,v){_S[k]=String(v);}};\n"
+                  "var ENTRYLOG_KEY='fxnavi_entrylog';\n"
+                  + src[src.index("function loadTrades(){"):src.index("function saveTrades(t){")]
+                  + "function saveTrades(t){localStorage.setItem('fxnavi_trades',JSON.stringify(t));}\n"
+                  + "function _elLoad(){return JSON.parse(localStorage.getItem(ENTRYLOG_KEY)||'[]');}\n"
+                  + body
+                  + "\nlocalStorage.setItem('fxnavi_trades'," + json.dumps(json.dumps(trades)) + ");\n"
+                  + "localStorage.setItem(ENTRYLOG_KEY," + json.dumps(json.dumps(log)) + ");\n"
+                  + "entryLogAttach();\n"
+                  + "console.log(JSON.stringify(loadTrades()));\n")
+        return self._node(script)
+
+    def _classify(self, trades):
+        """本物の renderModeCompare の振り分けだけを動かす。"""
+        src = self._src()
+        i = src.index("  var by={}, unknown=[], stale=0;")
+        block = src[i:src.index("  var rows='', any=false;", i)]
+        script = ("var MODE_LABEL_T={scalp:'s',day:'d',swing:'w',mtf:'m'};\n"
+                  "var t=" + json.dumps(trades) + ";\n" + block
+                  + "console.log(JSON.stringify({by:Object.keys(by).reduce("
+                  "function(a,k){a[k]=by[k].length;return a;},{}),"
+                  "unknown:unknown.length,stale:stale}));\n")
+        return self._node(script)
+
+    def test_an_already_linked_trade_gets_its_mode_source(self):
+        """紐付け済み（elSrc あり・modeSrc なし）でも出所が入ること。"""
+        trades = [{"pair": "USD/JPY", "entry": 147.123, "mode": "mtf",
+                   "elSrc": "entrylog", "markSrc": "entrylog"}]
+        log = [{"symbol": "USD_JPY", "entry": 147.123, "mode": "mtf",
+                "mode_src": "operating", "logged_at": "2026-09-05T10:00"}]
+        got = self._attach(trades, log)
+        self.assertEqual(got[0].get("modeSrc"), "operating",
+                         "紐付け済みだからと素通りして、出所が入っていない")
+
+    def test_the_entry_log_overrides_a_snapshot_mode(self):
+        """記録簿のモードは、スナップショット由来のモードより確か。"""
+        trades = [{"pair": "EUR/JPY", "entry": 180.610, "mode": "day",
+                   "modeSrc": "snap-operating", "elSrc": "entrylog"}]
+        log = [{"symbol": "EUR_JPY", "entry": 180.610, "mode": "swing",
+                "mode_src": "position", "logged_at": "2026-09-18T14:19"}]
+        got = self._attach(trades, log)
+        self.assertEqual(got[0]["mode"], "swing")
+        self.assertEqual(got[0]["modeSrc"], "position")
+
+    def test_attaching_twice_changes_nothing(self):
+        """二度押しても結果が変わらないこと（押すたびに増減しては困る）。"""
+        trades = [{"pair": "USD/JPY", "entry": 147.123, "mode": "mtf",
+                   "elSrc": "entrylog"}]
+        log = [{"symbol": "USD_JPY", "entry": 147.123, "mode": "mtf",
+                "mode_src": "operating", "logged_at": "2026-09-05T10:00"}]
+        one = self._attach(trades, log)
+        two = self._attach(one, log)
+        self.assertEqual(one, two)
+
+    def test_only_a_position_labelled_trade_is_counted(self):
+        """建玉自身のモードと確認できたものだけを、モード別に数えること。"""
+        got = self._classify([
+            {"mode": "swing", "modeSrc": "position"},
+            {"mode": "mtf", "modeSrc": "operating"},
+            {"mode": "day", "modeSrc": "snap-operating"},
+            {"mode": "day"},                     # 出所不明の古い記録
+            {},                                  # モードそのものが無い
+        ])
+        self.assertEqual(got["by"], {"swing": 1}, "確認できないモードを数えている")
+        self.assertEqual(got["stale"], 3)
+        self.assertEqual(got["unknown"], 4)
+
+    def test_the_snapshot_path_records_its_source(self):
+        """スナップショットからモードを埋める時も、出所を残すこと。"""
+        src = self._src()
+        i = src.index("function attachSnapScores(")
+        body = src[i:src.index("function _elLoad(", i)]
+        self.assertIn("x.modeSrc='snap-operating'", body,
+                      "画面モードをそのまま建玉のモードとして残している")
 
 
 if __name__ == "__main__":
