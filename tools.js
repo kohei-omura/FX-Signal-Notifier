@@ -688,7 +688,14 @@ function entryLogAttach(){
        ブラウザのスナップショットは画面を開いていた時しか残らない。
        これが欠けると、期待値が確定でマイナスのデイ(-0.079R)と
        mtf(+0.065R)が同じ集計に混ざり、どの数字も意味を失う。 */
-    if(!x.mode&&e.mode) x.mode=e.mode;
+    /* ★モードは出所ごと持ち回る。
+       2026-09-11 より前の記録は、建玉自身のモードではなく【その時の運用モード】を
+       そのまま書いていた。記録簿は 2026-08-10 から、mode.json は 8/26 からなので、
+       8月ぶんは運用モードという概念すら無い時期のもの。
+       実害の証拠: mtf と書かれた6件は 9/02〜9/08 のものだが、その期間の mtf は
+       7,088サンプル中シグナル1件しか出していない＝mtfの取引ではあり得ない。
+       間違ったモードは、モード不明より悪い（比較を黙って壊す）。 */
+    if(!x.mode&&e.mode){ x.mode=e.mode; x.modeSrc=e.mode_src||'operating'; }
     /* 総合判定（マーク別成績の元）。
        記録簿の conf_* はアプリが【エントリーした瞬間】に保存した値なので、
        5分ごとのスナップショットより正確。既に入っていても上書きする。 */
@@ -817,8 +824,11 @@ function renderModeCompare(){
   var el=document.getElementById('modecmp'); if(!el) return;
   var t=loadTrades();
   if(!t.length){ el.innerHTML=''; return; }
-  var by={}, unknown=[];
+  var by={}, unknown=[], stale=0;
   t.forEach(function(x){
+    // 出所が operating（当時の運用モードを書いただけ）のものは信用しない。
+    // 実際に取引したモードとは限らないので、モード不明として扱う。
+    if(x.mode&&x.modeSrc==='operating'){ stale++; unknown.push(x); return; }
     if(x.mode&&MODE_LABEL_T[x.mode]) (by[x.mode]=by[x.mode]||[]).push(x);
     else unknown.push(x);
   });
@@ -882,6 +892,10 @@ function renderModeCompare(){
         +'）。この段階では実測より検証値の方が当てになります。</span>':'')
     +(unknown.length?'<br><span class="warn">モード不明が'+unknown.length+'件あります（上の集計に入っていません）。'
         +'「🧠 記録簿を取込」を押すと紐付きます。記録簿はエントリーを記録し始めた後のぶんしかありません。</span>':'')
+    +(stale?'<br><span class="warn">うち<b>'+stale+'件</b>は、記録簿に<b>当時の運用モード</b>が書かれていたものです。'
+        +'2026-09-11 より前は建玉自身のモードを残していなかったため、実際に取引したモードとは限りません。'
+        +'（例: mtfと記録された6件は 9/02〜9/08 のものですが、その期間のmtfは7,088サンプル中1件しか'
+        +'合図を出していません。）間違ったモードは比較を黙って壊すので、モード不明として扱っています。</span>':'')
     +(BT_CACHE?'':'<br><span class="warn">検証Rが「—」です。「🧠 記録簿を取込」を押すと読み込まれます。</span>')
     +'</div></div>';
 }

@@ -1794,6 +1794,10 @@ def stamp_new_entries(data):
             "side": "買" if side == "long" else "売",
             "entry": entry,                     # ← CSVの「建単価」と対応（突き合わせキー）
             "mode": pmode,
+            # モードの出所。position=建玉自身のモード（正しい）。
+            # 2026-09-11 より前の記録は operating＝その時の運用モードを
+            # そのまま書いていたもので、実際に取引したモードとは限らない。
+            "mode_src": "position",
             "score": round(score, 3) if score is not None else None,
             "tech": round(tech_v, 3) if tech_v is not None else None,
             "fund": round(fund_v, 3) if fund_v is not None else None,

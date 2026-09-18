@@ -3411,5 +3411,65 @@ class ForwardBackfillTest(unittest.TestCase):
         self.assertIn("'(後追い'", src, "モード別の内訳で区別していない")
 
 
+class ModeProvenanceTest(unittest.TestCase):
+    """記録簿のモードが「建玉自身のもの」か「当時の運用モード」かを区別すること。
+
+    2026-09-11 より前は stamp_new_entries が MODE（運用モード）を
+    そのまま書いていた。記録簿は 2026-08-10 から、mode.json は 8/26 からなので、
+    8月ぶんは運用モードという概念すら無い時期のもの。
+    実害の証拠: mtf と記録された6件は 9/02〜9/08 のものだが、その期間の mtf は
+    7,088サンプル中シグナル1件しか出していない＝mtfの取引ではあり得ない。
+    間違ったモードはモード不明より悪い（比較を黙って壊す）。
+    """
+
+    def _entries(self):
+        path = os.path.join(ROOT, "data", "entry_log.json")
+        if not os.path.exists(path):
+            self.skipTest("entry_log.json が無い")
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return d["entries"] if isinstance(d, dict) else d
+
+    def test_every_record_declares_where_its_mode_came_from(self):
+        miss = [x.get("logged_at") for x in self._entries() if not x.get("mode_src")]
+        self.assertEqual(miss, [], f"出所の無い記録がある: {miss[:5]}")
+
+    def test_records_before_the_fix_are_marked_unreliable(self):
+        import datetime as _dt
+        fix = _dt.datetime(2026, 9, 11, 12, 0)
+        for x in self._entries():
+            la = x.get("logged_at")
+            if not la:
+                continue
+            t = _dt.datetime.strptime(la[:16], "%Y-%m-%d %H:%M")
+            want = "position" if t >= fix else "operating"
+            self.assertEqual(x.get("mode_src"), want,
+                             f"{la}: 出所の判定が違う")
+
+    def test_the_mtf_records_are_all_from_the_unreliable_period(self):
+        """mtfと記録された分がすべて修正前であること。
+
+        ここが崩れたら、本当にmtfで取引した記録が混ざったということなので、
+        扱いを見直す必要がある。"""
+        mtf = [x for x in self._entries() if x.get("mode") == "mtf"]
+        self.assertTrue(mtf, "mtfの記録が消えている（前提が変わった）")
+        for x in mtf:
+            self.assertEqual(x.get("mode_src"), "operating",
+                             f"{x.get('logged_at')}: 信用できるmtf記録が現れた")
+
+    def test_the_engine_stamps_the_provenance(self):
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('"mode_src": "position",', src,
+                      "エンジンが出所を残していない")
+
+    def test_the_tools_screen_treats_them_as_unknown(self):
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("x.modeSrc==='operating'", js,
+                      "出所が当てにならない取引をモード別に混ぜている")
+        self.assertIn("x.modeSrc=e.mode_src", js, "出所を取引へ持ち回っていない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
