@@ -1268,7 +1268,7 @@
   "open_positions": [],
   "closed_positions": [],
   "degraded": true,
-  "degraded_at": "2026-09-19 10:46 JST",
+  "degraded_at": "2026-09-19 10:51 JST",
   "warnings": [
     {
       "tag": "api:/ticker",
@@ -1287,10 +1287,6 @@
       "msg": "USD_JPY のローソク足が取得できませんでした"
     },
     {
-      "tag": "ohlc:AUD_JPY",
-      "msg": "AUD_JPY のローソク足が取得できませんでした"
-    },
-    {
       "tag": "ohlc:EUR_JPY",
       "msg": "EUR_JPY のローソク足が取得できませんでした"
     },
@@ -1301,6 +1297,10 @@
     {
       "tag": "mtf:1hour",
       "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
+    },
+    {
+      "tag": "ohlc:AUD_JPY",
+      "msg": "AUD_JPY のローソク足が取得できませんでした"
     },
     {
       "tag": "mtf:4hour",
