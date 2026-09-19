@@ -4229,5 +4229,107 @@ class NotifyKeySecretTest(unittest.TestCase):
         self.assertIn("env.NOTIFY_KEY", src, "Worker側の照合が消えている")
 
 
+class NotifyKeyCheckTest(unittest.TestCase):
+    """通知キーが本当に効いているかを、アプリから確かめられること。
+
+    値を入れ替えたつもりで入れ替わっていない、という間違いは静かに起きる。
+    - Cloudflare側だけ直して端末に入れ忘れた → ⚡ライブ通知が黙って止まる
+    - 端末だけ直してCloudflareを直していない → 同上
+    - どちらも「同じ値」のまま保存し直した → 何も変わっていないのに直した気になる
+    確認にはWorkerへ実際に投げるが、文面は総合判定40%（50%未満）なので
+    LINEには1通も届かない。
+    """
+
+    def _run(self, key, responses, old_sha_of=None):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("var WORKER_PROBE =")
+        body = src[i:src.index("async function workerCheck(){", i)]
+        stub = ("""
+var CALLS=[];
+var RESP=""" + json.dumps(responses) + """;
+function notifyKey(){ return """ + json.dumps(key) + """; }
+global.fetch=async function(url,opt){
+  var m=String(url).match(/[?&]key=([^&]*)/);
+  var k=m?decodeURIComponent(m[1]):'';
+  CALLS.push({key:k, body:JSON.parse(opt.body).text});
+  var r=RESP[k===''?'nokey':'withkey'];
+  return {status:r.status, json:async function(){ return r.body; }};
+};
+""")
+        # 指紋の一致分岐を試す時だけ、比較対象をその場で差し替える
+        swap = ""
+        if old_sha_of is not None:
+            swap = ("OLD_NOTIFY_KEY_SHA=require('crypto').createHash('sha256')"
+                    ".update(" + json.dumps(old_sha_of) + ").digest('hex');\n")
+        script = (stub + body + swap
+                  + "keyCheckLines('https://w.example').then(function(o){"
+                  "console.log(JSON.stringify({lines:o,calls:CALLS}));});\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    GOOD = {"nokey": {"status": 401, "body": {"error": "unauthorized"}},
+            "withkey": {"status": 200, "body": {"ok": True, "skipped": "live-low-score(40%)"}}}
+
+    def test_a_correct_setup_reports_all_green(self):
+        got = self._run("8Kq2vR7xTmP4wZbN9sLdF6yHgJ3cA5eU", self.GOOD)
+        self.assertTrue(all(l.startswith("✅") for l in got["lines"]),
+                        "正しく設定してあるのに警告が出ている: " + str(got["lines"]))
+
+    def test_it_never_sends_a_deliverable_message(self):
+        """確認のたびにLINEへ届いてはいけない。文面は必ず50%未満であること。"""
+        got = self._run("newkey", self.GOOD)
+        for c in got["calls"]:
+            self.assertIn("40%", c["body"], "50%以上の文面で確認している（LINEに届く）")
+            self.assertTrue(c["body"].startswith("⚡ライブ"),
+                            "ライブ以外の文面はWorkerのフィルタを通過して届いてしまう")
+
+    def test_a_missing_key_on_the_worker_is_reported(self):
+        """キー無しで通ってしまう＝誰でも送れる状態を見つけること。"""
+        r = {"nokey": {"status": 200, "body": {"ok": True, "skipped": "live-low-score(40%)"}},
+             "withkey": {"status": 200, "body": {"ok": True, "skipped": "live-low-score(40%)"}}}
+        got = self._run("newkey", r)
+        self.assertTrue(any("誰でも" in l for l in got["lines"]), str(got["lines"]))
+
+    def test_a_mismatched_key_is_reported(self):
+        r = {"nokey": {"status": 401, "body": {"error": "unauthorized"}},
+             "withkey": {"status": 401, "body": {"error": "unauthorized"}}}
+        got = self._run("wrong", r)
+        self.assertTrue(any("一致していません" in l for l in got["lines"]), str(got["lines"]))
+
+    def test_reusing_the_leaked_key_is_reported(self):
+        """作り直したつもりで同じ値のままなら、はっきり言うこと。
+
+        旧キーの平文はここにも書かない（履歴には残っているが、現在のツリーには
+        戻さない）。代わりに、指紋が一致した時の分岐そのものを確かめる。"""
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            js = f.read()
+        i = js.index("var OLD_NOTIFY_KEY_SHA = '")
+        sha = js[i + len("var OLD_NOTIFY_KEY_SHA = '"):].split("'")[0]
+        self.assertRegex(sha, r"^[0-9a-f]{64}$", "指紋の形が違う")
+        got = self._run("__OLD__", self.GOOD, old_sha_of="__OLD__")
+        self.assertTrue(any("公開されていた値のままです" in l for l in got["lines"]),
+                        str(got["lines"]))
+
+    def test_an_empty_key_is_reported(self):
+        got = self._run("", self.GOOD)
+        self.assertTrue(any("未設定" in l for l in got["lines"]), str(got["lines"]))
+        self.assertEqual(got["calls"], [], "キーが無いのにWorkerへ投げている")
+
+    def test_a_new_key_is_not_flagged(self):
+        """作り直した値を『古いままだ』と言わないこと。"""
+        got = self._run("8Kq2vR7xTmP4wZbN9sLdF6yHgJ3cA5eU", self.GOOD)
+        self.assertFalse(any("公開されていた値のままです" in l for l in got["lines"]),
+                         str(got["lines"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

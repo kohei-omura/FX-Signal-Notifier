@@ -1117,6 +1117,63 @@ function renderSweep(backtest, mode){
    どちらも50%未満なので【LINEには送られない】。返ってくる理由の数字だけで版が分かる。 */
 var WORKER_PROBE = "⚡ライブ 疎通確認（送信されません）\n🎯総合判定 🔴 見送り（40% 6.5/12）";
 
+/* 以前このリポジトリに平文で入っていた通知キーの指紋(SHA-256)。
+   値そのものはコミット履歴に残っていて誰でも読めるので、指紋を置いても
+   新しく漏れるものは無い。目的は「作り直したつもりで同じ値のままだった」を
+   後から何度でも検出できるようにすること。 */
+var OLD_NOTIFY_KEY_SHA = 'e28f1da84158acfe48c3414ef8a264d8db3ab5cacb199cab0a1ea0d30971a431';
+async function _sha256(s){
+  try{
+    var b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.prototype.map.call(new Uint8Array(b),
+      function(x){ return ('0'+x.toString(16)).slice(-2); }).join('');
+  }catch(e){ return null; }
+}
+/* 通知キーが本当に効いているかを、Workerに実際に投げて確かめる。
+   使う文面は WORKER_PROBE（総合判定40%＝50%未満なのでLINEには出ない）。
+   つまり何度押してもLINEには1通も届かない。 */
+async function _probe(base,key){
+  try{
+    var r=await fetch(base+'?action=notify'+(key?('&key='+encodeURIComponent(key)):''),
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({text:WORKER_PROBE})});
+    var j=null; try{ j=await r.json(); }catch(e){}
+    return {status:r.status, j:j,
+            unauthorized:(r.status===401||(j&&j.error==='unauthorized')),
+            skipped:!!(j&&typeof j.skipped==='string'), ok:!!(j&&j.ok)};
+  }catch(e){ return {err:(e&&e.message)||String(e)}; }
+}
+async function keyCheckLines(base){
+  var out=[];
+  var k=(typeof notifyKey==='function')?notifyKey():'';
+  if(!k){
+    out.push('⛔ <b>通知キーが未設定です。</b>ダッシュボードの⚙→「通知キー」に'
+      +'Cloudflareと同じ値を入れてください。このままでは⚡ライブ通知は送られません。');
+    return out;
+  }
+  // ① キー無しで送ってみる。通ってしまうなら Worker 側にキーが設定されていない
+  var a=await _probe(base,'');
+  if(a.err) out.push('⛔ 通知エンドポイントに届きません: '+a.err);
+  else if(a.unauthorized) out.push('✅ キー無しの送信は拒否されました（Worker側でキーが効いています）');
+  else out.push('⛔ <b>キー無しでも送信できます。</b>CloudflareのNOTIFY_KEYが未設定です。'
+      +'この状態では、URLを知っている人なら誰でもあなたのLINEへ送信できます。');
+  // ② 端末に入れたキーで送ってみる
+  var b=await _probe(base,k);
+  if(b.err) out.push('⛔ 通知エンドポイントに届きません: '+b.err);
+  else if(b.unauthorized) out.push('⛔ <b>端末のキーがWorkerと一致していません。</b>'
+      +'⚙に入れた値と、CloudflareのNOTIFY_KEYを見比べてください'
+      +'（前後の空白や、保存後のDeployもれに注意）。');
+  else if(b.skipped||b.ok) out.push('✅ <b>端末のキーで通ります。</b>⚡ライブ通知を送信できます。');
+  else out.push('❓ 想定外の応答: '+JSON.stringify(b.j).slice(0,120));
+  // ③ 以前公開されていた値のままになっていないか
+  var h=await _sha256(k);
+  if(h==null) out.push('❓ 端末側で指紋を計算できませんでした（古いブラウザ）。');
+  else if(h===OLD_NOTIFY_KEY_SHA) out.push('⛔ <b>以前このリポジトリに公開されていた値のままです。</b>'
+      +'値を変えないと作り直したことになりません。');
+  else out.push('✅ 以前公開されていた値とは別の値です（作り直せています）');
+  return out;
+}
+
 async function workerCheck(){
   var el=document.getElementById('workerchk'); if(!el) return;
   var box=function(cls,html){ el.innerHTML='<button class="bgo" onclick="workerCheck()">もう一度確認する</button>'
@@ -1136,15 +1193,18 @@ async function workerCheck(){
   out.push(relay?('✅ 価格中継: 正常（'+relay+'通貨）')
                 :'⛔ <b>価格中継が応答しません。</b>ライブ価格とライブ通知が止まります。');
 
-  // 2) 配置されている版（LINEには送らない文面で判別する）
+  // 2) 通知キー（設定できているか・Workerと一致するか・作り直せているか）
+  try{ out=out.concat(await keyCheckLines(base)); }
+  catch(e){ out.push('❓ 通知キーの確認に失敗: '+((e&&e.message)||e)); }
+
+  // 3) 配置されている版（LINEには送らない文面で判別する）
   var _k=(typeof notifyKey==='function')?notifyKey():'';
-  if(!_k){ out.push('⚠️ 通知キーが未設定です（ダッシュボードの⚙で設定）。Workerの版を確認できません。'); }
   var key=_k?('&key='+encodeURIComponent(_k)):'';
   try{
     var pr=await fetch(base+'?action=notify'+key,{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({text:WORKER_PROBE})});
     var pj=await pr.json();
-    if(pj&&pj.error){ out.push('⛔ Workerがエラーを返しました: '+String(pj.error)); }
+    if(pj&&pj.error){ out.push('（版の判別は通知キーが通ってからになります）'); }
     else if(pj&&typeof pj.skipped==='string'){
       if(pj.skipped.indexOf('40%')>=0)
         out.push('✅ <b>最新版が配置されています。</b>小数の得点を正しく読めています。');
