@@ -89,11 +89,12 @@ class RunTestCase(unittest.TestCase):
         # 前向き検証のファイルもテスト用に逃がす。逃がさないと main() の決着判定が
         # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
-        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE"):
+        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE", "NEAR_FILE"):
             self.addCleanup(setattr, F, _n, getattr(F, _n))
         F.FWD_LOG_FILE = p("forward_log.json")
         F.FWD_CLOSE_FILE = p("forward_close.json")
         F.SUB_STATE_FILE = p("sub_signals.json")
+        F.NEAR_FILE = p("near_miss.json")
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
             {"id": "t1", "symbol": "USD_JPY", "side": "long",
@@ -4427,6 +4428,37 @@ class NearMissTest(unittest.TestCase):
                   encoding="utf-8") as f:
             y = f.read()
         self.assertIn("data/near_miss.json", y, "保存しても push されない")
+
+
+class StateFilePathTest(unittest.TestCase):
+    """エンジンが書き出す状態ファイルを、テストが必ず逃がしていること。
+
+    同じ事故を何度も起こしている。逃がし忘れると、テストを走らせただけで
+    リポジトリの data/ に偽のデータが書かれ、そのままコミットされる
+    （実際 near_miss.json が mode:"day" の架空データで commit された）。
+    新しい状態ファイルを足した時に、ここが落ちて気づけるようにする。
+    """
+
+    def test_every_written_state_file_is_sandboxed(self):
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        # data_path(...) で作られ、書き出しにも使われる定数を拾う
+        written = set()
+        for m in re.finditer(r"^([A-Z][A-Z0-9_]*)\s*=\s*data_path\(", src, re.M):
+            name = m.group(1)
+            # 読むだけのもの（backtest.json など）は対象外。書き出す形だけを拾う。
+            if re.search(r"open\(\s*" + name + r"\s*,\s*[\"']w", src) or \
+               re.search(r"\b" + name + r"\s*\+\s*[\"']\.tmp", src) or \
+               re.search(r"write_json\(\s*" + name + r"\b", src):
+                written.add(name)
+        self.assertTrue(written, "書き出す状態ファイルを1つも見つけられていない")
+        with open(os.path.join(ROOT, "tests", "test_fx_signal.py"), encoding="utf-8") as f:
+            tsrc = f.read()
+        i = tsrc.index("class RunTestCase")
+        setup = tsrc[i:tsrc.index("\n    def write(", i)]
+        missing = [n for n in sorted(written) if n not in setup]
+        self.assertEqual(missing, [],
+                         f"テストが逃がしていない状態ファイルがある: {missing}")
 
 
 if __name__ == "__main__":
