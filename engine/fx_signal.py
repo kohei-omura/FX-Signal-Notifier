@@ -1758,6 +1758,45 @@ def update_near_miss(gaps, fired):
     return d
 
 
+# ===== スプレッドの実測と、それが広すぎる場面の扱い =====
+# 1週間ぶんの status.json を数えると、6〜8時台と23時台はスプレッドが桁違いに開く。
+#   AUD/JPY 通常0.7 → 最大7.4pips ／ GBP/JPY 通常0.9 → 最大14.8pips
+# 開いている間は、仲値が動かなくても【売値(bid)だけ】が下がる。
+# 買い建てのSLは売値で判定するので、相場が動いていないのにSLに触れる。
+# 実例 2026-09-22 AUD/JPY（SL幅8.2pips の建玉）:
+#   05:41 bid 112.052 / ask 112.059（0.7pips）仲値 112.056
+#   05:51 bid 111.999 / ask 112.073（7.4pips）仲値 112.036  ← SL111.999に「到達」
+#   仲値は2.0pipsしか下げていないのに、売値は5.3pips下げている。
+# バックテストは固定スプレッド(0.5〜0.9pips)で回しているので、この場面は
+# 一度も検証していない。検証していない場面で合図を出してはいけない。
+SPREAD_WIDE_MULT = 3.0    # 普段の何倍から「拡大中」とみなすか
+SPREAD_COST_MAX = 0.15    # スプレッドが1R(SL幅)のこの割合を超えたら新規を見送る
+
+
+def spread_state(symbol, ticker):
+    """いまのスプレッドと、それが普段の何倍か。取れなければ None。"""
+    t = (ticker or {}).get(symbol) or {}
+    b, a = t.get("bid"), t.get("ask")
+    if not b or not a or a <= b:
+        return None
+    pips = (a - b) / PIP_SIZE
+    base = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS)
+    return {"pips": round(pips, 1), "base": base,
+            "mult": round(pips / base, 1) if base else None,
+            "wide": bool(base and pips >= base * SPREAD_WIDE_MULT)}
+
+
+def spread_blocks_entry(sp, sl_pips):
+    """スプレッドが1R(SL幅)を食い過ぎているか。食い過ぎなら見送る理由を返す。"""
+    if not sp or not sl_pips:
+        return None
+    cost = sp["pips"] / sl_pips
+    if cost <= SPREAD_COST_MAX:
+        return None
+    return (f"スプレッドが広すぎる（{sp['pips']}pips＝SL幅{sl_pips}pipsの{cost*100:.0f}%"
+            + (f"・普段の{sp['mult']}倍" if sp.get("mult") else "") + "）")
+
+
 def pair_bias(score, rsi, aligned):
     """シグナルが出ていない時にカードへ出す『今どんな状態か』。
 
@@ -2313,7 +2352,23 @@ def position_advice(p, ticker, sc, prev_mfe=None):
         return (f"{kind}に接触（{price:.3f}）— 現在値は{cur:.3f}まで戻しています。"
                 f"GMOのOCOが約定済みか確認してください")
 
-    if hit_sl:
+    # スプレッドが開いただけでSLに触れていないか。
+    # 買い建てのSLは売値で判定する。スプレッドが開くと、仲値が動かなくても
+    # 売値だけが下がってSLに届く。仲値がまだSLの手前なら、下げたのは相場ではない。
+    spw = spread_state(sym, ticker)
+    mid = (bid + ask) / 2.0
+    spread_driven = bool(hit_sl and spw and spw.get("wide")
+                         and ((side == "long" and mid > sl_pr)
+                              or (side == "short" and mid < sl_pr)))
+    if hit_sl and spread_driven:
+        level, label = "watch", "🟡 SL接触（スプレッド拡大中）"
+        reason = (f"売値だけがSL({sl_pr:.3f})に触れています。"
+                  f"スプレッドが{spw['pips']}pips（普段の{spw['mult']}倍）まで開いており、"
+                  f"仲値は{mid:.3f}でまだSLより{(mid - sl_pr) * d / PIP_SIZE:.1f}pips手前です。"
+                  f"相場が下げたのではなく、スプレッドが開いた結果です。"
+                  f"GMOのOCOは自社の売値で判定するので、約定していない可能性があります。"
+                  f"スプレッドが戻るまで待ってから決めてください")
+    elif hit_sl:
         level, label, reason = "cut", "🛑 損切り推奨", _reached("SL", sl_pr)
     elif aligned <= -ADV_OPP and profit <= 0:
         level, label, reason = "cut", "🛑 損切り推奨", f"入った根拠が消えた（{basis}）のに含み損"
@@ -2499,6 +2554,13 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                 sig = None; skip_reason = "同じ通貨を逆方向で保有中（両建てを回避）"
         if sig and risk_full:
             sig = None; skip_reason = "合計リスクが上限のため見送り"
+        # スプレッドが1R(SL幅)を食い過ぎている場面は、検証した条件の外にある。
+        # 実測で6〜8時台と23時台は普段の10倍近くまで開く。
+        spw = spread_state(sym, ticker)
+        if sig:
+            _blk = spread_blocks_entry(spw, sc.get("sl_pips"))
+            if _blk:
+                sig = None; skip_reason = _blk
         bias = pair_bias(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
         gaps[sym] = entry_gap(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
         if sig:
@@ -2526,8 +2588,13 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             "blackout": blackout,
             # スプレッドが1R(=SL幅)の何割を食うか。SLが狭いほど致命的になる。
             # 実データでは scalp が平均0.347R（勝率が10pt上がっても取り返せない水準）。
-            "cost_r": round(SPREAD_PIPS.get(sym, DEFAULT_SPREAD_PIPS) / sc["sl_pips"], 3)
-                      if sc.get("sl_pips") else None,
+            # ★いまのスプレッドで出す。固定表(0.2〜0.9pips)で出していた頃は、
+            #   実際に7.4pips開いていた場面でも「2%」と表示していた（実際は90%）。
+            "cost_r": round((spw["pips"] if spw else SPREAD_PIPS.get(sym, DEFAULT_SPREAD_PIPS))
+                            / sc["sl_pips"], 3) if sc.get("sl_pips") else None,
+            "cost_r_base": round(SPREAD_PIPS.get(sym, DEFAULT_SPREAD_PIPS) / sc["sl_pips"], 3)
+                            if sc.get("sl_pips") else None,
+            "spread": spw,
             "mtf": mtf,
             # 実測(1年)の型別プロファイル。判定には使わず、表示だけに使う。
             "fast": fast_profile(sc, sig),

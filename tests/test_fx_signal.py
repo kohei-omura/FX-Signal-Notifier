@@ -4590,5 +4590,119 @@ class SubSignalStripTest(unittest.TestCase):
                       "マークと合図の有無を取り違える書き方になっている")
 
 
+class SpreadBlowoutTest(unittest.TestCase):
+    """スプレッドが開いただけで「損切り推奨」を出さないこと。
+
+    実際に起きたこと（2026-09-22 05:51 AUD/JPY・SL幅8.2pipsの建玉）:
+      05:41 bid 112.052 / ask 112.059（0.7pips）仲値 112.056
+      05:51 bid 111.999 / ask 112.073（7.4pips）仲値 112.036  ← SL111.999に「到達」
+    仲値は2.0pipsしか下げていないのに売値は5.3pips下げている。
+    相場が下げたのではなく、ロールオーバーでスプレッドが10倍に開いただけ。
+    買い建てのSLは売値で判定するので、こうなると勝手にSLへ届く。
+    GMO側のOCOは約定しておらず、建玉は残ったままだった。
+
+    1週間の実測では 6〜8時台と23時台に毎日起きている
+    （AUD/JPY 通常0.7→最大7.4pips ／ GBP/JPY 通常0.9→最大14.8pips）。
+    """
+
+    TICK_WIDE = {"AUD_JPY": {"bid": 111.999, "ask": 112.073}}
+    TICK_CALM = {"AUD_JPY": {"bid": 111.999, "ask": 112.006}}
+    POS = {"id": "x", "symbol": "AUD_JPY", "side": "long", "entry": 112.081,
+           "lot": 4000, "status": "open", "tp_pips": 13.1, "sl_pips": 8.2,
+           "opened_at": "2026-09-22 04:38 JST"}
+
+    def setUp(self):
+        self.addCleanup(setattr, F, "MODE", F.MODE)
+        self.addCleanup(setattr, F, "P", F.P)
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        self.addCleanup(setattr, F, "get_ohlc", F.__dict__["get_ohlc"])
+        F.get_ohlc = lambda sym: []          # 足の高安による救済は使わない
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda sym: {"aligned": 1, "label": "1h↑ / 4h↑"}
+        self.addCleanup(setattr, F, "upcoming_news", F.__dict__["upcoming_news"])
+        F.upcoming_news = lambda sym: None
+
+    SC = {"atr": 0.0418, "score": -0.1, "rsi": 45, "adx": 20, "sl_pips": 8.2, "tp_pips": 13.1}
+
+    def test_the_spread_state_is_measured(self):
+        sp = F.spread_state("AUD_JPY", self.TICK_WIDE)
+        self.assertAlmostEqual(sp["pips"], 7.4, places=1)
+        self.assertTrue(sp["wide"], "普段の10倍でも『拡大中』と見ていない")
+        sp2 = F.spread_state("AUD_JPY", self.TICK_CALM)
+        self.assertFalse(sp2["wide"])
+
+    def test_a_wide_spread_is_not_a_stop_loss(self):
+        """仲値がまだSLの手前なら、損切り推奨にしないこと。"""
+        adv = F.position_advice(self.POS, self.TICK_WIDE, self.SC)
+        self.assertEqual(adv["level"], "watch", adv["reason"])
+        self.assertIn("スプレッド", adv["label"])
+        self.assertIn("仲値", adv["reason"])
+
+    def test_it_does_not_notify_for_that(self):
+        """通知が飛ぶのは take / cut と『利確検討』だけ。ここに混ぜないこと。"""
+        adv = F.position_advice(self.POS, self.TICK_WIDE, self.SC)
+        actionable = adv["level"] in ("take", "cut") or (
+            adv["level"] == "watch" and "利確検討" in adv["label"])
+        self.assertFalse(actionable, "スプレッド拡大で損切り通知が飛ぶ")
+
+    def test_a_real_drop_is_still_a_stop_loss(self):
+        """本当に相場が下げた時は、今までどおり損切り推奨を出すこと。"""
+        adv = F.position_advice(self.POS, self.TICK_CALM, self.SC)
+        self.assertEqual(adv["level"], "cut", adv["reason"])
+        self.assertIn("損切り", adv["label"])
+
+    def test_a_wide_spread_below_the_stop_is_still_a_stop_loss(self):
+        """スプレッドが開いていても、仲値がSLを割っていれば本物の損切り。"""
+        tick = {"AUD_JPY": {"bid": 111.950, "ask": 112.024}}   # 仲値111.987 < SL111.999
+        adv = F.position_advice(self.POS, tick, self.SC)
+        self.assertEqual(adv["level"], "cut", adv["reason"])
+
+    def test_a_wide_spread_blocks_a_new_signal(self):
+        """検証していない場面（スプレッドが1Rの15%超）では新規を出さないこと。"""
+        sp = F.spread_state("AUD_JPY", self.TICK_WIDE)
+        why = F.spread_blocks_entry(sp, 8.2)
+        self.assertIsNotNone(why, "SL幅の90%をスプレッドが食うのに通している")
+        self.assertIn("スプレッド", why)
+
+    def test_a_normal_spread_does_not_block(self):
+        sp = F.spread_state("AUD_JPY", self.TICK_CALM)
+        self.assertIsNone(F.spread_blocks_entry(sp, 8.2))
+
+    def test_a_tight_stop_is_blocked_before_a_wide_one(self):
+        """同じスプレッドでも、SL幅が広ければ通ること（割合で見ている）。"""
+        sp = F.spread_state("AUD_JPY", self.TICK_WIDE)
+        self.assertIsNotNone(F.spread_blocks_entry(sp, 8.2))    # 90%
+        self.assertIsNone(F.spread_blocks_entry(sp, 60.0))      # 12%
+
+    def test_the_card_warns_when_the_spread_is_wide(self):
+        """画面にも、開いていることをはっきり出すこと。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("スプレッド拡大中", src, "画面に出していない")
+        self.assertIn("${_sprBox}", src, "カードに差し込んでいない")
+        self.assertIn("_spNow.wide", src, "サーバーの判定を使っていない")
+
+    def test_the_card_cost_uses_the_stop_width(self):
+        """コスト%の分母をSL幅(=1R)にそろえること。
+
+        以前はTP幅で割っていたため、同じアプリの中でサーバーの cost_r と
+        別の数字が並んでいた。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("(_sprPips&&p.sl_pips)?(_sprPips/p.sl_pips*100)", src)
+        self.assertNotIn("_spr/p.tp_pips*100", src, "TP幅で割る式が残っている")
+
+    def test_the_cost_uses_the_live_spread(self):
+        """カードのコスト表示を固定表で出さないこと。
+
+        固定表(0.5pips)だと、実際7.4pips開いている場面でも2%と出る（実際は90%）。"""
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index('"spread": spw,')          # カードに載せている所だけを見る
+        card = src[i - 700:i + 100]
+        self.assertIn('spw["pips"]', card, "実スプレッドを使っていない")
+        self.assertIn('"cost_r_base"', card, "固定表での値も残していない（比較できない）")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

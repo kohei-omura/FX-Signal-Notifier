@@ -1840,14 +1840,33 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   // 損失のほぼ全部がコストだった。だからコストは常に金額で見えている必要がある。
   var _lotForCost=(function(){ var L=(p.sl_pips!=null)?recLot(p.sl_pips,p.bid):null;
     return (L&&L.units>=1000)?L.units:10000; })();
-  var _costYen=(SPREAD[p.symbol]!=null)?SPREAD[p.symbol]*PS_*_lotForCost:null;
+  /* ★スプレッドは【いまの値】を使う。固定表(0.2〜0.9pips)で出していた頃は、
+     実際に7.4pips開いている場面でも「コスト2%」と表示していた（実際は90%）。
+     サーバーが status.json に spread{pips,base,mult,wide} を載せる。 */
+  var _spNow=p.spread||null;
+  var _sprPips=_spNow?_spNow.pips:(SPREAD[p.symbol]!=null?SPREAD[p.symbol]:null);
+  var _costYen=(_sprPips!=null)?_sprPips*PS_*_lotForCost:null;
   var _costBadge=(_costR!=null&&_costR>=0.15)
     ? '<div class="entry"><div class="er">⚠️ スプレッドが1リスクの<b>'+Math.round(_costR*100)+'%</b>'
       +'（この幅では勝率が上がってもコストで削られます。足の長いスタイルを検討してください）</div></div>'
     : '';
-  var _spr=SPREAD[p.symbol],_cr=(_spr&&p.tp_pips)?(_spr/p.tp_pips*100):null;
+  /* 分母はSL幅(=1R)。以前はTP幅で割っていたため、同じアプリの中で
+     サーバーの cost_r（SL幅基準）と別の数字が並んでいた。 */
+  var _cr=(_sprPips&&p.sl_pips)?(_sprPips/p.sl_pips*100):null;
   var _crCls=_cr==null?'':(_cr<10?'ok':(_cr<15?'warn':'hot')),_crWarn=(_cr!=null&&_cr>=15)?' スプレッド負けリスク大':'';
   var costChip=_cr!=null?`<span class="chip cost ${_crCls}">コスト <b>${_cr.toFixed(0)}%</b>${_crWarn}</span>`:'';
+  /* スプレッドが普段より大きく開いている時は、はっきり言う。
+     開いている間は仲値が動かなくても売値だけ下がるので、買い建てのSLに
+     勝手に届く（実例 2026-09-22 AUD/JPY：仲値2.0pipsの下げで売値は5.3pips下げ、
+     SL幅8.2pipsの建玉が「SL到達」になった）。 */
+  var _sprBox=(_spNow&&_spNow.wide)
+    ? '<div class="entry down"><div class="ev">⚠️ スプレッド拡大中</div><div class="er">'
+      +'いま <b>'+_spNow.pips+'pips</b>（普段の'+_spNow.mult+'倍）'
+      +(p.sl_pips?'＝SL幅'+p.sl_pips+'pipsの<b>'+Math.round(_spNow.pips/p.sl_pips*100)+'%</b>':'')
+      +'。この間は相場が動かなくても<b>売値だけ</b>が下がるため、買い建てのSLに届くことがあります。'
+      +'新規はスプレッドが戻ってからにしてください（6〜8時台と23時台に毎日起きています）。'
+      +'</div></div>'
+    : '';
   // 機能3: レジームチップ
   var regChip=p.regime?`<span class="chip regime ${p.regime.cls}">${p.regime.ic}レジーム <b>${p.regime.lab}</b>(${p.regime.pct}%)</span>`:'';
   // 上位足(MTF)チップ — サーバーが status.json に書いた 1h/4h のトレンド方向を表示
@@ -1871,7 +1890,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     <div class="sparkwrap" style="position:relative">${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}${sparkSignal(p)}</div>
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${nearBox(p)}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${_sprBox}${nearBox(p)}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
 function toggleDetail(sym,btn){try{var card=btn.parentNode;var willOpen=card.classList.contains('simple');card.classList.toggle('simple',!willOpen);localStorage.setItem('fxnavi_acc_'+sym,willOpen?'1':'0');btn.textContent=willOpen?'▲ 詳細を閉じる':'▼ 詳細';}catch(e){}}
 function setView(v){try{localStorage.setItem('fxnavi_view',v);var i=0;var keys=[];for(i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('fxnavi_acc_')===0)keys.push(k);}keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}renderViewToggle();render();}
 function renderViewToggle(){var el=document.getElementById('viewtog');if(!el)return;var v='simple';try{v=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}
