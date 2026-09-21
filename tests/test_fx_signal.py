@@ -4331,5 +4331,103 @@ global.fetch=async function(url,opt){
                          str(got["lines"]))
 
 
+class NearMissTest(unittest.TestCase):
+    """合図が出ない日に「どこまで近づいたか」を残すこと。
+
+    実際に起きたこと: mtfが10日近く沈黙し、それが不具合なのか相場なのか
+    区別が付かなかった。原因は上位足の判定に形成中の足が混ざっていたことで、
+    相場のせいではなかったが、判断材料が無いので取り違えた。
+    毎日「あと何ポイントだったか」が残っていれば、黙っていることが正常かを
+    その場で判断できる。
+    """
+
+    def setUp(self):
+        self.addCleanup(setattr, F, "MODE", F.MODE)
+        self.addCleanup(setattr, F, "P", F.P)
+        self._orig_near = F.NEAR_FILE
+        self.addCleanup(setattr, F, "NEAR_FILE", self._orig_near)
+        self.tmp = tempfile.mkdtemp()
+        F.NEAR_FILE = os.path.join(self.tmp, "near_miss.json")
+
+    def _mtf(self):
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+
+    def _day(self):
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+
+    def test_mtf_buy_counts_down_to_the_pullback(self):
+        """上位足が上昇なら、RSIが40に下がるまでの不足分を出すこと。"""
+        self._mtf()
+        g = F.entry_gap(0.1, 48.6, 1)
+        self.assertEqual(g["label"], "RSI")
+        self.assertEqual(g["need"], 40)
+        self.assertAlmostEqual(g["gap"], 8.6, places=1)
+
+    def test_mtf_sell_counts_up_to_the_bounce(self):
+        self._mtf()
+        g = F.entry_gap(0.1, 52.5, -1)
+        self.assertEqual(g["need"], 60)
+        self.assertAlmostEqual(g["gap"], 7.5, places=1)
+
+    def test_a_met_condition_is_not_positive(self):
+        """条件を満たしていれば不足分は0以下になること。"""
+        self._mtf()
+        self.assertLessEqual(F.entry_gap(0.1, 38.0, 1)["gap"], 0)
+        self.assertLessEqual(F.entry_gap(0.1, 61.0, -1)["gap"], 0)
+
+    def test_a_range_higher_timeframe_has_no_condition(self):
+        """上位足がレンジなら、そもそも合図が出ようがない＝Noneであること。
+
+        ここを0扱いにすると『あと0で出る』と読めてしまう。"""
+        self._mtf()
+        self.assertIsNone(F.entry_gap(0.1, 50.0, 0))
+        self.assertIsNone(F.entry_gap(0.1, 50.0, None))
+
+    def test_score_modes_count_down_to_the_threshold(self):
+        self._day()
+        g = F.entry_gap(-0.31, 50.0, 0)
+        self.assertEqual(g["label"], "スコア")
+        self.assertAlmostEqual(g["need"], 0.40, places=2)
+        self.assertAlmostEqual(g["gap"], 0.09, places=3)   # 売り方向でも不足分は同じ
+
+    def test_it_keeps_the_closest_of_the_day(self):
+        self._mtf()
+        F.update_near_miss({"USD_JPY": F.entry_gap(0, 55.0, 1)}, set())
+        F.update_near_miss({"USD_JPY": F.entry_gap(0, 40.8, 1)}, set())
+        F.update_near_miss({"USD_JPY": F.entry_gap(0, 58.0, 1)}, set())
+        d = json.load(open(F.NEAR_FILE, encoding="utf-8"))
+        self.assertAlmostEqual(d["pairs"]["USD_JPY"]["best"], 0.8, places=1)
+        self.assertAlmostEqual(d["pairs"]["USD_JPY"]["now"], 40.8, places=1)
+
+    def test_it_counts_the_signals_that_did_fire(self):
+        self._mtf()
+        F.update_near_miss({"USD_JPY": F.entry_gap(0, 38.0, 1)}, {"USD_JPY"})
+        F.update_near_miss({"USD_JPY": F.entry_gap(0, 37.0, 1)}, {"USD_JPY"})
+        d = json.load(open(F.NEAR_FILE, encoding="utf-8"))
+        self.assertEqual(d["pairs"]["USD_JPY"]["fired"], 2)
+
+    def test_it_starts_over_when_the_mode_changes(self):
+        """別モードの最接近を混ぜないこと（足も条件も別物）。"""
+        self._mtf()
+        F.update_near_miss({"USD_JPY": F.entry_gap(0, 40.8, 1)}, set())
+        self._day()
+        F.update_near_miss({"USD_JPY": F.entry_gap(0.30, 50.0, 0)}, set())
+        d = json.load(open(F.NEAR_FILE, encoding="utf-8"))
+        self.assertEqual(d["mode"], "day")
+        self.assertEqual(d["pairs"]["USD_JPY"]["label"], "スコア")
+
+    def test_the_card_shows_it(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("function nearBox(p)", src, "画面に出していない")
+        self.assertIn("${nearBox(p)}", src, "カードに差し込んでいない")
+
+    def test_the_workflow_commits_it(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "fx-signal.yml"),
+                  encoding="utf-8") as f:
+            y = f.read()
+        self.assertIn("data/near_miss.json", y, "保存しても push されない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1699,6 +1699,65 @@ def can_signal(want, symbol=None):
     return (hi >= th) if want > 0 else (lo <= -th)
 
 
+NEAR_FILE = data_path("near_miss.json")
+
+
+def entry_gap(score, rsi, aligned):
+    """合図の条件まで、あとどれだけ足りないかを返す。
+
+       {"now":いまの値, "need":必要な値, "label":"RSI"/"スコア", "gap":不足分}
+       gap<=0 なら条件を満たしている。判定しようがない時は None
+       （mtfで上位足がレンジの時など。そもそもこの足では合図が出ない）。
+
+       なぜ要るか: 合図が出ない日が続くと「壊れているのか、相場が条件を
+       出していないのか」が区別できない。実際その区別が付かなくなり、
+       10日近く原因を取り違えた。あと何ポイントだったかが残っていれば、
+       黙っていることが正常かどうかを毎日その場で判断できる。"""
+    if P.get("rule") == "mtf_pullback":
+        if rsi is None or not aligned:
+            return None
+        lo, hi = MTF_PULLBACK_RSI
+        if aligned == 1:
+            return {"now": round(rsi, 1), "need": lo, "label": "RSI",
+                    "way": "下", "gap": round(rsi - lo, 1)}
+        return {"now": round(rsi, 1), "need": hi, "label": "RSI",
+                "way": "上", "gap": round(hi - rsi, 1)}
+    if score is None:
+        return None
+    th = P["th"]
+    return {"now": round(abs(score), 3), "need": th, "label": "スコア",
+            "way": "上", "gap": round(th - abs(score), 3)}
+
+
+def update_near_miss(gaps, fired):
+    """その日いちばん条件に近づいたところを、通貨ごとに残す。
+
+       gaps: {symbol: entry_gap() の戻り} / fired: 今回合図が出た symbol の集合。
+       日付かモードが変わったら作り直す（別モードの最接近を混ぜない）。"""
+    now = datetime.datetime.now(JST)
+    today = now.strftime("%Y-%m-%d")
+    d = _fwd_read(NEAR_FILE, {}) or {}
+    if d.get("date") != today or d.get("mode") != MODE:
+        d = {"date": today, "mode": MODE, "pairs": {}}
+    for sym, g in gaps.items():
+        cur = d["pairs"].setdefault(sym, {"best": None, "at": None, "fired": 0})
+        if g is not None and (cur.get("best") is None or g["gap"] < cur["best"]):
+            cur.update({"best": g["gap"], "at": now.strftime("%H:%M"),
+                        "now": g["now"], "need": g["need"], "label": g["label"],
+                        "way": g["way"]})
+        if sym in fired:
+            cur["fired"] = int(cur.get("fired") or 0) + 1
+    d["updated"] = now.strftime("%Y-%m-%d %H:%M")
+    try:
+        tmp = NEAR_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, NEAR_FILE)
+    except Exception as e:
+        warn(f"最接近の記録を保存できませんでした: {e}", tag="near-save", surface=False)
+    return d
+
+
 def pair_bias(score, rsi, aligned):
     """シグナルが出ていない時にカードへ出す『今どんな状態か』。
 
@@ -2397,6 +2456,7 @@ def held_directions(data):
 def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_signals=None):
     """status.json を書き出し、(通知本文リスト, 通知したシグナルの一覧) を返す。"""
     pairs, notify, sig_events = [], [], []
+    gaps, fired_today = {}, set()
     held = held_directions(data) if BLOCK_DUPLICATE else set()
     risk_now = open_risk_yen(data)
     risk_cap = ACCOUNT_JPY * RISK_CAP_PCT / 100 if ACCOUNT_JPY > 0 else 0
@@ -2440,6 +2500,9 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         if sig and risk_full:
             sig = None; skip_reason = "合計リスクが上限のため見送り"
         bias = pair_bias(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
+        gaps[sym] = entry_gap(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
+        if sig:
+            fired_today.add(sym)
 
         entry = {}
         if market_open and sig:
@@ -2552,6 +2615,13 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         elif p.get("status") == "closed":
             closed_pos.append({k:p.get(k) for k in
                 ("id","symbol","side","entry","close_price","close_pips","close_yen","close_reason","closed_at")})
+
+    # その日の最接近を更新し、各通貨のカードに載せる。
+    # 「合図が出ていない」と「仕組みが止まっている」を毎日その場で見分けるため。
+    near = update_near_miss(gaps, fired_today) if market_open else _fwd_read(NEAR_FILE, {})
+    for p in pairs:
+        nb = ((near or {}).get("pairs") or {}).get(p["symbol"])
+        p["near"] = dict(nb, gap_now=(gaps.get(p["symbol"]) or {}).get("gap")) if nb else None
 
     costs = [p["cost_r"] for p in pairs if p.get("cost_r") is not None]
     if costs and sum(costs)/len(costs) >= COST_R_WARN:

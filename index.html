@@ -1700,6 +1700,25 @@ function fastProfileBox(p){
     ? '<div class="er" style="opacity:.85">⚡ 速いが伸びない型です。近いTPに置き換えても改善しませんでした（実測）。利確推奨に従うのが試した中では最良です。</div>' : '';
   return '<div class="entry"><div class="ev">⚡ 初動プロファイル（実測1年）</div>'+rows.join('')+warn+'</div>';
 }
+/* 合図が出ていない時に「今日どこまで近づいたか」を出す。
+   出ない日が続くと、壊れているのか相場が条件を出していないのかが区別できない。
+   実際その区別が付かず、10日近く原因を取り違えた（上位足の判定に形成中の足が
+   混ざっていたのが原因で、相場のせいではなかった）。
+   あと何ポイントだったかが毎日残れば、黙っていることが正常かをその場で判断できる。 */
+function nearBox(p){
+  var n=p.near; if(!n) return '';
+  if(n.fired) return '<div class="entry"><div class="er">✅ 本日 <b>'+n.fired+'回</b> 合図が出ています</div></div>';
+  if(n.best==null) return '<div class="entry"><div class="er">本日はまだ条件を判定できる場面がありません'
+    +'（上位足が揃っていない＝このモードでは合図が出ようがない状態）</div></div>';
+  var near=(n.best<=0);
+  var now=(n.gap_now!=null)?('いま あと'+(n.gap_now>0?n.gap_now:0)):'';
+  return '<div class="entry"><div class="er">'
+    +(near?'🟢 条件を満たしています':'⏳ 合図待ち')
+    +'：本日の最接近 <b>'+n.label+' '+n.now+'</b>（'+n.need+n.way+'で合図 ＝ あと<b>'
+    +(n.best>0?n.best:0)+'</b>・'+n.at+'）'
+    +(now?'<br><span style="opacity:.7">'+now+'</span>':'')
+    +'</div></div>';
+}
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
@@ -1852,7 +1871,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     <div class="sparkwrap" style="position:relative">${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}${sparkSignal(p)}</div>
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${nearBox(p)}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
 function toggleDetail(sym,btn){try{var card=btn.parentNode;var willOpen=card.classList.contains('simple');card.classList.toggle('simple',!willOpen);localStorage.setItem('fxnavi_acc_'+sym,willOpen?'1':'0');btn.textContent=willOpen?'▲ 詳細を閉じる':'▼ 詳細';}catch(e){}}
 function setView(v){try{localStorage.setItem('fxnavi_view',v);var i=0;var keys=[];for(i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('fxnavi_acc_')===0)keys.push(k);}keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}renderViewToggle();render();}
 function renderViewToggle(){var el=document.getElementById('viewtog');if(!el)return;var v='simple';try{v=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}
