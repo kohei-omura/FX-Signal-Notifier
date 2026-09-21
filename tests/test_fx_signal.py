@@ -4521,5 +4521,74 @@ class NotifyTestSendTest(unittest.TestCase):
         self.assertIn("実際に1通届きます", h, "届くことを書いていない")
 
 
+class SubSignalStripTest(unittest.TestCase):
+    """『参考モードの合図』が、いま出ているものだけを出すこと。
+
+    実際に起きたこと: スイング画面では合図が無いのに、『参考モードの合図』には
+    22:56に出たスイングGBP/JPYの買いが残ったままだった。
+    合図が出た時に足すだけで、消える側の処理が無かったため。
+    スイングの有効時間は3時間あるので、消えた合図が3時間表示され続けていた。
+    出ていないものを出ていると見せるのは、出ないことより悪い。
+    """
+
+    def _body(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("async function subLiveSignals(base){")
+        return src[i:src.index("\nasync function liveSignals(){", i)]
+
+    def test_every_skip_path_removes_the_entry(self):
+        """合図が出なくなる道すべてで、表示からも消すこと。
+
+        道が1本でも漏れると、その条件の時だけ幽霊が残る。"""
+        body = self._body()
+        i = body.index("for(const {sym,oh} of datas){")
+        loop = body[i:]
+        conts = re.findall(r"(.{0,40})\bcontinue;", loop)
+        self.assertTrue(conts, "ループの中に continue が見つからない（前提が変わった）")
+        bad = [c.strip() for c in conts if "drop()" not in c]
+        self.assertEqual(bad, [], f"消さずに抜けている道がある: {bad}")
+
+    def test_it_records_when_the_signal_started(self):
+        """いつから続いている合図かを持つこと（毎周更新すると起点が消える）。"""
+        b = self._body()
+        self.assertIn("since:", b)
+        self.assertIn("was.side===sc.side", b, "向きが変わっても起点を引き継いでいる")
+
+    def test_it_no_longer_throttles_the_refresh(self):
+        """3分間まとめる処理を残さないこと。
+
+        通知を送らなくなったので、まとめる理由が無い。残すと最後に確認した
+        時刻が更新されず、古い合図と区別が付かなくなる。"""
+        b = self._body()
+        self.assertNotIn("180000", b, "3分のまとめが残っている")
+        self.assertNotIn("saveNotified", b, "送らないのに通知履歴を書いている")
+
+    def test_the_display_hides_unconfirmed_entries(self):
+        """確認が途切れたものは出さないこと（裏に回っていた間は不明）。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function renderSubSignals(){")
+        r = src[i:src.index("\nfunction render(){", i)]
+        self.assertIn("SUB_FRESH_MS", r, "古さで切っていない")
+        self.assertNotIn("validMin", r, "合図の有効時間で残している（消えても残る）")
+
+    def test_the_freshness_window_is_declared_before_use(self):
+        """使う場所より前で宣言すること（この画面は TDZ で事故った前例がある）。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertLess(src.index("var SUB_FRESH_MS"),
+                        src.index("if(now-v.ts>SUB_FRESH_MS)"))
+
+    def test_the_wording_says_it_is_current(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function renderSubSignals(){")
+        r = src[i:src.index("\nfunction render(){", i)]
+        self.assertIn("いま出ている", r, "いまの状態だと分かる見出しになっていない")
+        self.assertIn("🔴見送りでも合図自体は出ています", r,
+                      "マークと合図の有無を取り違える書き方になっている")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

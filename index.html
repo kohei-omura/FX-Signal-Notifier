@@ -2226,21 +2226,27 @@ function renderStale(){
 /* 参考モード（mode.json の sub）で出ている合図を、運用モードの画面に出す。
    モードを切り替えないと他モードの様子が分からない、という状態をなくす。
    通知はサーバーが送るので、ここは「いま何が出ているか」を見るためのもの。 */
+/* 2分半ごとに確認し直す。その倍＋余裕を超えたら「いまどうなっているか不明」とみなす。
+   宣言は使う側の直前に置く（この画面は TDZ で実際に事故ったことがある）。 */
+var SUB_FRESH_MS=6*60*1000;
 function renderSubSignals(){
   var el=document.getElementById('subsig'); if(!el) return;
   var now=Date.now(), rows=[];
   Object.keys(SUB_LAST).forEach(function(k){
     var v=SUB_LAST[k]; if(!v) return;
-    var life=Math.max(15,(v.validMin||60))*60000;      // 有効時間を過ぎたら消す
-    if(now-v.ts>life) return;
-    var m=k.split(':')[1], sym=k.split(':')[2];
-    rows.push({mode:m,sym:sym,v:v});
+    /* 2分半ごとに確認し直している。それを大きく超えて更新が無いものは、
+       アプリが裏に回っていたなどで【いまどうなっているか分からない】もの。
+       分からないものを「出ている」と見せない。 */
+    if(now-v.ts>SUB_FRESH_MS) return;
+    var p=k.split(':');
+    rows.push({mode:p[1], sym:p[2], v:v});
   });
   if(!rows.length){ el.innerHTML=''; return; }
   var rank={'🟢 エントリーOK':0,'🟡 保留・検討':1,'🔴 見送り':2};
   rows.sort(function(a,b){ return (rank[a.v.mark]==null?3:rank[a.v.mark])-(rank[b.v.mark]==null?3:rank[b.v.mark]); });
+  var hhmm=function(t){ return new Date(t).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5); };
   el.innerHTML='<div class="card" style="margin-bottom:10px">'
-    +'<div class="row"><span class="sym" style="font-size:14px">🔎 参考モードの合図</span>'
+    +'<div class="row"><span class="sym" style="font-size:14px">🔎 いま出ている 参考モードの合図</span>'
     +'<span class="tag">運用は'+(MODE_LABEL[MODEJSON]||MODEJSON||'—')+'</span></div>'
     +rows.map(function(r){
       var v=r.v, side=v.side==='買い'?'<span style="color:var(--up)">買</span>':'<span style="color:var(--down)">売</span>';
@@ -2248,12 +2254,16 @@ function renderSubSignals(){
         +'<b>'+(MODE_LABEL[r.mode]||r.mode)+'</b> '+r.sym.replace('_','/')+' '+side
         +(v.mark?' <b>'+v.mark+'</b>'+(v.pct!=null?'('+v.pct+'%)':''):'')
         +' ／ '+v.ref+' → TP '+v.tp+' / SL '+v.sl
-        +' <span style="opacity:.6">'+new Date(v.ts).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false}).slice(0,5)+'</span>'
+        +' <span style="opacity:.6">'+hhmm(v.since)+'から継続・'+hhmm(v.ts)+'確認</span>'
         +'</div>';
     }).join('')
-    +'<div class="er" style="opacity:.7">登録するときはモードを合わせてください。'
+    +'<div class="er" style="opacity:.7">'
+    +'運用モード以外で<b>いま合図が出ている</b>ものです（2分半ごとに確認し、消えたらここからも消えます）。'
+    +'マークはそのモードの総合判定なので、🔴見送りでも合図自体は出ています。'
+    +'登録するときはモードを合わせてください。'
     +'通知はサーバーが5分ごとに送っています（アプリを閉じていても届きます）。</div></div>';
 }
+
 function render(){
   renderModeSw();
   try{renderSubSignals();}catch(e){}
@@ -3208,7 +3218,7 @@ async function subLiveSignals(base){
      それより短く回しても足を取り直すだけになる（1周で 2モード×4通貨＝8本）。 */
   if(Date.now()-SUB_RUN_AT<150000) return;
   SUB_RUN_AT=Date.now();
-  const notified=loadNotified(), now=Date.now(); let changed=false;
+  const now=Date.now(); let changed=false;
   for(const cfg of SUBNOTIFY){
     const info=SUB_INFO[cfg.mode], P=JS_PARAMS[cfg.mode];
     if(!info||!P) continue;
@@ -3220,17 +3230,23 @@ async function subLiveSignals(base){
              .catch(function(){return {sym:sym,oh:[]};});
     }));
     for(const {sym,oh} of datas){
-      if(!oh||oh.length<30) continue;
+      /* ★合図が消えたら必ず消す。
+         以前は「合図が出た時に足す」だけで、消える側の処理が無かった。
+         そのため何時間も前に消えた合図が画面に残り続けた（実例: 22:56に出た
+         スイングGBP/JPYの買いが、スイング画面では合図が無いのに
+         『参考モードの合図』には出たままだった）。
+         出ていないものを出ていると見せるのは、出ないことより悪い。 */
+      const key='sub:'+cfg.mode+':'+sym;
+      const drop=function(){ if(SUB_LAST[key]){ delete SUB_LAST[key]; changed=true; } };
+      if(!oh||oh.length<30){ drop(); continue; }
       const sc=scorePair(sym,oh,P);
-      if(!sc||!sc.side) continue;
-      if(!subFilterOK(cfg.filter,sc)) continue;
+      if(!sc||!sc.side){ drop(); continue; }
+      if(!subFilterOK(cfg.filter,sc)){ drop(); continue; }
       // 上位足と逆行するものは出さない。実測を出したバックテストが同じ条件で
       // 見送っているので、通すと「測っていないもの」を通知することになる。
       const w=sc.side==='買い'?1:-1, m=MTF_BY_SYM[sym];
-      if(m&&m.aligned===-w) continue;
-      if(subHeld(sym)) continue;                       // 保有中は重複・両建てを避ける
-      const key='sub:'+cfg.mode+':'+sym, rec=notified[key];
-      if(rec&&rec.side===sc.side&&now-rec.ts<180000) continue;
+      if(m&&m.aligned===-w){ drop(); continue; }
+      if(subHeld(sym)){ drop(); continue; }             // 保有中は重複・両建てを避ける
       const ref=PRICE[sym]?PRICE[sym].bid:r3(sc.price);
       const tp=r3(sc.side==='買い'?ref+sc.tp_pips*PS_:ref-sc.tp_pips*PS_);
       const sl=r3(sc.side==='買い'?ref-sc.sl_pips*PS_:ref+sc.sl_pips*PS_);
@@ -3254,13 +3270,17 @@ async function subLiveSignals(base){
          ここでやる仕事は「前向き検証に残すこと」だけにする。
          以前は画面モードが運用モードと違うと丸ごと止まっていたため、
          参考通知のモードで入った取引が検証に残らなかった。 */
-      SUB_LAST[key]={side:sc.side,ts:now,mark:(cf?cf.mark:null),pct:(cf?cf.pct:null),
-                     tp:tp,sl:sl,ref:ref,validMin:validMin};
-      try{ renderSubSignals(); }catch(e){}
-      notified[key]={side:sc.side,ts:now}; changed=true;
+      /* ts=最後に確認できた時刻 / since=その向きの合図が続いている起点。
+         毎周更新するので、画面の値は「いま出ている合図」そのものになる。 */
+      const was=SUB_LAST[key];
+      SUB_LAST[key]={side:sc.side, ts:now,
+                     since:(was&&was.side===sc.side)?was.since:now,
+                     mark:(cf?cf.mark:null), pct:(cf?cf.pct:null),
+                     tp:tp, sl:sl, ref:ref, validMin:validMin};
+      changed=true;
     }
   }
-  if(changed) saveNotified(notified);
+  if(changed){ try{ renderSubSignals(); }catch(e){} }
 }
 async function liveSignals(){
   if(!LIVE_PRICE_URL||!S||!S.mode||LIVE_CALC_BUSY)return;
