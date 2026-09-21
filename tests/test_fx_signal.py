@@ -4461,5 +4461,65 @@ class StateFilePathTest(unittest.TestCase):
                          f"テストが逃がしていない状態ファイルがある: {missing}")
 
 
+class NotifyTestSendTest(unittest.TestCase):
+    """LINEまで実際に届くかを、1通だけ送って確かめられること。
+
+    疎通確認(WORKER_PROBE)はWorkerの50%フィルタで必ず止まるので、
+    「Workerが受け取った」ところまでしか分からない。そこから先、
+    WorkerがLINEへ渡す部分は別の鍵(LINE_TOKEN)を使っていて、
+    サーバー(GitHub Actions)の通知とは経路が違う。切れていても
+    本物の合図が出るまで誰も気づけない。
+    """
+
+    def _body(self):
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("async function notifyTestSend(){")
+        return src[i:src.index("\nasync function workerCheck(){", i)]
+
+    def test_it_asks_before_sending(self):
+        """勝手に送らないこと（人の電話が鳴る）。"""
+        self.assertIn("confirm(", self._body(), "確認せずに送っている")
+
+    def test_the_text_is_not_mistaken_for_a_signal(self):
+        """本物の合図と見間違える文面にしないこと。"""
+        b = self._body()
+        self.assertIn("売買の合図ではありません", b)
+        self.assertNotIn("'⚡ライブ", b, "ライブ通知の体裁にしている")
+
+    def test_the_text_passes_the_worker_filter(self):
+        """Workerの50%フィルタに引っかからないこと（引っかかると届かない）。
+
+        worker.js の allowToLine を実際に動かして確かめる。"""
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "worker.js"), encoding="utf-8") as f:
+            w = f.read()
+        w = w[:w.index("export default")]
+        text = "🧪 FX Navi 送信テスト\nこれは動作確認です。売買の合図ではありません。\n2026-09-21 14:05:00"
+        script = (w + "console.log(JSON.stringify(allowToLine(" + json.dumps(text) + ")));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(json.loads(out.stdout).get("ok"),
+                        "テスト文面がWorkerに遮断される＝押しても永久に届かない")
+
+    def test_a_worker_error_points_at_the_line_token(self):
+        """届かない時に、どこを見ればよいかを書いてあること。"""
+        b = self._body()
+        self.assertIn("LINE_TOKEN", b)
+        self.assertIn("別の鍵", b, "サーバー側の鍵と混同させない説明が無い")
+
+    def test_the_button_exists(self):
+        with open(os.path.join(ROOT, "tools.html"), encoding="utf-8") as f:
+            h = f.read()
+        self.assertIn("notifyTestSend()", h, "押す場所が無い")
+        self.assertIn("実際に1通届きます", h, "届くことを書いていない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

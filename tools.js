@@ -1174,6 +1174,49 @@ async function keyCheckLines(base){
   return out;
 }
 
+/* ★ここだけは、LINEに実際に1通届く。
+   疎通確認(WORKER_PROBE)はWorkerの50%フィルタで必ず止まるので、
+   「Workerが受け取った」ところまでしか確かめられない。
+   そこから先、WorkerがLINEへ渡す部分は別の鍵(LINE_TOKEN)を使っていて、
+   サーバー(GitHub Actions)の通知とは経路が違う。ここが切れていても、
+   本物の合図が出るまで誰も気づけない。
+   文面は「⚡ライブ」で始めない。始めるとフィルタに掛かるうえ、
+   本物の合図と見間違える。 */
+async function notifyTestSend(){
+  var el=document.getElementById('workerchk'); if(!el) return;
+  if(!confirm('LINEに実際に1通届きます。送信しますか？')) return;
+  var k=(typeof notifyKey==='function')?notifyKey():'';
+  var say=function(cls,html){
+    var d=document.createElement('div');
+    d.style.cssText='margin-top:8px;padding:9px 12px;border:1px solid var('+cls+');'
+      +'border-radius:9px;font-size:12.5px;line-height:1.8';
+    d.innerHTML=html; el.appendChild(d);
+  };
+  if(!k){ say('--down','⛔ 通知キーが未設定です。ダッシュボードの⚙で入れてください。'); return; }
+  var base=LIVE_PRICE_URL.split('?')[0].replace(/\/$/,'');
+  var now=new Date().toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false});
+  var txt='🧪 FX Navi 送信テスト\nこれは動作確認です。売買の合図ではありません。\n'+now;
+  try{
+    var r=await fetch(base+'?action=notify&key='+encodeURIComponent(k),
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:txt})});
+    var j=null; try{ j=await r.json(); }catch(e){}
+    if(r.status===401||(j&&j.error==='unauthorized'))
+      say('--down','⛔ 通知キーが一致していません。');
+    else if(j&&j.error)
+      say('--down','⛔ Workerがエラーを返しました: '+String(j.error)
+        +'<br>LINE_TOKEN が未設定か、期限切れの可能性があります。');
+    else if(j&&typeof j.skipped==='string')
+      say('--down','⛔ 送られずに止まりました（'+j.skipped+'）。'
+        +'テスト文面がフィルタに掛かっています。');
+    else if(j&&j.ok)
+      say('--up','✅ Workerは送信に成功したと返しました。'
+        +'<b>LINEに「🧪 FX Navi 送信テスト」が届いていれば、経路はすべて繋がっています。</b>'
+        +'<br>届かない場合は、CloudflareのLINE_TOKENを確認してください'
+        +'（サーバーからの通知とは別の鍵です）。');
+    else say('--down','❓ 想定外の応答: '+JSON.stringify(j).slice(0,160));
+  }catch(e){ say('--down','⛔ 通知エンドポイントに届きません: '+((e&&e.message)||e)); }
+}
+
 async function workerCheck(){
   var el=document.getElementById('workerchk'); if(!el) return;
   var box=function(cls,html){ el.innerHTML='<button class="bgo" onclick="workerCheck()">もう一度確認する</button>'

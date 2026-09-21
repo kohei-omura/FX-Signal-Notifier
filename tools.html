@@ -130,8 +130,12 @@ function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnav
   <div id="sweep"></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">Workerの疎通確認</div>
   <div id="workerchk"><button class="bgo" onclick="workerCheck()">Worker と通知キーを確認する</button>
+    <button class="bsub" onclick="notifyTestSend()">📨 LINEへ1通テスト送信</button>
     <div class="note">Cloudflare Workerはリポジトリとは別に手で配置するため、コードを直しても
-    配置し忘れると古いまま動き続けます。実際に配置されている版を確認します（LINEには送りません）。</div></div>
+    配置し忘れると古いまま動き続けます。実際に配置されている版を確認します（LINEには送りません）。<br>
+    「テスト送信」だけは<b>LINEに実際に1通届きます</b>。WorkerがLINEへ渡す部分は別の鍵(LINE_TOKEN)を
+    使っていて、サーバーからの通知とは経路が違うため、ここが切れていても本物の合図が出るまで
+    気づけません。鍵を入れ替えた後や、しばらく⚡ライブ通知が無い時に1度押してください。</div></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">値幅（ボラティリティ）別の成績</div>
   <div id="regimeband"></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">ペア別</div>
