@@ -4704,5 +4704,107 @@ class SpreadBlowoutTest(unittest.TestCase):
         self.assertIn('"cost_r_base"', card, "固定表での値も残していない（比較できない）")
 
 
+class CrossModeAdviceTest(unittest.TestCase):
+    """建玉のモードと画面のモードが違っても、判定欄を黙って消さないこと。
+
+    実際に起きたこと（2026-09-22 15:30）: デイで建てた USD/JPY が、
+    デイ画面では「🟢 ホールド」と出るのに mtf画面では判定欄ごと消えていた。
+    中身は「建玉モードの指標がまだ手元に無い」だけだったが、
+    画面上は不具合と区別が付かない。
+      ・同じモードの画面 … その場で計算できる（すぐ出る）
+      ・違うモードの画面 … posModeLive が取った足か、サーバーの判定(5分ごと)が要る
+    posModeLive は liveSignals の末尾でしか動かず、liveSignals には
+    「30秒以内は再実行しない」「取得中にモードが変わったら丸ごと捨てる」という
+    ガードがあるため、モード切替直後・建玉登録直後はどちらも間に合わなかった。
+    """
+
+    def _run(self, screen_mode, server_adv):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+
+        def cut(a, b):
+            i = src.index(a)
+            return src[i:src.index(b, i)]
+
+        pos = {"id": "p1", "symbol": "USD_JPY", "side": "long", "entry": 157.6414,
+               "lot": 3000, "status": "open", "tp_pips": 13.3, "sl_pips": 8.3,
+               "entry_mode": "day", "mode": "day"}
+        srv = [{"id": "p1", "adv_level": "hold", "adv_label": "🟢 ホールド",
+                "adv_reason": "入った根拠が続いている（スコア+0.45）"}] if server_adv else []
+        head = ("""
+var S={mode:%s, pairs:[{symbol:'USD_JPY',bid:157.638,ask:157.640,score:0.45,rsi:60,adx:25,atr:0.0637}],
+       open_positions:%s};
+var POS={positions:[%s]};
+var PRICE={USD_JPY:{bid:157.638,ask:157.640}};
+var PS=0.01, PS_=0.01;
+var MODES=['scalp','day','swing','mtf'];
+var MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング',mtf:'上位足フォロー'};
+var ADV_OPP=0.25, ADV_SUPP=0.15, TRAIL_ATR=1.0, PROFIT_ATR=1.0, ADX_WEAK=20.0;
+var POSMODE_SIG={};
+var MTF_BY_SYM={};
+function loadMfe(){return {};} function saveMfe(){}
+function tpsl(p){return [p.entry+p.tp_pips*PS, p.entry-p.sl_pips*PS];}
+function pairSig(sym){var p=(S.pairs||[])[0]; return {score:p.score,rsi:p.rsi,adx:p.adx,atr:p.atr};}
+""" % (json.dumps(screen_mode), json.dumps(srv), json.dumps(pos)))
+        body = (cut("const JS_PARAMS={", "function holdTxt")
+                + cut("function computeOpen(){", "/* ---------- 保有ポジションの利確")
+                + cut("function pairSigFor(p){", "function loadMfe(")
+                + cut("function holdAligned(p,ps,dir){", "function posAdvice(p){")
+                + cut("function posAdvice(p){", "function checkPosNotify("))
+        script = (head + body
+                  + "var a=posAdvice(computeOpen()[0]);\n"
+                  "console.log(JSON.stringify(a?{label:a.label,src:a.src||'local',"
+                  "level:a.level,reason:a.reason}:null));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_the_same_mode_screen_computes_it(self):
+        got = self._run("day", server_adv=False)
+        self.assertIsNotNone(got, "同じモードの画面なのに出ていない")
+        self.assertIn("ホールド", got["label"])
+
+    def test_another_mode_screen_uses_the_server_judgement(self):
+        got = self._run("mtf", server_adv=True)
+        self.assertIsNotNone(got, "サーバーの判定があるのに出ていない")
+        self.assertEqual(got["src"], "server")
+        self.assertIn("ホールド", got["label"])
+
+    def test_it_never_goes_silent_right_after_registering(self):
+        """サーバーがまだ拾っていない数分間、判定欄を空にしないこと。
+
+        これが「デイでは出るのに mtf では消える」の正体だった。"""
+        got = self._run("mtf", server_adv=False)
+        self.assertIsNotNone(got, "判定欄が丸ごと消えている（不具合と見分けが付かない）")
+        self.assertIn("準備中", got["label"])
+        self.assertIn("デイ", got["reason"], "どのモードの玉か書いていない")
+        self.assertNotIn(got["level"], ("cut", "take"),
+                         "準備中なのに決済を促している")
+
+    def test_the_placeholder_is_not_shown_for_the_same_mode(self):
+        """同じモードなら普通に計算できるので、準備中でごまかさないこと。"""
+        got = self._run("day", server_adv=False)
+        self.assertNotIn("準備中", got["label"])
+
+    def test_the_indicators_are_fetched_outside_the_live_loop(self):
+        """モード切替と建玉登録の直後に、その場で取りに行くこと。
+
+        liveSignals の中だけだと30秒ガードとモード変更の破棄に当たって動かない。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("async function refreshPosModeSig()", src, "別口の入口が無い")
+        i = src.index("async function setMode(m){")
+        self.assertIn("refreshPosModeSig()", src[i:i + 500], "モード切替で呼んでいない")
+        j = src.index("toast('追加しました'")
+        self.assertIn("refreshPosModeSig()", src[j:j + 300], "建玉登録で呼んでいない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -879,6 +879,9 @@ async function addPos(){const c=needCfg();if(!c)return;
        何も始まらなかった。逆に delete には付いておらず、不要な実行だけ
        起きていた。 */
     await ghPut(c,data,sha,'add '+sym);POS=data;render();toast('追加しました'+autoNote);togglePanel('addPanel');
+    // 登録した直後は、その建玉のモードの指標がまだ無い。すぐ取りに行く
+    // （無いまま別モードの画面に切り替えると、判定欄が空のままになる）。
+    refreshPosModeSig();
     $('#f_entry').value='';}catch(e){toast(e.message);}finally{POS_BUSY=false;}}
 
 function computeClose(p,price){const side=p.side||'long',entry=+p.entry,lot=+(p.lot!=null?p.lot:10000);
@@ -1387,7 +1390,17 @@ function posAdvice(p){
   const pm=posMode(p), cross=(pm!==((S&&S.mode)||pm));
   const ps=pairSigFor(p);
   if(!ps||p.current==null){
-    if(!p.adv_label)return null;          // 判定できないなら出さない（誤った表示より無表示）
+    /* ★黙って消さない。
+       判定が出ないのと、仕組みが壊れているのは、画面上で区別が付かない。
+       実際「デイ画面では出るのに mtf画面では判定欄ごと消える」という形で
+       不具合に見えた（中身は、建玉モードの指標がまだ手元に無かっただけ）。 */
+    if(!p.adv_label){
+      if(!cross) return null;             // 同じモードなら普通に計算できるはず
+      return {level:'watch', label:'⏳ 判定を準備中',
+        reason:MODE_LABEL[pm]+'で建てた玉です。'+MODE_LABEL[pm]+'の足を取り直しています'
+               +'（数秒〜次のサーバー更新まで）。判定が出るまで、発注レベルのOCOはそのまま有効です',
+        cls:'', src:'pending', pm:pm, cross:false};
+    }
     return {level:p.adv_level||'watch',label:p.adv_label,reason:p.adv_reason||'',
       cls:(p.adv_level==='cut'?'down':((p.adv_level==='take'||p.adv_level==='hold')?'up':'')),
       src:'server',pm:pm,cross:cross};
@@ -2084,6 +2097,8 @@ function applyModeOverride(){try{const o=localStorage.getItem('fxnavi_mode');if(
 async function setMode(m){if(!MODES.includes(m)||(S&&S.mode===m))return;
   try{localStorage.setItem('fxnavi_mode',m);}catch(e){}
   S.mode=m;render();liveSignals();refreshStats(true);
+  // 切替直後は liveSignals の30秒ガードに当たって動かないことがある。別口で取りに行く。
+  refreshPosModeSig();
   if(MODEJSON&&MODEJSON!==m){
     toast('表示のみ'+MODE_LABEL[m]+'に切替（運用は'+(MODE_LABEL[MODEJSON]||MODEJSON)+'のまま）');
   }else{
@@ -3218,6 +3233,20 @@ async function posModeLive(base){
     POSMODE_SIG[mode+sym]={ts:Date.now(),ps:{symbol:sym,rsi:sc.rsi,adx:sc.adx,atr:sc.atr,
       score:sc.score,tech:sc.tech,fund:sc.fund,tp_pips:sc.tp_pips,sl_pips:sc.sl_pips}};
   }
+}
+/* 建玉モードの指標を、いま取りに行く。
+   これまで posModeLive は liveSignals の末尾でしか動かなかった。
+   liveSignals には「30秒以内は再実行しない」「取得中にモードが変わったら丸ごと捨てる」
+   というガードがあるため、モードを切り替えた直後や建玉を登録した直後は動かない。
+   その間、建玉のモードと画面のモードが違うカードは、サーバーの判定(5分ごと)が
+   届くまで【何も出ない】状態になっていた（実例: 2026-09-22 15:30 にデイで建てた
+   USD/JPY が、mtf画面では判定欄ごと消えていた）。 */
+async function refreshPosModeSig(){
+  if(!LIVE_PRICE_URL) return;
+  try{
+    await posModeLive(LIVE_PRICE_URL.split('?')[0].replace(/\/$/,''));
+    render();
+  }catch(e){ console.warn('建玉モードの指標', e); }
 }
 /* 参考モードで直近に見つけた合図（画面表示用）。LINEはサーバーが送る。 */
 var SUB_LAST={}, SUB_RUN_AT=0;
