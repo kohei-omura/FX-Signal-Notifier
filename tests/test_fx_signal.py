@@ -1611,6 +1611,10 @@ class DuplicateAndHedgeTest(RunTestCase):
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
         self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
         F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
+        # スプレッド/SL幅の見送りも同じ理由で外す。モックのATRは実行時刻で変わり、
+        # SL幅が数pipsまで縮む時間帯には「スプレッドが広すぎる」が先に効く。
+        self.addCleanup(setattr, F, "spread_blocks_entry", F.spread_blocks_entry)
+        F.spread_blocks_entry = lambda sp, sl_pips: None
         F.main()
         st = self.status()
         return next(p for p in st["pairs"] if p["symbol"] == sym)
@@ -5388,6 +5392,22 @@ class MarkEvidenceBannerTest(unittest.TestCase):
         self.assertIn("try{renderMarkEvidence();}catch(e){}", src)
         self.assertIn('<div id="markevid"></div>', src)
         self.assertIn("const me=markEvidence(j);", src, "毎日取り直していない")
+
+    def _seed(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("var MARK_EVID=") + len("var MARK_EVID=")
+        return json.loads(src[i:src.index(";\n", i)])
+
+    def test_the_seed_hides_day_after_the_v2_weights(self):
+        """デイはv2配点で前半・後半とも🟢>🔴になったので、初期値でも警告を出さない。"""
+        self.assertEqual(self._run("day", self._seed()), "")
+
+    def test_the_seed_still_warns_for_mtf_and_swing(self):
+        seed = self._seed()
+        for m in ("mtf", "swing"):
+            with self.subTest(mode=m):
+                self.assertIn("当てられていません", self._run(m, seed))
 
 
 class DayMarkWeightsTest(unittest.TestCase):
