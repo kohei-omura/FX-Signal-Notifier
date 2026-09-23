@@ -3968,10 +3968,22 @@ class SubNotifyGateTest(unittest.TestCase):
         self.assertIn("if(!MODEJSON||!MODES.includes(MODEJSON)) return;", self._body())
 
     def test_it_records_into_the_forward_test(self):
-        """参考通知の合図も前向き検証に残すこと。実際に入る対象なので。"""
+        """参考通知の合図も前向き検証に残すこと。実際に入る対象なので。
+
+        以前は🟢だけを記録していたが、1年のバックテストで🟢が3モードとも最も
+        成績が悪かったため、マークに関係なく記録する（本体と同じ条件）。"""
         b = self._body()
         self.assertIn("fwdRecord(pair,cfg.mode)", b, "記録していない")
-        self.assertIn("cf.cls==='ok'", b, "本体と条件がそろっていない（🟢だけ）")
+        self.assertNotIn("cf.cls==='ok'", b, "🟢だけに絞っている（いちばん悪い区分だけを検証することになる）")
+
+    def test_the_forward_record_keeps_the_mark(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function fwdRecord(pair,mode){")
+        self.assertIn("mark:_cf?_cf.cls:null", src[i:i + 6000], "マークを残していない")
+        self.assertNotIn("if(cfNow&&cfNow.cls==='ok')fwdRecord", src,
+                         "本体側が🟢だけに絞ったまま")
+        self.assertIn("マーク別：", src, "前向き検証をマーク別に出していない")
 
     def test_the_text_does_not_claim_it_is_unrecorded(self):
         self.assertNotIn("前向き検証には記録されません", self._body(),
@@ -5303,6 +5315,65 @@ class ForwardSpreadTouchTest(unittest.TestCase):
         body = src[i:src.index("\ndef ", i + 10)]
         self.assertIn('touch_was_spread(sym, side, tp_pr, _since, way="down")', body,
                       "売り建ての偽の利確を見抜いていない")
+
+
+class MarkEvidenceBannerTest(unittest.TestCase):
+    """総合判定が成績を当てられていないことを、マークのすぐ上に出すこと。
+
+    1年のバックテストで 🟢エントリーOK は3モードとも最も成績が悪く、🔴見送り の方が
+    良かった（前半・後半の6通りすべて同じ向き）。マークを信じて🟢だけで入ると、
+    良い方を捨てて悪い方を取ることになる。
+    """
+
+    def _run(self, mode, evid):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("var MARK_EVID=")
+        body = src[i:src.index("function dayAdxBelow40(", i)] if "function dayAdxBelow40(" in src[i:] else src[i:src.index("async function refreshAdxBands(){", i)]
+        j = body.index("function renderMarkEvidence(){")
+        body = body[:body.index("\n}\n", j) + 3]
+        script = ("var localStorage={getItem:function(){return null;},setItem:function(){}};\n"
+                  "var OUT='';var document={getElementById:function(){return {set innerHTML(v){OUT=v;}};}};\n"
+                  "var MODE_LABEL={day:'デイ',mtf:'上位足フォロー',swing:'スイング'};\n"
+                  "var S={mode:" + json.dumps(mode) + "};\n" + body
+                  + "MARK_EVID=" + json.dumps(evid, ensure_ascii=False) + ";\n"
+                  "renderMarkEvidence();console.log(JSON.stringify(OUT));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    INV = {"mtf": {"🟢 エントリーOK": [223, -0.085, -0.069, -0.132],
+                   "🟡 保留・検討": [261, 0.127, 0.143, 0.131],
+                   "🔴 見送り": [221, 0.120, 0.188, 0.062]}}
+
+    def test_an_inverted_mark_is_disclosed(self):
+        html = self._run("mtf", self.INV)
+        self.assertIn("当てられていません", html)
+        self.assertIn("-0.09R", html.replace("-0.085", "-0.09"))
+
+    def test_it_is_quiet_when_green_wins_in_either_half(self):
+        """片方の半分で🟢が勝っているなら言わない（偶然の可能性がある）。"""
+        ev = {"mtf": dict(self.INV["mtf"])}
+        ev["mtf"]["🟢 エントリーOK"] = [223, 0.0, 0.25, -0.132]
+        self.assertEqual(self._run("mtf", ev), "")
+
+    def test_it_is_quiet_without_data(self):
+        self.assertEqual(self._run("scalp", self.INV), "")
+
+    def test_the_seed_matches_the_committed_backtest(self):
+        """焼き込んだ初期値が、コミットされている backtest.json の読み方と同じであること。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("try{renderMarkEvidence();}catch(e){}", src)
+        self.assertIn('<div id="markevid"></div>', src)
+        self.assertIn("const me=markEvidence(j);", src, "毎日取り直していない")
 
 
 if __name__ == "__main__":

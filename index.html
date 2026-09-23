@@ -455,6 +455,7 @@
       <div class="dcnt-c"><i>最高連チャン</i><b id="dc-run">0</b></div>
     </div>
   </div>
+  <div id="markevid"></div>
   <div id="subsig"></div>
   <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
 
@@ -1044,6 +1045,49 @@ function dayAdxBox(p,mode){
     +'どちらの半分でも負け越しています（各'+e.first[0]+'件・'+e.second[0]+'件）。'
     +'デイで唯一プラスが続いたのは ADX40以上 の合図だけです。</div></div>';
 }
+/* ===== 総合判定（🟢/🟡/🔴）そのものの成績 =====
+   1年のバックテストで、このマークを画面と同じ式で付け直して成績を分けた
+   （engine/confluence_bt.py。部品ごとに画面の実装と突き合わせて一致を確認済み）。
+   結果は3モードとも 🟢エントリーOK が最も悪く、🔴見送り の方が良かった。
+   前半と後半に分けても6通りすべて同じ向きで、ADXの配点を抜いても変わらない。
+   マークを信じて🟢だけで入り、🔴を見送ると、良い方を捨てて悪い方を取ることになる。
+   その事実を、マークのすぐ上に出す。数字は backtest.json から毎日取り直す。
+   [件数, 通年R, 前半R, 後半R] */
+var MARK_EVID={"day": {"🟢 エントリーOK": [667, -0.11, -0.152, -0.074], "🟡 保留・検討": [1445, -0.105, -0.105, -0.104], "🔴 見送り": [1985, -0.048, -0.045, -0.05]}, "mtf": {"🟢 エントリーOK": [223, -0.085, -0.069, -0.132], "🟡 保留・検討": [261, 0.127, 0.143, 0.131], "🔴 見送り": [221, 0.12, 0.188, 0.062]}, "swing": {"🟢 エントリーOK": [133, -0.161, -0.201, -0.189], "🟡 保留・検討": [127, 0.082, 0.158, -0.019], "🔴 見送り": [130, 0.151, 0.35, 0.015]}};
+try{var _me=JSON.parse(localStorage.getItem('fxnavi_markevid')||'null');
+    if(_me&&_me.d&&Date.now()-_me.t<7*24*3600e3)MARK_EVID=_me.d;}catch(e){}
+function markEvidence(j){
+  var out={}, B=['🟢 エントリーOK','🟡 保留・検討','🔴 見送り'];
+  Object.keys((j&&j.modes)||{}).forEach(function(m){
+    var v=j.modes[m]||{}, f=(v.fast||{}).mark||{}, mh=v.mark_holdout||{}, row={};
+    B.forEach(function(b){
+      var a=(f[b]||{}).advice||{};
+      var h1=(((mh.first_half||{}).mark)||{})[b]||{}, h2=(((mh.second_half||{}).mark)||{})[b]||{};
+      if(a.n)row[b]=[a.n,a.avg_r,(h1.avg_r!=null?h1.avg_r:null),(h2.avg_r!=null?h2.avg_r:null)];
+    });
+    if(Object.keys(row).length)out[m]=row;
+  });
+  return out;
+}
+function renderMarkEvidence(){
+  var el=document.getElementById('markevid'); if(!el) return;
+  var m=(S&&S.mode)||'', e=MARK_EVID[m];
+  var ok=e&&e['🟢 エントリーOK'], no=e&&e['🔴 見送り'];
+  if(!ok||!no){ el.innerHTML=''; return; }
+  // 🟢が🔴より悪い、が前半・後半の両方で出ている時だけ言う（片方だけなら偶然の可能性）
+  var inv=(ok[2]!=null&&no[2]!=null&&ok[3]!=null&&no[3]!=null&&ok[2]<no[2]&&ok[3]<no[3]);
+  if(!inv){ el.innerHTML=''; return; }
+  var f=function(v){return v==null?'—':((v>=0?'+':'')+v.toFixed(2)+'R');};
+  var row=['🟢 エントリーOK','🟡 保留・検討','🔴 見送り'].filter(function(b){return e[b];}).map(function(b){
+    return b.split(' ')[0]+' <b>'+f(e[b][1])+'</b>';}).join(' ／ ');
+  el.innerHTML='<div class="card" style="margin-bottom:10px;border-color:var(--down)">'
+    +'<div class="ev" style="font-weight:700">⚠️ 総合判定（🟢🟡🔴）は、成績の良し悪しを当てられていません</div>'
+    +'<div class="er" style="font-size:12.5px;line-height:1.8">'
+    +(MODE_LABEL[m]||m)+'の合図を1年ぶん、画面と同じ式でマーク別に分けた結果（1回あたり・スプレッド控除後）：<br>'+row
+    +'<br>前半・後半に分けても、🟢が🔴を上回ったことはありません'
+    +'（🟢 '+f(ok[2])+'→'+f(ok[3])+' ／ 🔴 '+f(no[2])+'→'+f(no[3])+'）。'
+    +'マークは入る・入らないの根拠にしないでください。どの部品が逆を向いているかを検証中です。</div></div>';
+}
 async function refreshAdxBands(){
   try{
     const r=await fetch('./data/backtest.json?t='+Date.now(),{cache:'no-store'});
@@ -1057,6 +1101,8 @@ async function refreshAdxBands(){
       });
       if(Object.keys(d).length)out[m]=d;
     });
+    try{ const me=markEvidence(j); if(Object.keys(me).length){ MARK_EVID=me;
+      localStorage.setItem('fxnavi_markevid',JSON.stringify({t:Date.now(),d:me})); } }catch(e){}
     try{ const dh=dayAdxBelow40(j); if(dh){ DAY_ADX_EVID=dh;
       localStorage.setItem('fxnavi_dayadx',JSON.stringify({t:Date.now(),d:dh})); } }catch(e){}
     if(!Object.keys(out).length)return;
@@ -1257,6 +1303,7 @@ function fwdRecord(pair,mode){try{if(!pair||!pair.signal)return;
     tp:tp,sl:sl,b:pair.tp_pips/pair.sl_pips,ts:Date.now(),open:true,
     edgeOn:(typeof edgeOn==='function')?edgeOn():false,
     rawPct:_cf?_cf.rawPct:null, pct:_cf?_cf.pct:null, edgeAdj:_cf?(_cf.edge||0):0,
+    mark:_cf?_cf.cls:null,
     src:(sub?'sub':'main'), subFilter:(sub?sub.filter:null)});saveFwd(f);}catch(e){}}
 
 /* ===== 決着の判定はサーバ側（engine/fx_signal.py・5分ごと）に移した =====
@@ -2358,6 +2405,7 @@ function renderSubSignals(){
 
 function render(){
   renderModeSw();
+  try{renderMarkEvidence();}catch(e){}
   try{renderSubSignals();}catch(e){}
   renderModeWarn();
   renderStale();
@@ -2951,6 +2999,15 @@ function renderFwdPanel(){
      結果を見てから足したものではない（合図が出た時点の記録が元）が、
      混ぜたまま黙っていると強さを取り違えるので、件数を必ず出す。 */
   var bfAll=loadFwd().filter(function(x){return x.src==='backfill';}).length;
+  /* マーク別。記録にマークが無い古い記録は pct（総合判定の%）から復元する。 */
+  var _mk=function(x){ if(x.mark)return x.mark; if(x.pct==null)return null;
+    return x.pct>=70?'ok':(x.pct>=50?'hold':'no'); };
+  var byMark={ok:[],hold:[],no:[]};
+  s.closed.forEach(function(x){var k=_mk(x); if(byMark[k])byMark[k].push(x.R);});
+  var mkLab={ok:'🟢',hold:'🟡',no:'🔴'};
+  var markLine=['ok','hold','no'].filter(function(k){return byMark[k].length;}).map(function(k){
+    var a=byMark[k], m=a.reduce(function(t,v){return t+v;},0)/a.length;
+    return mkLab[k]+' '+(m>=0?'+':'')+m.toFixed(2)+'R('+a.length+'件)';}).join(' ／ ');
   fp.innerHTML='<h2>📈 前向き検証（実弾不要のエッジ実証）</h2>'
     +'<div style="padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'
     +'<div style="font-size:13px">累積R <b>'+(s.cum>=0?'+':'')+s.cum+'</b> ／ 勝率 <b>'+s.wr+'%</b> ／ 決着済 <b>'+s.n+'</b>件'
@@ -2959,6 +3016,7 @@ function renderFwdPanel(){
     +spark
     +'<div style="font-size:12px;color:var(--mut)">'+em+'</div>'
     +'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">モード別：'+mb+'</div>'
+    +(markLine?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">マーク別：'+markLine+'</div>':'')
     +(_fwdEdgeSplit(s.closed)?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">学習補正別：'+_fwdEdgeSplit(s.closed)+'</div>':'')
     +(bfAll?'<div style="font-size:11.5px;color:var(--mut);margin-top:4px">'
         +'うち<b>'+bfAll+'件</b>は後から復元した記録です（取りこぼしを画面の写しと5分ごとの履歴から復元）。'
@@ -2969,7 +3027,8 @@ function renderFwdPanel(){
       +' ／ サーバ判定済 '+s.srv+'/'+s.n+'件'+(s.srv<s.n?'（残りは旧ブラウザ判定。次のサーバ実行で上書きされます）':'')+'</div>'
     +'<div style="font-size:10.5px;color:var(--mut);margin-top:6px">判定式：n≥30 かつ Wilson95%下限(z=1.96)＞損益分岐勝率（実測の平均勝ちR/平均負けRから算出）で実証。'
       +'記録するのは<b>この仕組みが実際に合図を出すモード</b>だけです（運用モード＋参考通知に設定したモード）。'
-      +'参考通知に絞り込みがあれば、記録も同じ条件にそろえます。🟢OKの時だけ・銘柄×モードで1件・最大300件ローテ。'
+      +'参考通知に絞り込みがあれば、記録も同じ条件にそろえます。マーク（🟢🟡🔴）に関係なく全ての合図を、マーク付きで記録します'
+      +'（1年のバックテストで🟢が最も成績が悪かったため、🟢だけでは検証になりません）。銘柄×モードで1件・最大300件ローテ。'
       +'建値は実約定(買いはask)、決着はサーバが高安つきの足で順序どおりに判定します。</div>'
     +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="exportHistoryCSV()">📤 決済履歴CSV</button><button class="dettog" style="width:auto;flex:1" onclick="exportForwardCSV()">📤 前向き検証CSV</button></div>'
     +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudSaveNow()">☁️ 今すぐクラウド保存</button><button class="dettog" style="width:auto;flex:1" onclick="fwdCloudRestore()">♻️ クラウドから復元</button></div>'
@@ -3368,7 +3427,8 @@ async function subLiveSignals(base){
       /* ★参考通知の合図も前向き検証に記録する。実際に入る対象なのに記録しないと、
          あとで「このモードは効いていたのか」を測る材料が残らない。
          記録するのは本体と同じ 🟢エントリーOK だけ。 */
-      if(cf&&cf.cls==='ok'){ try{ fwdRecord(pair,cfg.mode); }catch(e){} }
+      // マークに関係なく記録する（本体と同じ。理由は liveSignals の記録箇所に書いた）
+      if(cf){ try{ fwdRecord(pair,cfg.mode); }catch(e){} }
       /* ★ここからLINEへは送らない。
          参考通知は fx_signal.py（5分ごと・サーバー側）が送っている。
          アプリからも送ると、同じ合図が2通届く。しかもサーバー側は
@@ -3446,7 +3506,12 @@ async function liveSignals(){
       if(sig){
         try{
           const cfNow=confluence(pair,STATS[MODE0+sym],MODE0);
-          if(cfNow&&cfNow.cls==='ok')fwdRecord(pair,MODE0);
+          /* ★マークに関係なく記録する（マークも一緒に残す）。
+             1年のバックテストで、🟢エントリーOK は3モードとも最も成績が悪く、
+             🔴見送り の方が良かった（前半・後半の6通りすべて）。🟢だけを記録すると、
+             いちばん悪い区分だけを検証していたことになる。全部残して、実運用でも
+             マーク別に確かめられるようにする。 */
+          if(cfNow)fwdRecord(pair,MODE0);
         }catch(e){}
       }
       if(sig){
