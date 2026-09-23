@@ -1770,6 +1770,10 @@ def update_near_miss(gaps, fired):
 # バックテストは固定スプレッド(0.5〜0.9pips)で回しているので、この場面は
 # 一度も検証していない。検証していない場面で合図を出してはいけない。
 SPREAD_WIDE_MULT = 3.0    # 普段の何倍から「拡大中」とみなすか
+# 「普段」は、このAPI(ticker)で実測した中央値（1週間・時間帯を問わず）。
+# SPREAD_PIPS はGMOの公表値(USD 0.2 等)で、APIの普段値とは違う。公表値を基準にすると
+# USD/JPY は普段の0.5pipsでも「2.5倍」になり、何でもない時に「拡大中」と出る。
+SPREAD_NORMAL_API = {"USD_JPY": 0.5, "EUR_JPY": 0.5, "GBP_JPY": 0.9, "AUD_JPY": 0.7}
 SPREAD_COST_MAX = 0.15    # スプレッドが1R(SL幅)のこの割合を超えたら新規を見送る
 
 
@@ -1780,7 +1784,7 @@ def spread_state(symbol, ticker):
     if not b or not a or a <= b:
         return None
     pips = (a - b) / PIP_SIZE
-    base = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS)
+    base = SPREAD_NORMAL_API.get(symbol, SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS))
     return {"pips": round(pips, 1), "base": base,
             "mult": round(pips / base, 1) if base else None,
             "wide": bool(base and pips >= base * SPREAD_WIDE_MULT)}
@@ -1851,7 +1855,7 @@ def touch_was_spread(symbol, side, level, since_ms):
     rows = quotes_since(symbol, since_ms)
     if not rows:
         return False
-    base = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS)
+    base = SPREAD_NORMAL_API.get(symbol, SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS))
     wide = any((a - b) / PIP_SIZE >= base * SPREAD_WIDE_MULT for _, b, a in rows)
     if not wide:
         return False
@@ -2426,6 +2430,15 @@ def position_advice(p, ticker, sc, prev_mfe=None):
                               or (side == "short" and mid < sl_pr)))
     # 足の高安で拾った接触（＝いまは戻している）は、スプレッドが既に戻っていても
     # 接触した当時は開いていたかもしれない。自分で見た仲値の履歴で確かめる。
+    # トレール利確（高値からの押し戻し）も、スプレッドが開いている間は仲値で測る。
+    # 売値で測ると、スプレッドが開いただけで「押し戻した」ことになる
+    # （含み益1ATR以上の玉なら、ロールオーバーの度に利確推奨が飛ぶ）。
+    if spw and spw.get("wide"):
+        _px = mid
+    else:
+        _px = cur
+    trail_profit_atr = ((_px - entry) * d / a) if a else 0.0
+    trail_retrace_atr = (((mfe - _px) if side == "long" else (_px - mfe)) / a) if a else 0.0
     spread_hist = False
     if hit_sl and touched and not spread_driven and rec:
         # 見ている足の始まり（足に時刻は無いので、形成中の足から数えて出す）
@@ -2460,8 +2473,8 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     elif nw is not None:
         when = f"約{int(nw[3])}分後" if nw[3] >= 0 else f"発表中(±{BLACKOUT_MIN}分)"
         level, label, reason = "watch", "🟡 利確検討", f"まもなく重要指標（{nw[2]}/{when}）"
-    elif profit_atr >= PROFIT_ATR and retrace_atr >= TRAIL_ATR:
-        level, label, reason = "take", "🎯 利確推奨", f"高値から{retrace_atr:.1f}ATR押し戻し（トレール）"
+    elif trail_profit_atr >= PROFIT_ATR and trail_retrace_atr >= TRAIL_ATR:
+        level, label, reason = "take", "🎯 利確推奨", f"高値から{trail_retrace_atr:.1f}ATR押し戻し（トレール）"
     elif profit > 0 and aligned <= -ADV_OPP:
         level, label, reason = "take", "🎯 利確推奨", f"利益が出ている間に根拠が反転（{basis}）"
     elif profit > 0 and (aligned < th or rsi_against or adx_v < ADX_WEAK):

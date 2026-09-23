@@ -963,6 +963,11 @@ const ADV_OPP=0.25, ADV_SUPP=0.15, ADV_DECAY=0.10, TRAIL_ATR=1.0, PROFIT_ATR=1.0
 // 拡張v3: 表示・通知レイヤーのみ（判定式・TP/SL・既存統計は不変）
 // 機能1: モード別コスト診断 — スプレッド定数(pips) asof 2026-07（GMO標準的値・調整可能）
 const SPREAD={USD_JPY:0.2,EUR_JPY:0.4,GBP_JPY:0.9,AUD_JPY:0.5};
+/* 「開いている」かの基準。上の SPREAD はGMOの公表値で、価格APIで実測した普段値とは違う
+   （USD/JPY は公表0.2・実測0.5）。公表値を基準にすると、普段の0.5でも「2.5倍」と出る。
+   fx_signal.py の SPREAD_NORMAL_API / SPREAD_WIDE_MULT と同じ値にしておくこと。 */
+const SPREAD_NORMAL_API={USD_JPY:0.5,EUR_JPY:0.5,GBP_JPY:0.9,AUD_JPY:0.7};
+const SPREAD_WIDE_MULT_JS=3.0;
 // 機能2: コンフルエンス重みをモード別テーブル化（swingは現行値を完全維持＝実証済+29.7%）
 //  scalp=時間帯/ニュース支配的→zone/blackout重み2 ／ day=adxBand/longEnv中心の現行比重
 //  機能3のregime(重み1)を全モードに追加。閾値75%/45%は割合判定のまま共通維持。
@@ -1413,12 +1418,31 @@ function posAdvice(p){
   const rsiAgainst=(p.side==='long'&&rsi>=70)||(p.side==='short'&&rsi<=30);
   const hitTp=p.tp_price!=null&&((p.side==='long'&&p.current>=p.tp_price)||(p.side==='short'&&p.current<=p.tp_price));
   const hitSl=p.sl_price!=null&&((p.side==='long'&&p.current<=p.sl_price)||(p.side==='short'&&p.current>=p.sl_price));
+  /* スプレッドが開いているか（サーバーの spread_state と同じ基準）。
+     開いている間は仲値が動かなくても売値/買値だけが動き、SLに勝手に届く。
+     サーバー側だけ直していたので、同じモードの画面（この場で計算するカード）では
+     ロールオーバーのたびに 🛑損切り推奨 が出ていた。 */
+  const _q=PRICE[p.symbol]||{}, _qb=_q.bid, _qa=_q.ask;
+  const _spr=(_qb!=null&&_qa!=null&&_qa>_qb)?(_qa-_qb)/PS_:null;
+  const _sprBase=SPREAD_NORMAL_API[p.symbol]||SPREAD[p.symbol]||0.5;
+  const _wide=(_spr!=null&&_spr>=_sprBase*SPREAD_WIDE_MULT_JS);
+  const _mid=(_qb!=null&&_qa!=null)?(_qb+_qa)/2:p.current;
+  const _slBySpread=hitSl&&_wide&&p.sl_price!=null&&
+    ((p.side==='long'&&_mid>p.sl_price)||(p.side==='short'&&_mid<p.sl_price));
+  // トレールも、開いている間は仲値で測る（売値で測ると開いただけで押し戻したことになる）
+  const _tpx=_wide?_mid:p.current;
+  const _tProfitAtr=a?((_tpx-p.entry)*dir)/a:0;
+  const _tRetraceAtr=a?((p.side==='long'?(mfe-_tpx):(_tpx-mfe)))/a:0;
   const sTxt=(score>=0?'+':'')+score.toFixed(2);
   let level,label,reason;
-  if(hitSl){level='cut';label='🛑 損切り推奨';reason='SL到達';}
+  if(_slBySpread){level='watch';label='🟡 SL接触（スプレッド拡大中）';
+    reason='売値だけがSLに触れています。スプレッドが'+_spr.toFixed(1)+'pips（普段の'
+      +(_spr/_sprBase).toFixed(1)+'倍）まで開いており、仲値'+_mid.toFixed(3)
+      +'はまだSLの手前です。相場ではなくスプレッドが動いた結果です。スプレッドが戻るまで待ってから決めてください';}
+  else if(hitSl){level='cut';label='🛑 損切り推奨';reason='SL到達';}
   else if(aligned<=-ADV_OPP&&profit<=0){level='cut';label='🛑 損切り推奨';reason=`入った根拠が消えた（${basis}）のに含み損`;}
   else if(hitTp){level='take';label='🎯 利確推奨';reason='TP到達';}
-  else if(profitAtr>=PROFIT_ATR&&retraceAtr>=TRAIL_ATR){level='take';label='🎯 利確推奨';reason=`高値から${retraceAtr.toFixed(1)}ATR押し戻し（トレール）`;}
+  else if(_tProfitAtr>=PROFIT_ATR&&_tRetraceAtr>=TRAIL_ATR){level='take';label='🎯 利確推奨';reason=`高値から${_tRetraceAtr.toFixed(1)}ATR押し戻し（トレール）`;}
   else if(profit>0&&aligned<=-ADV_OPP){level='take';label='🎯 利確推奨';reason=`利益が出ている間に根拠が反転（${basis}）`;}
   else if(profit>0&&(aligned<((JS_PARAMS[(p.mode||p.entry_mode||(S&&S.mode)||'scalp')]||JS_PARAMS.scalp).th)||rsiAgainst||adx<ADX_WEAK)){
     level='watch';label='🟡 利確検討';

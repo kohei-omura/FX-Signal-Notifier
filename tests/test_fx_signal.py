@@ -4721,7 +4721,7 @@ class CrossModeAdviceTest(unittest.TestCase):
     ガードがあるため、モード切替直後・建玉登録直後はどちらも間に合わなかった。
     """
 
-    def _run(self, screen_mode, server_adv):
+    def _run(self, screen_mode, server_adv, price=None, pos_over=None, mfe=None):
         node = shutil.which("node") or shutil.which("nodejs")
         if not node:
             self.skipTest("node が無い")
@@ -4735,13 +4735,15 @@ class CrossModeAdviceTest(unittest.TestCase):
         pos = {"id": "p1", "symbol": "USD_JPY", "side": "long", "entry": 157.6414,
                "lot": 3000, "status": "open", "tp_pips": 13.3, "sl_pips": 8.3,
                "entry_mode": "day", "mode": "day"}
+        pos.update(pos_over or {})
+        price = price or {"bid": 157.638, "ask": 157.640}
         srv = [{"id": "p1", "adv_level": "hold", "adv_label": "🟢 ホールド",
                 "adv_reason": "入った根拠が続いている（スコア+0.45）"}] if server_adv else []
         head = ("""
 var S={mode:%s, pairs:[{symbol:'USD_JPY',bid:157.638,ask:157.640,score:0.45,rsi:60,adx:25,atr:0.0637}],
        open_positions:%s};
 var POS={positions:[%s]};
-var PRICE={USD_JPY:{bid:157.638,ask:157.640}};
+var PRICE={USD_JPY:%s};
 var PS=0.01, PS_=0.01;
 var MODES=['scalp','day','swing','mtf'];
 var MODE_LABEL={scalp:'スキャル',day:'デイ',swing:'スイング',mtf:'上位足フォロー'};
@@ -4751,8 +4753,12 @@ var MTF_BY_SYM={};
 function loadMfe(){return {};} function saveMfe(){}
 function tpsl(p){return [p.entry+p.tp_pips*PS, p.entry-p.sl_pips*PS];}
 function pairSig(sym){var p=(S.pairs||[])[0]; return {score:p.score,rsi:p.rsi,adx:p.adx,atr:p.atr};}
-""" % (json.dumps(screen_mode), json.dumps(srv), json.dumps(pos)))
-        body = (cut("const JS_PARAMS={", "function holdTxt")
+""" % (json.dumps(screen_mode), json.dumps(srv), json.dumps(pos), json.dumps(price)))
+        if mfe is not None:
+            head = head.replace("function loadMfe(){return {};}",
+                                "function loadMfe(){return {p1:%s};}" % json.dumps(mfe))
+        body = (cut("const SPREAD={", "// 機能2:")
+                + cut("const JS_PARAMS={", "function holdTxt")
                 + cut("function computeOpen(){", "/* ---------- 保有ポジションの利確")
                 + cut("function pairSigFor(p){", "function loadMfe(")
                 + cut("function holdAligned(p,ps,dir){", "function posAdvice(p){")
@@ -4795,6 +4801,35 @@ function pairSig(sym){var p=(S.pairs||[])[0]; return {score:p.score,rsi:p.rsi,ad
         """同じモードなら普通に計算できるので、準備中でごまかさないこと。"""
         got = self._run("day", server_adv=False)
         self.assertNotIn("準備中", got["label"])
+
+    def test_the_card_does_not_cut_on_a_spread_blowout(self):
+        """同じモードの画面（その場で計算するカード）でも、スプレッドが開いただけで
+        損切り推奨を出さないこと。サーバー側だけ直していたので、カードでは
+        ロールオーバーのたびに 🛑 が出ていた。"""
+        # SL = 157.6414-0.083 = 157.5584。売値は割ったが仲値(157.590)はまだ手前
+        got = self._run("day", server_adv=False, price={"bid": 157.555, "ask": 157.625})
+        self.assertEqual(got["level"], "watch", got)
+        self.assertIn("スプレッド", got["label"])
+
+    def test_the_card_still_cuts_on_a_real_drop(self):
+        got = self._run("day", server_adv=False, price={"bid": 157.550, "ask": 157.555})
+        self.assertEqual(got["level"], "cut", got)
+
+    def test_the_card_trail_ignores_the_spread(self):
+        """含み益の玉で、スプレッドが開いただけでトレール利確を出さないこと。"""
+        # ATR 6.37pips。建値157.600・最高値157.760（+16pips＝2.5ATR）。
+        # 売値157.690 だけ見ると「含み益1.4ATR・高値から1.1ATR押し戻し」でトレール発火。
+        # 実際は買値157.816（スプレッド12.6pips）で、仲値157.753 は高値のほぼ真下。
+        got = self._run("day", server_adv=False, price={"bid": 157.690, "ask": 157.816},
+                        pos_over={"entry": 157.600, "tp_pips": 30.0}, mfe=157.760)
+        self.assertNotEqual(got["level"], "take", got)
+
+    def test_the_card_trail_still_fires_on_a_real_pullback(self):
+        """スプレッドが普段どおりなら、今までどおりトレール利確を出すこと。"""
+        got = self._run("day", server_adv=False, price={"bid": 157.690, "ask": 157.695},
+                        pos_over={"entry": 157.600, "tp_pips": 30.0}, mfe=157.760)
+        self.assertEqual(got["level"], "take", got)
+        self.assertIn("トレール", got["reason"])
 
     def test_the_indicators_are_fetched_outside_the_live_loop(self):
         """モード切替と建玉登録の直後に、その場で取りに行くこと。
@@ -4887,6 +4922,62 @@ class SpreadTouchHistoryTest(unittest.TestCase):
         with open(os.path.join(ROOT, ".github", "workflows", "fx-signal.yml"),
                   encoding="utf-8") as f:
             self.assertIn("data/quote_hist.json", f.read(), "保存しても push されない")
+
+
+class SpreadTrailAndBaselineTest(unittest.TestCase):
+    """スプレッド拡大がトレール利確を誤発火させないこと／『普段』の基準が実測であること。"""
+
+    def setUp(self):
+        self.addCleanup(setattr, F, "MODE", F.MODE)
+        self.addCleanup(setattr, F, "P", F.P)
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        for n in ("get_ohlc", "mtf_view", "upcoming_news"):
+            self.addCleanup(setattr, F, n, F.__dict__[n])
+        F.get_ohlc = lambda sym: []
+        F.mtf_view = lambda sym: {"aligned": 1}
+        F.upcoming_news = lambda sym: None
+
+    POS = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 157.600,
+           "lot": 3000, "status": "open", "tp_pips": 30.0, "sl_pips": 8.3,
+           "opened_at": "2026-09-22 15:30 JST"}
+    SC = {"atr": 0.0637, "score": 0.45, "rsi": 60, "adx": 25}
+
+    def test_a_wide_spread_does_not_fire_the_trail(self):
+        """売値だけ見れば『含み益1.4ATR・高値から1.1ATR押し戻し』だが、仲値は高値の真下。"""
+        tick = {"USD_JPY": {"bid": 157.690, "ask": 157.816}}
+        adv = F.position_advice(self.POS, tick, self.SC, prev_mfe=157.760)
+        self.assertNotEqual(adv["level"], "take", adv["reason"])
+
+    def test_a_real_pullback_still_fires_the_trail(self):
+        tick = {"USD_JPY": {"bid": 157.690, "ask": 157.695}}
+        adv = F.position_advice(self.POS, tick, self.SC, prev_mfe=157.760)
+        self.assertEqual(adv["level"], "take", adv["reason"])
+        self.assertIn("トレール", adv["reason"])
+
+    def test_the_normal_spread_is_not_called_wide(self):
+        """USD/JPY の普段(API実測0.5pips)を『拡大中』と呼ばないこと。
+
+        公表値0.2を基準にしていた頃は、普段の0.5でも『2.5倍』になっていた。"""
+        sp = F.spread_state("USD_JPY", {"USD_JPY": {"bid": 157.777, "ask": 157.782}})
+        self.assertFalse(sp["wide"])
+        self.assertAlmostEqual(sp["mult"], 1.0, places=1)
+
+    def test_the_rollover_spread_is_wide_for_every_pair(self):
+        """実測の最大値（ロールオーバー）はどの通貨でも『拡大中』になること。"""
+        worst = {"USD_JPY": 9.9, "EUR_JPY": 11.6, "GBP_JPY": 14.8, "AUD_JPY": 7.4}
+        for sym, pips in worst.items():
+            tick = {sym: {"bid": 150.000, "ask": 150.000 + pips * 0.01}}
+            self.assertTrue(F.spread_state(sym, tick)["wide"], sym)
+
+    def test_screen_and_server_use_the_same_baseline(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const SPREAD_NORMAL_API=")
+        js = src[i:src.index(";", i)]
+        for sym, v in F.SPREAD_NORMAL_API.items():
+            self.assertIn(f"{sym}:{v}", js, f"{sym} の普段値が画面とサーバーで違う")
+        self.assertIn(f"SPREAD_WIDE_MULT_JS={F.SPREAD_WIDE_MULT}", src.replace(" ", ""),
+                      "拡大とみなす倍率が画面とサーバーで違う")
 
 
 if __name__ == "__main__":
