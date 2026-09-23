@@ -89,12 +89,15 @@ class RunTestCase(unittest.TestCase):
         # 前向き検証のファイルもテスト用に逃がす。逃がさないと main() の決着判定が
         # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
-        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE", "NEAR_FILE"):
+        for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE", "NEAR_FILE",
+                   "QUOTE_FILE"):
             self.addCleanup(setattr, F, _n, getattr(F, _n))
         F.FWD_LOG_FILE = p("forward_log.json")
         F.FWD_CLOSE_FILE = p("forward_close.json")
         F.SUB_STATE_FILE = p("sub_signals.json")
         F.NEAR_FILE = p("near_miss.json")
+        F.QUOTE_FILE = p("quote_hist.json")
+        self.addCleanup(setattr, F, "_QUOTES", None)
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
             {"id": "t1", "symbol": "USD_JPY", "side": "long",
@@ -4804,6 +4807,86 @@ function pairSig(sym){var p=(S.pairs||[])[0]; return {score:p.score,rsi:p.rsi,ad
         self.assertIn("refreshPosModeSig()", src[i:i + 500], "モード切替で呼んでいない")
         j = src.index("toast('追加しました'")
         self.assertIn("refreshPosModeSig()", src[j:j + 300], "建玉登録で呼んでいない")
+
+
+class SpreadTouchHistoryTest(unittest.TestCase):
+    """スプレッドが戻った後の回で、開いていた時の足の安値を拾って損切りを出さないこと。
+
+    実際に起きたこと（2026-09-22 AUD/JPY・SL 111.999 の買い建て）:
+      08:56 スプレッド3.2pips → 🟡 SL接触（スプレッド拡大中）  ← 前回の修正で抑止
+      09:01 スプレッド0.7pips → 🛑 損切り推奨「SLに接触…戻しています」 ← 誤報・通知も飛んだ
+      09:06 / 09:11           → 🛑 損切り推奨
+    足(BID)には、スプレッドが開いていた間の安値が残る。スプレッドが戻った回では
+    「いま開いているか」で判定しても見抜けない。足からは仲値が分からないので、
+    自分で5分ごとに見た売値/買値の履歴で確かめる。
+    """
+
+    T0 = 1790000000000
+    # 9/22 の実測（5分ごと）。仲値は一度も 111.999 を割っていない
+    REAL = [(112.052, 112.059), (112.015, 112.089), (111.999, 112.073),
+            (112.003, 112.077), (111.980, 112.054), (111.986, 112.029),
+            (112.009, 112.041), (112.033, 112.040)]
+
+    def setUp(self):
+        self.addCleanup(setattr, F, "QUOTE_FILE", F.QUOTE_FILE)
+        self.addCleanup(setattr, F, "_QUOTES", None)
+        F.QUOTE_FILE = os.path.join(tempfile.mkdtemp(), "quote_hist.json")
+        F._QUOTES = None
+
+    def _feed(self, rows, sym="AUD_JPY"):
+        for i, (b, a) in enumerate(rows):
+            F.record_quotes({sym: {"bid": b, "ask": a}}, now_ms=self.T0 + i * 300000)
+
+    def test_the_real_case_is_recognised_as_spread(self):
+        self._feed(self.REAL)
+        self.assertTrue(F.touch_was_spread("AUD_JPY", "long", 111.999, self.T0),
+                        "仲値が一度もSLに届いていないのに、相場の下げと見ている")
+
+    def test_a_real_drop_is_not_excused(self):
+        """スプレッドが開いていても、仲値がSLを割っていれば本物。"""
+        rows = self.REAL[:3] + [(111.950, 112.024)] + self.REAL[4:]   # 仲値111.987
+        self._feed(rows)
+        self.assertFalse(F.touch_was_spread("AUD_JPY", "long", 111.999, self.T0))
+
+    def test_no_wide_spread_means_a_real_touch(self):
+        """スプレッドが一度も開いていなければ、足の安値は相場の動き。"""
+        self._feed([(112.010, 112.017), (112.004, 112.011), (112.020, 112.027)])
+        self.assertFalse(F.touch_was_spread("AUD_JPY", "long", 111.999, self.T0))
+
+    def test_no_history_means_no_excuse(self):
+        """見た記録が無ければ判断しない（黙って損切りを取り消さない）。"""
+        self.assertFalse(F.touch_was_spread("AUD_JPY", "long", 111.999, self.T0))
+
+    def test_short_positions_are_mirrored(self):
+        rows = [(112.052, 112.059), (111.990, 112.064), (112.040, 112.047)]
+        self._feed(rows)
+        # 売り建てのSL 112.062：買値は触れたが、仲値(最大112.027)は届いていない
+        self.assertTrue(F.touch_was_spread("AUD_JPY", "short", 112.062, self.T0))
+
+    def test_old_quotes_are_pruned(self):
+        F.record_quotes({"AUD_JPY": {"bid": 1.0, "ask": 2.0}}, now_ms=self.T0)
+        F.record_quotes({"AUD_JPY": {"bid": 112.0, "ask": 112.007}},
+                        now_ms=self.T0 + (F.QUOTE_KEEP_MIN + 1) * 60000)
+        d = json.load(open(F.QUOTE_FILE, encoding="utf-8"))
+        self.assertEqual(len(d["AUD_JPY"]), 1, "古い記録が残り続けている")
+
+    def test_position_advice_asks_the_history(self):
+        """足で拾った接触（いまは戻している）の時に、履歴へ問い合わせていること。"""
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def position_advice(")
+        body = src[i:src.index("\ndef ", i + 10)]
+        self.assertIn("touch_was_spread(", body, "履歴を見ていない")
+        self.assertIn("hit_sl and spread_hist", body, "履歴で分かった時の文面が無い")
+
+    def test_main_records_the_quotes(self):
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def main():")
+        self.assertIn("record_quotes(ticker)", src[i:], "5分ごとの記録を取っていない")
+        with open(os.path.join(ROOT, ".github", "workflows", "fx-signal.yml"),
+                  encoding="utf-8") as f:
+            self.assertIn("data/quote_hist.json", f.read(), "保存しても push されない")
 
 
 if __name__ == "__main__":

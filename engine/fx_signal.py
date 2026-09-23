@@ -1797,6 +1797,70 @@ def spread_blocks_entry(sp, sl_pips):
             + (f"・普段の{sp['mult']}倍" if sp.get("mult") else "") + "）")
 
 
+QUOTE_FILE = data_path("quote_hist.json")
+QUOTE_KEEP_MIN = 90       # スイングの1時間足1本＋APIの遅れを覆う長さ
+_QUOTES = None
+
+
+def record_quotes(ticker, now_ms=None):
+    """この回の売値/買値を、通貨ごとに直近 QUOTE_KEEP_MIN 分だけ残す。
+
+       なぜ要るか: ローソク足は売値(BID)しか無い。スプレッドが開いていた間の
+       安値が足に残るので、スプレッドが戻った後の回で「足の安値がSLに触れた」と
+       拾ってしまう。実際 2026-09-22 AUD/JPY で、08:56(スプレッド3.2pips)までは
+       「SL接触（スプレッド拡大中）」と正しく出ていたのに、09:01 にスプレッドが
+       0.7pipsへ戻った途端「🛑 損切り推奨」に変わり、通知まで飛んだ。
+       足からは仲値が分からないので、自分で5分ごとに見た仲値を覚えておく。"""
+    global _QUOTES
+    # time.time() は使わない（テストが time を差し替えるため。他の箇所と同じく datetime で取る）
+    now_ms = now_ms or int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+    d = _fwd_read(QUOTE_FILE, {}) or {}
+    lo = now_ms - QUOTE_KEEP_MIN * 60000
+    for sym, t in (ticker or {}).items():
+        b, a = (t or {}).get("bid"), (t or {}).get("ask")
+        if not b or not a or a < b:
+            continue
+        rows = [r for r in d.get(sym, []) if r[0] >= lo]
+        rows.append([now_ms, b, a])
+        d[sym] = rows
+    for sym in list(d):
+        d[sym] = [r for r in d[sym] if r[0] >= lo]
+    try:
+        tmp = QUOTE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, QUOTE_FILE)
+    except Exception as e:
+        warn(f"売値/買値の履歴を保存できませんでした: {e}", tag="quote-save", surface=False)
+    _QUOTES = d
+    return d
+
+
+def quotes_since(symbol, since_ms):
+    """since_ms 以降に見た [時刻, 売値, 買値] の一覧。"""
+    d = _QUOTES if _QUOTES is not None else (_fwd_read(QUOTE_FILE, {}) or {})
+    return [r for r in d.get(symbol, []) if r[0] >= since_ms]
+
+
+def touch_was_spread(symbol, side, level, since_ms):
+    """足の高安で拾った接触が、スプレッドの拡大によるものだったか。
+
+       その間に自分で見た仲値が一度も level に届いておらず、かつ
+       スプレッドが普段の SPREAD_WIDE_MULT 倍以上に開いた回があれば、
+       動いたのは相場ではなくスプレッド。見た記録が無ければ判断しない（False）。"""
+    rows = quotes_since(symbol, since_ms)
+    if not rows:
+        return False
+    base = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS)
+    wide = any((a - b) / PIP_SIZE >= base * SPREAD_WIDE_MULT for _, b, a in rows)
+    if not wide:
+        return False
+    mids = [(b + a) / 2.0 for _, b, a in rows]
+    if side == "long":
+        return min(mids) > level
+    return max(mids) < level
+
+
 def pair_bias(score, rsi, aligned):
     """シグナルが出ていない時にカードへ出す『今どんな状態か』。
 
@@ -2360,7 +2424,24 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     spread_driven = bool(hit_sl and spw and spw.get("wide")
                          and ((side == "long" and mid > sl_pr)
                               or (side == "short" and mid < sl_pr)))
-    if hit_sl and spread_driven:
+    # 足の高安で拾った接触（＝いまは戻している）は、スプレッドが既に戻っていても
+    # 接触した当時は開いていたかもしれない。自分で見た仲値の履歴で確かめる。
+    spread_hist = False
+    if hit_sl and touched and not spread_driven and rec:
+        # 見ている足の始まり（足に時刻は無いので、形成中の足から数えて出す）
+        _bar = bm * 60000
+        _now = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+        _since = (_now // _bar) * _bar - (len(rec) - 1) * _bar
+        _since = max(_since, pos_opened_ms(p) or 0)
+        spread_hist = spread_driven = touch_was_spread(sym, side, sl_pr, _since)
+    if hit_sl and spread_hist:
+        level, label = "watch", "🟡 SL接触（スプレッド拡大時）"
+        reason = (f"足の安値がSL({sl_pr:.3f})に触れていますが、その間スプレッドが開いており、"
+                  f"5分ごとに見ていた仲値は一度もSLに届いていません。"
+                  f"相場が下げたのではなく、スプレッドが開いた時の売値です。"
+                  f"いまはスプレッドも戻っています（現在値{cur:.3f}）。"
+                  f"GMOのOCOが約定していないか、念のため確認してください")
+    elif hit_sl and spread_driven:
         level, label = "watch", "🟡 SL接触（スプレッド拡大中）"
         reason = (f"売値だけがSL({sl_pr:.3f})に触れています。"
                   f"スプレッドが{spw['pips']}pips（普段の{spw['mult']}倍）まで開いており、"
@@ -2858,6 +2939,13 @@ def main():
     for m in other:
         with use_mode(m):
             warm_up([p["symbol"] for p in open_pos_list if pos_mode(p) == m and p.get("symbol")])
+    # 売値/買値を5分ごとに覚えておく。足(BID)だけでは、スプレッドが開いて売値が
+    # 下がったのか、相場そのものが下げたのかを区別できないため。
+    if market_open and ticker:
+        try:
+            record_quotes(ticker)
+        except Exception as e:
+            warn(f"売値/買値の履歴を残せませんでした: {e}", tag="quote-rec", surface=False)
     prev_stats = load_prev_stats()
     prev_state = load_prev_state()
     prev_signals = load_prev_signals()
