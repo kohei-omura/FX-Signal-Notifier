@@ -242,6 +242,25 @@ def filter_holdout(mode):
     return out
 
 
+def merge_previous(out, path):
+    """今回回さなかったモードは、前回の結果をそのまま引き継ぐ（いつの結果かも残す）。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            prev = json.load(f)
+    except Exception:
+        return out
+    kept = {}
+    for m, v in (prev.get("modes") or {}).items():
+        if m not in out.get("modes", {}):
+            v = dict(v)
+            v.setdefault("generated_at", prev.get("generated_at"))
+            out["modes"][m] = v
+            kept[m] = v["generated_at"]
+    if kept:
+        out["kept_from_previous"] = kept
+    return out
+
+
 # 総合判定（🟢/🟡/🔴）を検証するモード。scalp は1分足で重く、運用対象でもない。
 MARK_MODES = ("day", "swing", "mtf")
 
@@ -490,6 +509,10 @@ def main():
         print("[ERROR] どのモードも集計できませんでした（既存の backtest.json は残します）",
               file=sys.stderr)
         sys.exit(1)
+    # 一部のモードだけ回した時に、他のモードの結果を消さない。
+    # 以前は丸ごと上書きしていたので、手動で day だけ回すと scalp/swing/mtf の
+    # 検証値が翌朝の定期実行まで消え、画面の「検証」欄が「—」になっていた。
+    out = merge_previous(out, OUT)
     F.write_json(OUT, out)
     print(f"[OK] {OUT} に保存")
 

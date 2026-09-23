@@ -5107,5 +5107,29 @@ class MarkBacktestParityTest(unittest.TestCase):
         self.assertIn("marks=(mode in MARK_MODES)", src)
 
 
+class BacktestPartialRunTest(unittest.TestCase):
+    """一部のモードだけ回した時に、他のモードの検証結果を消さないこと。
+
+    以前は backtest.json を丸ごと上書きしていたので、手動で day だけ回すと
+    scalp/swing/mtf の検証値が翌朝まで消え、画面の「検証」欄が「—」になっていた。"""
+
+    def test_modes_not_run_are_kept(self):
+        import backtest as B
+        path = os.path.join(tempfile.mkdtemp(), "backtest.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"generated_at": "2026-09-22 05:30",
+                       "modes": {"scalp": {"n": 1}, "day": {"n": 2}}}, f)
+        out = B.merge_previous({"generated_at": "2026-09-23 18:00",
+                                "modes": {"day": {"n": 99}}}, path)
+        self.assertEqual(out["modes"]["day"]["n"], 99, "今回の結果が前回で上書きされた")
+        self.assertEqual(out["modes"]["scalp"]["n"], 1, "回さなかったモードが消えた")
+        self.assertEqual(out["kept_from_previous"], {"scalp": "2026-09-22 05:30"})
+
+    def test_a_missing_file_is_fine(self):
+        import backtest as B
+        out = B.merge_previous({"modes": {"day": {}}}, "/nonexistent/backtest.json")
+        self.assertEqual(list(out["modes"]), ["day"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
