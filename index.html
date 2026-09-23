@@ -1012,6 +1012,38 @@ function adxScore(adx,mode){
 }
 /* backtest.json は大きいので、開いてすぐには取りに行かない。
    取れたら帯の表だけ抜いて端末に残す（次回からは通信前でも同じ採点になる）。 */
+/* ===== デイの ADX40未満 は、実測で負け越しが確定している =====
+   backtest.json の filter_holdout（前半と後半を別々に測ったもの）から、
+   「絞り込みなし」と「ADX40以上」の差で ADX40未満 の成績を出す。
+   デイ全体は前半・後半とも95%区間が0より下（負けが確定）で、その負けは
+   ADX40未満に集まっている（どちらの半分でも約 -0.10R）。
+   画面は ▲買い をそのまま出していて、この事実はどこにも書いていなかった。
+   直近のデイの建玉は、確認できる11件のうち6件がこの条件で入っている。 */
+var DAY_ADX_EVID={"first": [1741, -0.106], "second": [1620, -0.098], "all_first": [-0.138, -0.031], "all_second": [-0.126, -0.018]};
+try{var _da=JSON.parse(localStorage.getItem('fxnavi_dayadx')||'null');
+    if(_da&&_da.d&&Date.now()-_da.t<7*24*3600e3)DAY_ADX_EVID=_da.d;}catch(e){}
+function dayAdxBelow40(j){
+  var fh=(((j||{}).modes||{}).day||{}).filter_holdout; if(!fh)return null;
+  var out={};
+  for(var k of ['first','second']){
+    var h=fh[k+'_half']||{}, a=h['絞り込みなし'], x=h['ADX40以上'];
+    if(!a||!x||!(a.n>x.n))return null;
+    out[k]=[a.n-x.n, Math.round((a.n*a.avg_r-x.n*x.avg_r)/(a.n-x.n)*1000)/1000];
+    out['all_'+k]=[a.ci_lo,a.ci_hi];
+  }
+  return out;
+}
+function dayAdxBox(p,mode){
+  if(mode!=='day'||!p||!p.signal||p.adx==null||p.adx>=40)return '';
+  var e=DAY_ADX_EVID; if(!e||!e.first||!e.second)return '';
+  // 両方の半分で負けている時だけ言う（片方だけなら偶然の可能性がある）
+  if(!(e.first[1]<0&&e.second[1]<0))return '';
+  var f=function(v){return (v>=0?'+':'')+v.toFixed(2)+'R';};
+  return '<div class="entry down"><div class="ev">⛔ デイの ADX40未満（いま ADX '+(+p.adx).toFixed(1)+'）</div>'
+    +'<div class="er">1年の実測で、この条件のデイの合図は <b>1回あたり '+f(e.first[1])+'（前半）・'+f(e.second[1])+'（後半）</b>。'
+    +'どちらの半分でも負け越しています（各'+e.first[0]+'件・'+e.second[0]+'件）。'
+    +'デイで唯一プラスが続いたのは ADX40以上 の合図だけです。</div></div>';
+}
 async function refreshAdxBands(){
   try{
     const r=await fetch('./data/backtest.json?t='+Date.now(),{cache:'no-store'});
@@ -1025,6 +1057,8 @@ async function refreshAdxBands(){
       });
       if(Object.keys(d).length)out[m]=d;
     });
+    try{ const dh=dayAdxBelow40(j); if(dh){ DAY_ADX_EVID=dh;
+      localStorage.setItem('fxnavi_dayadx',JSON.stringify({t:Date.now(),d:dh})); } }catch(e){}
     if(!Object.keys(out).length)return;
     ADX_BAND_R=out;
     try{localStorage.setItem('fxnavi_adxbands',JSON.stringify({t:Date.now(),d:out}));}catch(e){}
@@ -1927,7 +1961,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     <div class="rsiwrap"><div class="rsibar"><span class="zoneL"></span><span class="zoneR"></span><i style="left:calc(${rsi}% - 1px)"></i></div></div>
     <div class="sparkwrap" style="position:relative">${spark(p.closes||[],p.ema_f_series||[],p.ema_s_series||[])}${sparkSignal(p)}</div>
     <div class="chips"><span class="chip">テク <b class="${tC}">${p.tech>=0?'+':''}${fmt(p.tech)}</b></span><span class="chip">ファンダ <b>${p.fund>=0?'+':''}${fmt(p.fund)}</b></span>
-    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${_sprBox}${nearBox(p)}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
+    <span class="chip">RSI <b>${fmt(p.rsi)}</b></span><span class="chip adxb ${ab.cls}">ADX <b>${fmt(p.adx)}</b> ${ab.ic}${ab.lab}</span>${costChip}${regChip}${mtfChip}</div>${meterDetail(conf)}${longEnvBox}${reasons}${dayAdxBox(p,(S&&S.mode))}${_sprBox}${nearBox(p)}${dowBox}${grvBox}${theoBox}${statBox}${fastBox}${zoneStatBox}${dowStatBox}${coreStatBox}${entryBox}${chaseBadge}${chaseBox}</div></div>`;}
 function toggleDetail(sym,btn){try{var card=btn.parentNode;var willOpen=card.classList.contains('simple');card.classList.toggle('simple',!willOpen);localStorage.setItem('fxnavi_acc_'+sym,willOpen?'1':'0');btn.textContent=willOpen?'▲ 詳細を閉じる':'▼ 詳細';}catch(e){}}
 function setView(v){try{localStorage.setItem('fxnavi_view',v);var i=0;var keys=[];for(i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('fxnavi_acc_')===0)keys.push(k);}keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}renderViewToggle();render();}
 function renderViewToggle(){var el=document.getElementById('viewtog');if(!el)return;var v='simple';try{v=localStorage.getItem('fxnavi_view')||'simple';}catch(e){}

@@ -5164,5 +5164,71 @@ class WriteJsonAtomicTest(unittest.TestCase):
                         "指標の予定が全滅しても黙っている")
 
 
+class DayAdxEvidenceTest(unittest.TestCase):
+    """デイで ADX40未満 の合図に、実測の負け越しを添えること。
+
+    デイ全体は前半・後半とも95%区間が0より下（負けが確定）で、その負けは
+    ADX40未満に集まっている（どちらの半分でも約 -0.10R）。画面は ▲買い を
+    そのまま出していて、この事実はどこにも書いていなかった。
+    確認できるデイの建玉11件のうち6件がこの条件で入っていた。
+    """
+
+    def _run(self, calls, bt=None):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("var DAY_ADX_EVID=")
+        body = src[i:src.index("async function refreshAdxBands(){", i)]
+        script = ("var localStorage={getItem:function(){return null;},setItem:function(){}};\n"
+                  + body
+                  + "var BT=" + json.dumps(bt) + ";\n"
+                  + "console.log(JSON.stringify({boxes:" + json.dumps(calls)
+                  + ".map(function(c){return dayAdxBox(c[0],c[1]);}),"
+                  "evid:(BT?dayAdxBelow40(BT):null)}));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_a_day_signal_below_40_is_flagged(self):
+        got = self._run([[{"signal": "買い", "adx": 34.8}, "day"]])
+        self.assertIn("ADX40未満", got["boxes"][0])
+        self.assertIn("負け越し", got["boxes"][0])
+
+    def test_others_are_not_flagged(self):
+        got = self._run([[{"signal": "買い", "adx": 42.0}, "day"],     # 40以上
+                         [{"signal": "買い", "adx": 20.0}, "mtf"],     # 別モード
+                         [{"signal": None, "adx": 20.0}, "day"],       # 合図なし
+                         [{"signal": "売り", "adx": None}, "day"]])    # ADX不明
+        self.assertEqual(got["boxes"], ["", "", "", ""])
+
+    def test_the_numbers_come_from_the_backtest(self):
+        """ADX40未満 = 絞り込みなし − ADX40以上（件数で重み付け）。"""
+        bt = {"modes": {"day": {"filter_holdout": {
+            "first_half": {"絞り込みなし": {"n": 2000, "avg_r": -0.08, "ci_lo": -0.13, "ci_hi": -0.03},
+                           "ADX40以上": {"n": 400, "avg_r": 0.04}},
+            "second_half": {"絞り込みなし": {"n": 1000, "avg_r": -0.06, "ci_lo": -0.12, "ci_hi": -0.01},
+                            "ADX40以上": {"n": 200, "avg_r": 0.02}}}}}}
+        got = self._run([], bt)["evid"]
+        self.assertEqual(got["first"][0], 1600)
+        self.assertAlmostEqual(got["first"][1], (2000 * -0.08 - 400 * 0.04) / 1600, places=3)
+        self.assertAlmostEqual(got["second"][1], (1000 * -0.06 - 200 * 0.02) / 800, places=3)
+
+    def test_it_stays_quiet_when_only_one_half_loses(self):
+        """片方の半分だけの負けなら言わない（偶然の可能性がある）。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("if(!(e.first[1]<0&&e.second[1]<0))return '';", src)
+
+    def test_the_card_shows_it(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            self.assertIn("${dayAdxBox(p,(S&&S.mode))}", f.read())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
