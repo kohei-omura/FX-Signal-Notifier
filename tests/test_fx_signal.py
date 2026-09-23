@@ -5390,5 +5390,34 @@ class MarkEvidenceBannerTest(unittest.TestCase):
         self.assertIn("const me=markEvidence(j);", src, "毎日取り直していない")
 
 
+class DayMarkWeightsTest(unittest.TestCase):
+    """デイの総合判定の配点(v2)。採用の根拠と、他モードに広げていないことを固定する。
+
+    旧配点のデイは 🟢 が最も悪かった（前半・後半とも）。長期環境・期待値・グランビルは
+    「✓の方が✗より悪い」が前半・後半の両方で出たので0点にし、測り直すと前半・後半とも
+    🟢>🔴 になったので採用した。mtf・スイングは同じ手順で直しても片方で 🟢<🔴 だった。"""
+
+    def test_day_drops_the_parts_that_pointed_the_wrong_way(self):
+        import confluence_bt as C
+        w = C.WEIGHTS["day"]
+        for k in ("longEnv", "expectancy", "granville"):
+            self.assertEqual(w[k], 0, f"day.{k} が残っている")
+        for k in ("adxBand", "dow", "zone", "blackout"):
+            self.assertGreater(w[k], 0, f"day.{k} まで外している")
+
+    def test_other_modes_are_not_changed_without_evidence(self):
+        """前半・後半の片方でしか通らなかったモードは、配点を変えないこと。"""
+        import confluence_bt as C
+        self.assertEqual(C.WEIGHTS["swing"]["longEnv"], 3)
+        self.assertEqual(C.WEIGHTS["swing"]["expectancy"], 2)
+        self.assertNotIn("day", C.WEIGHTS_V2, "採用済みのdayが候補に残っている")
+
+    def test_the_screen_explains_why(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const CONFLUENCE_W_BY_MODE={")
+        self.assertIn("厳密な事後検証ではない", src[i - 1500:i], "採用の弱さを書いていない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

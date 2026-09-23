@@ -1112,9 +1112,20 @@ async function refreshAdxBands(){
   }catch(e){}
 }
 setTimeout(function(){ refreshAdxBands(); }, 8000);
+/* ★デイの配点は 2026-09-23 に見直した（v2）。
+   1年のバックテストでマークを画面と同じ式で付け直すと、旧配点のデイは
+   🟢 -0.111R / 🟡 -0.104R / 🔴 -0.047R と、🟢が最も悪かった（前半・後半とも）。
+   部品ごとに分けると、長期環境・期待値・グランビルは「✓の方が✗より悪い」が
+   前半・後半の両方で出た。これらを0点にした配点（向きは逆にしない）で測り直すと
+     🟢 +0.017R / 🟡 -0.100R / 🔴 -0.084R （前半 🟢-0.065>🔴-0.081・後半 🟢+0.074>🔴-0.088）
+   と、前半・後半とも🟢が🔴を上回ったので採用した。
+   ただし外す部品を選んだのも同じ1年なので、厳密な事後検証ではない（前半の差は0.016Rと薄い）。
+   前向き検証がマーク別に記録しているので、そちらで確かめる。
+   mtf・スイングは同じ手順で直しても前半・後半のどちらかで🟢<🔴だったので、配点は変えず、
+   画面に「マークは根拠にしない」と出している。 */
 const CONFLUENCE_W_BY_MODE={
   scalp:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:2,granville:0.5,blackout:1.5},
-  day:  {longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1},
+  day:  {longEnv:0,adxBand:2,expectancy:0,dow:2,zone:1.5,granville:0,blackout:1},
   swing:{longEnv:3,adxBand:2,expectancy:2,dow:2,zone:1.5,granville:0.5,blackout:1}
 };
 /* 総合判定の重み。★mtf は専用の配点を持たない。

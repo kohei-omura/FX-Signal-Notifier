@@ -28,8 +28,9 @@ TZ_NY = ZoneInfo("America/New_York")
 WEIGHTS = {
     "scalp": {"longEnv": 3, "adxBand": 2, "expectancy": 2, "dow": 2, "zone": 2,
               "granville": 0.5, "blackout": 1.5},
-    "day":   {"longEnv": 3, "adxBand": 2, "expectancy": 2, "dow": 2, "zone": 1.5,
-              "granville": 0.5, "blackout": 1},
+    # 2026-09-23 に v2 を採用（前半・後半とも 🟢>🔴。index.html の配点の説明を参照）
+    "day":   {"longEnv": 0, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 1.5,
+              "granville": 0, "blackout": 1},
     "swing": {"longEnv": 3, "adxBand": 2, "expectancy": 2, "dow": 2, "zone": 1.5,
               "granville": 0.5, "blackout": 1},
 }
@@ -41,9 +42,8 @@ WEIGHT_FALLBACK = {"mtf": "swing"}
 #   day   長期環境・期待値・グランビル を外す（ADXは意図どおり効いているので残す）
 #   mtf   期待値・時間帯・グランビル を外す（長期環境は前半と後半で向きが割れた）
 #   swing 長期環境・期待値 を外す（グランビルは✓がほぼ出ず判断できない）
+# day は採用済み（WEIGHTS へ移した）。残りは前半・後半のどちらかで 🟢<🔴 だったので不採用。
 WEIGHTS_V2 = {
-    "day":   {"longEnv": 0, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 1.5,
-              "granville": 0, "blackout": 1},
     "mtf":   {"longEnv": 3, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 0,
               "granville": 0, "blackout": 1},
     "swing": {"longEnv": 0, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 1.5,
