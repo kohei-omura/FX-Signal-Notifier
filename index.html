@@ -1192,12 +1192,23 @@ function wilsonLower(wins,n,z){if(!n)return 0;z=z||1.96;var p=wins/n,z2=z*z;retu
    同一(合計12)なので、壊れていたのは mode の札だけ。
    捨てると実際にあった検証が1件消えるので、正しいモードに直して残す。 */
 var FWD_FIX={'1789127207637|EUR_JPY|short':'day'};
+/* 記録の出どころ(src)を、決着の反映で 'server' に上書きしてしまっていた。
+   src は「どこから来た記録か」(main=運用モード / sub=参考通知 / backfill=後から復元)で、
+   誰が決着させたかとは別物。上書きで、後から復元した3件の印が消えていた。
+   決着させた側は resolvedBy に分けて持ち、消えた印はここで戻す。 */
+var FWD_SRC_FIX={'1789723320000|AUD_JPY|long':'backfill','1789723380000|EUR_JPY|long':'backfill',
+                 '1789729800000|GBP_JPY|long':'backfill'};
 function loadFwd(){try{
   var a=JSON.parse(localStorage.getItem('fxnavi_forward_v1')||'[]')||[];
   var ch=false;
   a.forEach(function(x){
-    var m=FWD_FIX[[x.ts,x.sym,x.side].join('|')];
+    var k=[x.ts,x.sym,x.side].join('|');
+    var m=FWD_FIX[k];
     if(m&&x.mode!==m){x.mode=m;x.modeFixed=true;ch=true;}
+    var sf=FWD_SRC_FIX[k];
+    if(sf&&x.src!==sf){ if(x.src==='server')x.resolvedBy='server'; x.src=sf; ch=true; }
+    // 旧版で src が 'server' に潰された記録は、少なくとも「決着させたのはサーバー」を残す
+    if(x.src==='server'&&!x.resolvedBy){ x.resolvedBy='server'; ch=true; }
   });
   if(ch){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(a));}catch(e){}}
   return a;
@@ -1324,9 +1335,11 @@ function fwdApplyCloses(map){
     var e=f[i],r=map[fwdCloseKey(e)];
     if(!r||r.R==null) continue;
     // 旧ブラウザ判定で閉じた記録も、サーバの判定で上書きする（過去ぶんも直る）。
-    if(e.src==='server'&&e.result===r.result&&e.R===r.R) continue;
+    if(e.resolvedBy==='server'&&e.result===r.result&&e.R===r.R) continue;
     e.open=false;e.result=r.result;e.R=r.R;e.closed=r.closed||Date.now();
-    e.bars=r.bars;e.heldMin=r.held_min;e.fill=r.fill;e.exit=r.exit;e.policies=r.policies||null;e.src='server';ch++;
+    e.bars=r.bars;e.heldMin=r.held_min;e.fill=r.fill;e.exit=r.exit;e.policies=r.policies||null;
+    // ★src（記録の出どころ）は触らない。決着させた側は別の欄に持つ
+    e.resolvedBy='server';ch++;
   }
   if(ch){try{localStorage.setItem('fxnavi_forward_v1',JSON.stringify(f.slice(-300)));}catch(e){}}
   return ch;
@@ -1358,7 +1371,7 @@ function fwdStats(){var f=loadFwd(),closed=f.filter(function(x){return !x.open&&
   for(var i=0;i<closed.length;i++){cum+=closed[i].R;curve.push(Math.round(cum*100)/100);}
   var open=f.filter(function(x){return x.open;}).length;
   var timed=closed.filter(function(x){return x.result==='time';}).length;
-  var srv=closed.filter(function(x){return x.src==='server';}).length;
+  var srv=closed.filter(function(x){return x.resolvedBy==='server'||x.src==='server';}).length;
   return{n:n,wins:wins,wr:n?Math.round(wins/n*100):0,cum:Math.round(cum*100)/100,
     curve:curve,closed:closed,open:open,timed:timed,srv:srv,pol:_fwdPolicies(closed)};}
 /* 実際に運用している出口（利確推奨＝advice）でのRも並べる。

@@ -895,8 +895,9 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                 try:
                     _mk = mctx.marks(i, side, _adx, tp_pips, sl_pips)
                 except Exception:
-                    _mk = (None, None, {})
-                for kind, mk in zip(("mark", "mark_noadx"), _mk[:2]):
+                    _mk = (None, None, {}, None)
+                for kind, mk in zip(("mark", "mark_noadx", "mark_v2"),
+                                    (_mk[0], _mk[1], _mk[3])):
                     if mk:
                         fast_r.setdefault(kind, {}).setdefault(mk, []).append(row)
                 # 部品ごとにも分ける。総合判定が逆を向いていた時に、どの部品が

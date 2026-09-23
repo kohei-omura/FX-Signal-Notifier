@@ -284,7 +284,7 @@ def mark_holdout(mode):
                 print(f"[WARN] {mode}/{sym} 総合判定の検証 失敗: {e}", file=sys.stderr)
                 continue
             kinds = [k for k in (((st or {}).get("fast")) or {})
-                     if k in ("mark", "mark_noadx") or k.startswith("mp_")]
+                     if k in ("mark", "mark_noadx", "mark_v2") or k.startswith("mp_")]
             for kind in kinds:
                 for band, b in (((st or {}).get("fast") or {}).get(kind) or {}).items():
                     if (b or {}).get("advice"):
@@ -469,7 +469,8 @@ def main():
                       f"[{b.get('ci_lo',0):+.3f},{b.get('ci_hi',0):+.3f}]")
         mh = r.get("mark_holdout") or {}
         if mh.get("second_half"):
-            for kind, lab in (("mark", "総合判定"), ("mark_noadx", "総合判定(ADX抜き)")):
+            for kind, lab in (("mark", "総合判定"), ("mark_noadx", "総合判定(ADX抜き)"),
+                              ("mark_v2", "総合判定(候補v2)")):
                 print(f"      ── {lab}（前半 → 後半）")
                 for band in ("🟢 エントリーOK", "🟡 保留・検討", "🔴 見送り"):
                     a = ((mh.get("first_half") or {}).get(kind) or {}).get(band) or {}

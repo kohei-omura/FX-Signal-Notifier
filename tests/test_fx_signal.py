@@ -3424,7 +3424,21 @@ class ForwardBackfillTest(unittest.TestCase):
         for x in got:
             self.assertEqual(x["mode"], "swing")
             self.assertEqual(x["side"], "long")
-            self.assertTrue(x["open"], "決着済で作ってはいけない（サーバが判定する）")
+            # 作った時は未決着。決着させてよいのはサーバーだけ（画面の都合で閉じない）
+            self.assertTrue(x["open"] or x.get("resolvedBy") == "server",
+                            "サーバー以外が決着させている")
+
+    def test_resolving_does_not_erase_the_origin(self):
+        """決着の反映で、記録の出どころ(src)を上書きしないこと。
+
+        以前は決着を反映するたびに src='server' にしていたため、
+        「後から復元した」「参考通知の」という印が消えていた（この3件で実際に消えた）。"""
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("function fwdApplyCloses(map){")
+        body = src[i:src.index("async function fwdCloseLoad(", i)]
+        self.assertNotIn("e.src='server'", body, "出どころを上書きしている")
+        self.assertIn("e.resolvedBy='server'", body)
 
     def test_the_levels_match_the_screenshots(self):
         """建値とTP/SLが画面の写しどおりであること。"""

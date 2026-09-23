@@ -34,6 +34,21 @@ WEIGHTS = {
               "granville": 0.5, "blackout": 1},
 }
 WEIGHT_FALLBACK = {"mtf": "swing"}
+# 候補の配点（v2）。画面にはまだ使わない。バックテストで今の配点と並べて測り、
+# 前半・後半とも 🟢 が 🔴 を上回った時だけ画面に採用する。
+# 決め方は機械的：1年の部品別成績（mp_*）で「✓の方が✗より悪い」が前半・後半の
+# 両方で出た部品を0点にする（向きを逆にはしない＝そこまでは言えない）。
+#   day   長期環境・期待値・グランビル を外す（ADXは意図どおり効いているので残す）
+#   mtf   期待値・時間帯・グランビル を外す（長期環境は前半と後半で向きが割れた）
+#   swing 長期環境・期待値 を外す（グランビルは✓がほぼ出ず判断できない）
+WEIGHTS_V2 = {
+    "day":   {"longEnv": 0, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 1.5,
+              "granville": 0, "blackout": 1},
+    "mtf":   {"longEnv": 3, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 0,
+              "granville": 0, "blackout": 1},
+    "swing": {"longEnv": 0, "adxBand": 2, "expectancy": 0, "dow": 2, "zone": 1.5,
+              "granville": 0.5, "blackout": 1},
+}
 # 画面の統計（期待値の判定に使う）が見ている期間。画面は JS_PARAMS.days 日ぶんの足、
 # mtf はサーバーの統計(STATS_DAYS)を使う。バックテスト中は STATS_DAYS が書き換わるので
 # ここに運用時の値を持っておく。
@@ -272,8 +287,10 @@ class MarkContext:
         p = self.parts(i, side, adx, tp_pips, sl_pips, with_adx=True)
         parts = dict(p)
         full = mark_of(score(p, self.w))
+        w2 = WEIGHTS_V2.get(self.mode)
+        v2 = mark_of(score(p, w2)) if w2 else None
         p["adxBand"] = 0.5
-        return full, mark_of(score(p, self.w)), parts
+        return full, mark_of(score(p, self.w)), parts, v2
 
 
 def part_label(v):
