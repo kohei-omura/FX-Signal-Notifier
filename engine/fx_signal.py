@@ -895,10 +895,18 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                 try:
                     _mk = mctx.marks(i, side, _adx, tp_pips, sl_pips)
                 except Exception:
-                    _mk = (None, None)
-                for kind, mk in zip(("mark", "mark_noadx"), _mk):
+                    _mk = (None, None, {})
+                for kind, mk in zip(("mark", "mark_noadx"), _mk[:2]):
                     if mk:
                         fast_r.setdefault(kind, {}).setdefault(mk, []).append(row)
+                # 部品ごとにも分ける。総合判定が逆を向いていた時に、どの部品が
+                # 逆を向いているのかを見分けるため（配点を直すならここが根拠になる）。
+                import confluence_bt as _CB
+                for pname, pv in (_mk[2] or {}).items():
+                    if pname == "blackout":
+                        continue            # 過去には再現できず全件✓なので分けても意味が無い
+                    fast_r.setdefault("mp_" + pname, {}).setdefault(
+                        _CB.part_label(pv), []).append(row)
         ab = _atr_band(atrpct_s[i] if i < len(atrpct_s) else None)
         if ab:
             slot = atr_r.setdefault(ab, {})

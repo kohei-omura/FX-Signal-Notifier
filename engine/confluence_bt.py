@@ -268,8 +268,20 @@ class MarkContext:
         return mark_of(score(p, self.w))
 
     def marks(self, i, side, adx, tp_pips, sl_pips):
-        """(画面と同じ判定, ADXの配点を抜いた判定)。部品は1回だけ計算する。"""
+        """(画面と同じ判定, ADXの配点を抜いた判定, 部品ごとの結果)。部品は1回だけ計算する。"""
         p = self.parts(i, side, adx, tp_pips, sl_pips, with_adx=True)
+        parts = dict(p)
         full = mark_of(score(p, self.w))
         p["adxBand"] = 0.5
-        return full, mark_of(score(p, self.w))
+        return full, mark_of(score(p, self.w)), parts
+
+
+def part_label(v):
+    """部品の結果を、成績を分ける時の区分名にする（✓ / △ / ✗ / —）。"""
+    if v is True or (isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 1):
+        return "✓"
+    if v is None:
+        return "—"
+    if v is False or v == 0:
+        return "✗"
+    return "△"

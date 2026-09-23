@@ -283,7 +283,9 @@ def mark_holdout(mode):
             except Exception as e:
                 print(f"[WARN] {mode}/{sym} 総合判定の検証 失敗: {e}", file=sys.stderr)
                 continue
-            for kind in ("mark", "mark_noadx"):
+            kinds = [k for k in (((st or {}).get("fast")) or {})
+                     if k in ("mark", "mark_noadx") or k.startswith("mp_")]
+            for kind in kinds:
                 for band, b in (((st or {}).get("fast") or {}).get(kind) or {}).items():
                     if (b or {}).get("advice"):
                         parts.setdefault(kind, {}).setdefault(band, []).append(b["advice"])
