@@ -1891,19 +1891,27 @@ def record_quotes(ticker, now_ms=None):
     return d
 
 
-def quotes_since(symbol, since_ms):
-    """since_ms 以降に見た [時刻, 売値, 買値] の一覧。"""
+def quotes_since(symbol, since_ms, until_ms=None):
+    """since_ms 以降（until_ms まで）に見た [時刻, 売値, 買値] の一覧。"""
     d = _QUOTES if _QUOTES is not None else (_fwd_read(QUOTE_FILE, {}) or {})
-    return [r for r in d.get(symbol, []) if r[0] >= since_ms]
+    return [r for r in d.get(symbol, [])
+            if r[0] >= since_ms and (until_ms is None or r[0] < until_ms)]
 
 
-def touch_was_spread(symbol, side, level, since_ms):
+def touch_was_spread(symbol, side, level, since_ms, until_ms=None, way=None):
     """足の高安で拾った接触が、スプレッドの拡大によるものだったか。
 
+       way は、価格がどちら向きに level へ届いたか（"down"=下げて届いた / "up"=上げて届いた）。
+       省略時は side から決める（買い建てのSL＝down、売り建てのSL＝up）。
        その間に自分で見た仲値が一度も level に届いておらず、かつ
        スプレッドが普段の SPREAD_WIDE_MULT 倍以上に開いた回があれば、
-       動いたのは相場ではなくスプレッド。見た記録が無ければ判断しない（False）。"""
-    rows = quotes_since(symbol, since_ms)
+       動いたのは相場ではなくスプレッド。見た記録が無ければ判断しない（False）。
+
+       足は売値(BID)なので、スプレッドが開くと安値だけが下に伸びる。誤って拾うのは
+       「下げて届いた」側：買い建てのSL と 売り建てのTP（偽の勝ち）。"""
+    if way is None:
+        way = "down" if side == "long" else "up"
+    rows = quotes_since(symbol, since_ms, until_ms)
     if not rows:
         return False
     base = SPREAD_NORMAL_API.get(symbol, SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS))
@@ -1911,7 +1919,7 @@ def touch_was_spread(symbol, side, level, since_ms):
     if not wide:
         return False
     mids = [(b + a) / 2.0 for _, b, a in rows]
-    if side == "long":
+    if way == "down":
         return min(mids) > level
     return max(mids) < level
 
@@ -2253,8 +2261,15 @@ def fwd_policy_r(sym, mode, times, oh, i0, side, entry, tp, sl, sl_pips, days, c
     return out or None
 
 
-def resolve_forward_record(rec, now_ms=None):
-    """前向き検証の記録を1件、足の高安で決着させる。未決着なら None。"""
+def resolve_forward_record(rec, now_ms=None, excused=None):
+    """前向き検証の記録を1件、足の高安で決着させる。未決着なら None。
+
+       excused: スプレッドの拡大による偽の接触と分かった足（開始時刻の集合）。
+       呼び出し側が持ち回る。この関数は新たに分かった足をここに足す。
+       毎回エントリーから数え直すので、一度見抜いた足を覚えておかないと、
+       売値/買値の履歴(90分)が切れた後の回で結局その足を拾ってしまう。"""
+    if excused is None:
+        excused = set()
     sym, side, ts = rec.get("sym"), rec.get("side"), rec.get("ts")
     if not sym or side not in ("long", "short") or not ts:
         return None
@@ -2309,6 +2324,18 @@ def resolve_forward_record(rec, now_ms=None):
             sl_hit, tp_hit = lo <= sl_l, hi >= tp_l
         else:
             sl_hit, tp_hit = hi >= sl_l, lo <= tp_l
+        # 足は売値(BID)なので、スプレッドが開くと安値だけが下に伸びる。
+        # 買い建てなら偽の損切り、売り建てなら偽の利確になる。仲値の履歴で見抜く。
+        down_hit = sl_hit if side == "long" else tp_hit
+        if down_hit:
+            lvl = sl if side == "long" else tp
+            if int(t) in excused or touch_was_spread(sym, side, lvl, int(t),
+                                                     int(t) + bar_min * 60000, way="down"):
+                excused.add(int(t))
+                if side == "long":
+                    sl_hit = False
+                else:
+                    tp_hit = False
         # 同じ足で両方に触れた場合、どちらが先かは足からは分からない。
         # 負けの側に倒す（甘く出さない）。バックテストの走査と同じ順序。
         if sl_hit:
@@ -2349,6 +2376,9 @@ def resolve_forward(now_ms=None):
         closes = {}
     keys = {fwd_key(r) for r in entries if isinstance(r, dict)}
     closes = {k: v for k, v in closes.items() if k in keys}   # 消えた記録は捨てる
+    exc_prev = store.get("excused") if isinstance(store, dict) else {}
+    exc_prev = exc_prev if isinstance(exc_prev, dict) else {}
+    excused = {k: set(v) for k, v in exc_prev.items() if k in keys and k not in closes}
     added = 0
     for rec in entries:
         if not isinstance(rec, dict):
@@ -2357,20 +2387,25 @@ def resolve_forward(now_ms=None):
         if k in closes:
             continue
         try:
-            res = resolve_forward_record(rec, now_ms)
+            res = resolve_forward_record(rec, now_ms, excused.setdefault(k, set()))
         except Exception as e:
             warn(f"前向き検証の判定に失敗 {k}: {e}", tag="fwd-resolve", surface=False)
             continue
         if res:
             closes[k] = res; added += 1
-    if added or closes != (store.get("closes") if isinstance(store, dict) else None):
+    exc_out = {k: sorted(v) for k, v in excused.items() if v and k not in closes}
+    if (added or closes != (store.get("closes") if isinstance(store, dict) else None)
+            or exc_out != exc_prev):
         if len(closes) > FWD_KEEP:
             closes = dict(sorted(closes.items(),
                                  key=lambda kv: kv[1].get("closed") or 0)[-FWD_KEEP:])
         tmp = FWD_CLOSE_FILE + ".tmp"
+        doc = {"updated": datetime.datetime.now(JST).isoformat(timespec="seconds"),
+               "closes": closes}
+        if exc_out:
+            doc["excused"] = exc_out     # スプレッド拡大で見抜いた足（未決着の記録ぶんだけ）
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"updated": datetime.datetime.now(JST).isoformat(timespec="seconds"),
-                       "closes": closes}, f, ensure_ascii=False, indent=1)
+            json.dump(doc, f, ensure_ascii=False, indent=1)
         os.replace(tmp, FWD_CLOSE_FILE)
     if added:
         print(f"[INFO] 前向き検証: {added}件を決着させた（累計{len(closes)}件）")
@@ -2491,6 +2526,16 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     trail_profit_atr = ((_px - entry) * d / a) if a else 0.0
     trail_retrace_atr = (((mfe - _px) if side == "long" else (_px - mfe)) / a) if a else 0.0
     spread_hist = False
+    tp_spread_hist = False
+    if hit_tp and touched and side == "short" and rec and tp_pr is not None:
+        # 売り建てのTPは買値で決まる。足(BID)の安値にスプレッドを足して買値に直しているが、
+        # 足に残っているのはスプレッドが開いていた時の安値。戻った後の回で拾うと偽の利確になる。
+        _bar = bm * 60000
+        _now = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+        _since = max((_now // _bar) * _bar - (len(rec) - 1) * _bar, pos_opened_ms(p) or 0)
+        tp_spread_hist = touch_was_spread(sym, side, tp_pr, _since, way="down")
+        if tp_spread_hist:
+            hit_tp = False
     if hit_sl and touched and not spread_driven and rec:
         # 見ている足の始まり（足に時刻は無いので、形成中の足から数えて出す）
         _bar = bm * 60000

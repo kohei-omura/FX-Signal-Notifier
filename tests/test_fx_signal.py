@@ -5230,5 +5230,80 @@ class DayAdxEvidenceTest(unittest.TestCase):
             self.assertIn("${dayAdxBox(p,(S&&S.mode))}", f.read())
 
 
+class ForwardSpreadTouchTest(unittest.TestCase):
+    """前向き検証が、ロールオーバーのスプレッド拡大を勝ち負けとして数えないこと。
+
+    足は売値(BID)なので、スプレッドが開くと安値だけが下に伸びる。
+    買い建てなら偽の損切り、売り建てなら偽の利確として決着してしまう。
+    前向き検証は実運用の唯一の答え合わせなので、ここが偽の結果で埋まると
+    どのモードが効いているのかの判断を誤る。
+    """
+
+    T0 = 1790000000000          # 記録した足の開始
+    BAR = 15 * 60000
+
+    def setUp(self):
+        for n in ("fwd_window", "fwd_policy_r", "QUOTE_FILE", "_QUOTES"):
+            self.addCleanup(setattr, F, n, getattr(F, n))
+        F.QUOTE_FILE = os.path.join(tempfile.mkdtemp(), "quote_hist.json")
+        F._QUOTES = None
+        F.fwd_policy_r = lambda *a, **k: None
+
+    def _bars(self, bars):
+        times = [self.T0 + i * self.BAR for i in range(len(bars))]
+        F.fwd_window = lambda sym, mode, ts, now: (15, times, bars, 0, 8)
+
+    REC_LONG = {"sym": "AUD_JPY", "side": "long", "mode": "day", "ts": 1790000000000,
+                "entry": 112.080, "tp": 112.211, "sl": 111.999, "sp": 0.007}
+
+    def _quotes(self, bar_index, rows):
+        for k, (b, a) in enumerate(rows):
+            F.record_quotes({"AUD_JPY": {"bid": b, "ask": a}},
+                            now_ms=self.T0 + bar_index * self.BAR + k * 300000)
+
+    def test_a_blowout_is_not_a_stop_loss(self):
+        # 2本目の足：売値の安値111.990（SL割れ）。その間の仲値は112.036〜112.052
+        self._bars([(112.09, 112.07, 112.08), (112.06, 111.990, 112.03),
+                    (112.10, 112.03, 112.09)])
+        self._quotes(1, [(112.015, 112.089), (111.999, 112.073), (112.003, 112.077)])
+        exc = set()
+        res = F.resolve_forward_record(dict(self.REC_LONG), self.T0 + 3 * self.BAR, exc)
+        self.assertIsNone(res, "スプレッド拡大を損切りとして決着させた")
+        self.assertIn(self.T0 + self.BAR, exc, "見抜いた足を覚えていない")
+
+    def test_the_excuse_survives_after_the_quotes_expire(self):
+        """履歴(90分)が切れた後の回でも、覚えた足は拾わないこと。"""
+        self._bars([(112.09, 112.07, 112.08), (112.06, 111.990, 112.03),
+                    (112.10, 112.03, 112.09)])
+        F._QUOTES = {}                                   # 履歴はもう無い
+        res = F.resolve_forward_record(dict(self.REC_LONG), self.T0 + 3 * self.BAR,
+                                       {self.T0 + self.BAR})
+        self.assertIsNone(res)
+
+    def test_a_real_drop_is_still_a_stop_loss(self):
+        self._bars([(112.09, 112.07, 112.08), (112.06, 111.980, 111.99)])
+        self._quotes(1, [(111.990, 111.997), (111.980, 111.987)])   # 仲値もSLを割った
+        res = F.resolve_forward_record(dict(self.REC_LONG), self.T0 + 2 * self.BAR, set())
+        self.assertEqual((res or {}).get("result"), "sl")
+
+    def test_a_short_does_not_get_a_fake_win(self):
+        """売り建てのTP（安値で判定）は、スプレッド拡大で偽の利確になる。"""
+        rec = {"sym": "AUD_JPY", "side": "short", "mode": "day", "ts": 1790000000000,
+               "entry": 112.080, "tp": 112.000, "sl": 112.150, "sp": 0.007}
+        self._bars([(112.09, 112.07, 112.08), (112.08, 111.985, 112.04),
+                    (112.09, 112.03, 112.06)])
+        self._quotes(1, [(112.015, 112.089), (111.990, 112.064)])  # 仲値は112.027以上
+        res = F.resolve_forward_record(rec, self.T0 + 3 * self.BAR, set())
+        self.assertIsNone(res, "スプレッド拡大を利確として決着させた（偽の勝ち）")
+
+    def test_the_position_advice_checks_short_take_profits_too(self):
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def position_advice(")
+        body = src[i:src.index("\ndef ", i + 10)]
+        self.assertIn('touch_was_spread(sym, side, tp_pr, _since, way="down")', body,
+                      "売り建ての偽の利確を見抜いていない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
