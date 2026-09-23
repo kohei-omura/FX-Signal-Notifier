@@ -361,9 +361,16 @@ def read_json(path, default=None):
 
 
 def write_json(path, obj, indent=2):
-    """JSONを書く。開いたファイルは必ず閉じる。"""
-    with open(path, "w", encoding="utf-8") as f:
+    """JSONを書く。一時ファイルに書いてから置き換える（途中で止まっても壊れない）。
+
+       直接書くと、書いている最中にジョブが打ち切られた時（timeout-minutes）に
+       中身が途中までのファイルが残る。status.json が壊れると次の回は前回の合図を
+       読めず、出ている合図を全部「新規」とみなして通知し直す。
+       positions.json なら保有ポジションそのものが消える。"""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=indent)
+    os.replace(tmp, path)
 
 
 def clamp(x, lo=-1.0, hi=1.0):
@@ -1601,12 +1608,18 @@ def load_news_events():
                          tag="news-stale")
             except ValueError:
                 warn(f"{NEWS_FILE} の generated_at を読めません", tag="news-genat")
+            bad = 0
             for e in d.get("events", []):
                 try:
                     t = datetime.datetime.strptime(e["time"], "%Y-%m-%d %H:%M").replace(tzinfo=JST)
                     out.append((e.get("country"), t, e.get("title", "")))
                 except Exception:
-                    pass
+                    bad += 1
+            # 1件も読めないなら、指標回避が黙って止まっている（取得元の形式が変わった等）。
+            # 1件ずつ捨てるのは構わないが、全滅は必ず知らせる。
+            if bad and not out:
+                warn(f"{NEWS_FILE} の予定を1件も読めません（{bad}件すべて形式違い）。"
+                     f"指標回避が効いていません", tag="news-parse")
     except Exception as ex:
         warn(f"{NEWS_FILE}読込失敗: {ex}", tag="news-read")
     _NEWS_CACHE = out

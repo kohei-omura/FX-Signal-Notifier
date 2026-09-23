@@ -10,7 +10,7 @@
   - 価格が取れない回に画面の表示内容を消さないこと
   - API障害でクラッシュしたり通知が二重に飛んだりしないこと
 """
-import json, os, random, re, shutil, subprocess, sys, tempfile, time, types, unittest
+import datetime, json, os, random, re, shutil, subprocess, sys, tempfile, time, types, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
@@ -5129,6 +5129,39 @@ class BacktestPartialRunTest(unittest.TestCase):
         import backtest as B
         out = B.merge_previous({"modes": {"day": {}}}, "/nonexistent/backtest.json")
         self.assertEqual(list(out["modes"]), ["day"])
+
+
+class WriteJsonAtomicTest(unittest.TestCase):
+    """状態ファイルは一時ファイル経由で置き換えること（途中で止まっても壊れない）。"""
+
+    def test_a_failed_write_leaves_the_old_file_intact(self):
+        path = os.path.join(tempfile.mkdtemp(), "status.json")
+        F.write_json(path, {"ok": 1})
+
+        class Boom:
+            def __iter__(self):
+                raise RuntimeError("途中で止まった")
+        with self.assertRaises(Exception):
+            F.write_json(path, {"x": Boom()})
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(json.load(f), {"ok": 1}, "書きかけで元のファイルが壊れた")
+
+    def test_news_that_cannot_be_read_at_all_is_reported(self):
+        self.addCleanup(setattr, F, "NEWS_FILE", F.NEWS_FILE)
+        self.addCleanup(setattr, F, "_NEWS_CACHE", None)
+        path = os.path.join(tempfile.mkdtemp(), "news.json")
+        now = datetime.datetime.now(F.JST).strftime("%Y-%m-%dT%H:%M")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"generated_at": now, "events": [{"country": "USD",
+                       "time": "2026/09/24 21:30", "title": "CPI"}]}, f)
+        F.NEWS_FILE = path; F._NEWS_CACHE = None
+        seen = []
+        real = F.warn
+        self.addCleanup(setattr, F, "warn", real)
+        F.warn = lambda msg, **k: seen.append(msg)
+        F.load_news_events()
+        self.assertTrue(any("1件も読めません" in m for m in seen),
+                        "指標の予定が全滅しても黙っている")
 
 
 if __name__ == "__main__":
