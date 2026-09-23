@@ -4980,5 +4980,132 @@ class SpreadTrailAndBaselineTest(unittest.TestCase):
                       "拡大とみなす倍率が画面とサーバーで違う")
 
 
+class MarkBacktestParityTest(unittest.TestCase):
+    """総合判定（🟢/🟡/🔴）のバックテスト移植が、画面の実装と一致していること。
+
+    画面で売買を決める時にいちばん見られている数字なのに、マークはブラウザの中でしか
+    計算されておらず、一度も検証されていなかった。バックテストへ移植して1年ぶんで
+    確かめるが、移植がずれていたら検証の意味が無い。部品ごとに画面の実装を node で
+    動かし、同じ入力で同じ答えになることを確かめる。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import confluence_bt as C
+        cls.C = C
+        rnd = random.Random(7)
+        cls.series = []
+        for k in range(40):
+            px = 150.0; o = []
+            for _ in range(rnd.choice([30, 90, 260, 400])):
+                px += rnd.gauss(0, 0.05) + (0.01 if k % 3 == 0 else (-0.01 if k % 3 == 1 else 0))
+                o.append([round(px + abs(rnd.gauss(0, 0.03)), 3),
+                          round(px - abs(rnd.gauss(0, 0.03)), 3), round(px, 3)])
+            cls.series.append(o)
+        t0 = 1767225600000    # 2026-01-01 UTC。1年を61分刻みで（夏時間の切替を両方含む）
+        cls.stamps = [t0 + k * 61 * 60000 for k in range(0, 365 * 24 * 60 // 61)]
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            raise unittest.SkipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+
+        def cut(a, b):
+            i = src.index(a)
+            return src[i:src.index(b, i)]
+        js = ("var S={mode:'day'};function r3(x){return x;}\n"
+              + cut("function emaSeries(", "\n") + "\n" + cut("function atrC(", "\n") + "\n"
+              + cut("function dowStructure(", "// 機能D")
+              + cut("function granville(", "function suppressZoneNotify")
+              + cut("function _localHour(", "function zoneNow(){") + "\n"
+              + "var _NOW=0;var _RD=Date;global.Date=class extends _RD{"
+                "constructor(...a){super(...(a.length?a:[_NOW]));}static now(){return _NOW;}};\n"
+              + cut("function zoneNow(){", "// エントリー足") + "\n"
+              + "var SER=" + json.dumps(cls.series) + ";var ST=" + json.dumps(cls.stamps) + ";\n"
+              + "var P={atr:14};console.log(JSON.stringify({"
+                "dw:SER.map(o=>dowStructure(o).trend),"
+                "gd:SER.map(o=>{var g=granville(o,P,'day');return g?g.no:null;}),"
+                "gs:SER.map(o=>{var g=granville(o,P,'swing');return g?g.no:null;}),"
+                "zn:ST.map(t=>{_NOW=t;return zoneNow().zone;}),"
+                "gb:ST.map(t=>_isGotobi(t))}));\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(js); path = f.name
+        try:
+            out = subprocess.run([node, path], capture_output=True, text=True, timeout=120)
+        finally:
+            os.unlink(path)
+        if out.returncode:
+            raise AssertionError(out.stderr[:1500])
+        cls.J = json.loads(out.stdout)
+
+    def _diff(self, a, b):
+        return [i for i, (x, y) in enumerate(zip(a, b)) if x != y]
+
+    def test_dow_structure_matches(self):
+        self.assertEqual(self._diff(self.J["dw"], [self.C.dow_trend(o) for o in self.series]), [])
+
+    def test_granville_matches(self):
+        self.assertEqual(self._diff(self.J["gd"],
+                                    [self.C.granville_no(o, 14, "day") for o in self.series]), [])
+        self.assertEqual(self._diff(self.J["gs"],
+                                    [self.C.granville_no(o, 14, "swing") for o in self.series]), [])
+
+    def test_time_zone_matches_across_a_whole_year(self):
+        """ロンドン・NYの夏時間の切替をまたいでも一致すること。"""
+        got = [self.C.zone_of(t) for t in self.stamps]
+        self.assertEqual(self._diff(self.J["zn"], got), [])
+        self.assertEqual(self._diff(self.J["gb"], [self.C.is_gotobi(t) for t in self.stamps]), [])
+
+    def test_weights_match_the_screen(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const CONFLUENCE_W_BY_MODE={")
+        body = src[i:src.index("};", i)]
+        for mode, w in self.C.WEIGHTS.items():
+            row = re.search(mode + r":\s*\{([^}]*)\}", body).group(1)
+            for k, v in w.items():
+                self.assertIn(f"{k}:{v:g}", row.replace(" ", ""), f"{mode}.{k} の配点が違う")
+        self.assertIn("mtf:'swing'", src.replace(" ", ""), "mtf の配点の借り先が変わった")
+
+    def test_thresholds_match_the_screen(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("if(pct>=0.70){mark='🟢 エントリーOK'", src)
+        self.assertIn("else if(pct>=0.50){mark='🟡 保留・検討'", src)
+        self.assertEqual(self.C.mark_of(0.70), self.C.MARK_OK)
+        self.assertEqual(self.C.mark_of(0.6999), self.C.MARK_HOLD)
+        self.assertEqual(self.C.mark_of(0.4999), self.C.MARK_NO)
+
+    def test_the_score_follows_the_screen_rules(self):
+        """✓は満点・数値は配点×値・✗と『—』は0点。どれも分母には入る。"""
+        w = {"a": 2, "b": 2, "c": 2, "d": 2}
+        self.assertAlmostEqual(self.C.score({"a": True, "b": 0.5, "c": False, "d": None}, w),
+                               (2 + 1) / 8)
+
+    def test_marks_do_not_change_the_core_numbers(self):
+        """判定を付けても、本体の成績（決済ポリシー別の期待値）は1桁も変わらないこと。"""
+        self.addCleanup(setattr, F, "MODE", F.MODE)
+        self.addCleanup(setattr, F, "P", F.P)
+        self.addCleanup(setattr, F, "STATS_DAYS", F.STATS_DAYS)
+        self.addCleanup(setattr, F, "STATS_MAX_BARS", F.STATS_MAX_BARS)
+        F.MODE = "day"; F.P = F.PARAMS["day"]
+        F.STATS_DAYS = {m: 20 for m in F.PARAMS}; F.STATS_MAX_BARS = {m: 2000 for m in F.PARAMS}
+        for c in (F._OHLC_CACHE, F._MTF_CACHE, F._SCORE_CACHE, F._SERIES_CACHE):
+            c.clear()
+        with_m = F.compute_signal_stats("USD_JPY", marks=True)
+        without = F.compute_signal_stats("USD_JPY")
+        self.assertEqual(json.dumps(with_m["policies"], sort_keys=True),
+                         json.dumps(without["policies"], sort_keys=True))
+        self.assertIn("mark", with_m.get("fast") or {}, "判定ごとの成績が出ていない")
+        self.assertNotIn("mark", without.get("fast") or {})
+
+    def test_the_backtest_reports_both_halves(self):
+        with open(os.path.join(ROOT, "engine", "backtest.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('"mark_holdout": mark_holdout(mode)', src)
+        self.assertIn("marks=(mode in MARK_MODES)", src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

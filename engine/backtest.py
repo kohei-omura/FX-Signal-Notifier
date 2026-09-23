@@ -242,6 +242,37 @@ def filter_holdout(mode):
     return out
 
 
+# 総合判定（🟢/🟡/🔴）を検証するモード。scalp は1分足で重く、運用対象でもない。
+MARK_MODES = ("day", "swing", "mtf")
+
+
+def mark_holdout(mode):
+    """総合判定の成績差が、前半と後半の両方で出るかを確かめる。
+
+       画面のマークは一度も検証されていない。🟢が🔴より本当に良いなら、
+       前半でも後半でもそうなっているはず。片方だけなら偶然を見ている。
+       ADXの配点は backtest.json 自身から来る（同じ1年で採点している）ので、
+       それを抜いた mark_noadx も並べる。"""
+    if mode not in MARK_MODES:
+        return None
+    out = {}
+    for lab, rng in (("first_half", (0.0, 0.5)), ("second_half", (0.5, 1.0))):
+        parts = {}
+        for sym in F.SYMBOLS:
+            try:
+                st = F.compute_signal_stats(sym, entry_range=rng, marks=True)
+            except Exception as e:
+                print(f"[WARN] {mode}/{sym} 総合判定の検証 失敗: {e}", file=sys.stderr)
+                continue
+            for kind in ("mark", "mark_noadx"):
+                for band, b in (((st or {}).get("fast") or {}).get(kind) or {}).items():
+                    if (b or {}).get("advice"):
+                        parts.setdefault(kind, {}).setdefault(band, []).append(b["advice"])
+        out[lab] = {k: {band: pool_summary(v) for band, v in per.items()}
+                    for k, per in parts.items()}
+    return out
+
+
 def run_mode(mode):
     days, cap = WINDOWS.get(mode, (60, 6000))
     F.MODE = mode
@@ -261,7 +292,7 @@ def run_mode(mode):
     total_fast = {}; fast_meta = {}
     for sym in F.SYMBOLS:
         try:
-            st = F.compute_signal_stats(sym)
+            st = F.compute_signal_stats(sym, marks=(mode in MARK_MODES))
         except Exception as e:
             print(f"[WARN] {mode}/{sym} 失敗: {e}", file=sys.stderr)
             continue
@@ -347,6 +378,7 @@ def run_mode(mode):
             "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
             "atr_bands_warmup": atr_warm, "fast": fast,
             "filter_holdout": filter_holdout(mode),
+            "mark_holdout": mark_holdout(mode),
             "entry_variant": entry_variant_holdout(mode),
             **(({"pullback_sweep": sweep_pullback(mode),
                  "pullback_holdout": holdout_pullback(mode),
@@ -414,6 +446,17 @@ def main():
                 print(f"        {k:18} 前半 n={a.get('n',0):4} {a.get('avg_r',0):+.3f}"
                       f"  →  後半 n={b.get('n',0):4} {b.get('avg_r',0):+.3f}"
                       f"[{b.get('ci_lo',0):+.3f},{b.get('ci_hi',0):+.3f}]")
+        mh = r.get("mark_holdout") or {}
+        if mh.get("second_half"):
+            for kind, lab in (("mark", "総合判定"), ("mark_noadx", "総合判定(ADX抜き)")):
+                print(f"      ── {lab}（前半 → 後半）")
+                for band in ("🟢 エントリーOK", "🟡 保留・検討", "🔴 見送り"):
+                    a = ((mh.get("first_half") or {}).get(kind) or {}).get(band) or {}
+                    b = ((mh.get("second_half") or {}).get(kind) or {}).get(band) or {}
+                    print(f"        {band:10} 前半 n={a.get('n',0):4} {a.get('avg_r',0):+.3f}"
+                          f"[{a.get('ci_lo',0):+.3f},{a.get('ci_hi',0):+.3f}]"
+                          f"  →  後半 n={b.get('n',0):4} {b.get('avg_r',0):+.3f}"
+                          f"[{b.get('ci_lo',0):+.3f},{b.get('ci_hi',0):+.3f}]")
         fh = r.get("filter_holdout") or {}
         if fh.get("second_half"):
             print("      ── 絞り込み（前半で測り、後半で当てる）")

@@ -719,8 +719,30 @@ def _median(a):
     return s[m] if len(s) % 2 else (s[m-1]+s[m])/2
 
 
+def _mark_context(symbol, times, oh, days):
+    """総合判定（🟢/🟡/🔴）をバックテストで再現するための下準備（confluence_bt）。"""
+    import confluence_bt as CB
+    rows4 = _htf_window_closes(symbol, "4hour", days)
+    ts4 = sorted(rows4)
+    table = {}
+    try:
+        with open(BT_FILE, encoding="utf-8") as f:
+            for m, v in ((json.load(f).get("modes") or {}).items()):
+                d = {}
+                for band, x in (((v.get("fast") or {}).get("adx")) or {}).items():
+                    a = (x or {}).get("advice") or {}
+                    if a.get("n"):
+                        d[band] = [a["n"], a["avg_r"], a["ci_lo"], a["ci_hi"]]
+                if d:
+                    table[m] = d
+    except Exception:
+        table = {}
+    return CB.MarkContext(MODE, symbol, times, oh, BARMIN.get(P["interval"], 1),
+                          P["atr"], ts4, [rows4[t] for t in ts4], table)
+
+
 def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
-                         pullback_override=None):
+                         pullback_override=None, marks=False):
     """過去バーを歩いて『シグナル→TP/SLのどちらに先に当たったか』を数える。
 
        th_override: しきい値を差し替えて検証する（「0.60で運用したら」を実際に回すため。
@@ -769,6 +791,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         lo, hi = entry_range
         i = max(i, int(n * lo))
         i_end = min(i_end, int(n * hi))
+    # marks=True の時だけ、各取引に画面と同じ総合判定を付ける（重いので本番集計でだけ使う）
+    mctx = _mark_context(symbol, times, oh, days) if marks else None
     ctx = {"symbol": symbol, "oh": oh, "closes": closes, "times": times, "th": th,
            "ef": ef_s, "es": es_s, "rsi": rsi_s, "macd": md_s, "bb": bb_s,
            "atr": atr_s, "adx": adx_s, "aligned": aligned_s, "min_len": min_len}
@@ -856,6 +880,18 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                     ("rsi", _rsi_band(rsi_s[i], side))):
                 if band:
                     fast_r.setdefault(kind, {}).setdefault(band, []).append(row)
+            if mctx is not None:
+                # 画面と同じ総合判定。ADXの配点は backtest.json 自身から来るので、
+                # 同じ1年で採点して同じ1年で成績を見ることになる（甘く出る）。
+                # それを除いたもの(mark_noadx)も並べて、ADXに頼った差かどうかを見る。
+                _adx = adx_s[i][0] if adx_s[i] else None
+                try:
+                    _mk = mctx.marks(i, side, _adx, tp_pips, sl_pips)
+                except Exception:
+                    _mk = (None, None)
+                for kind, mk in zip(("mark", "mark_noadx"), _mk):
+                    if mk:
+                        fast_r.setdefault(kind, {}).setdefault(mk, []).append(row)
         ab = _atr_band(atrpct_s[i] if i < len(atrpct_s) else None)
         if ab:
             slot = atr_r.setdefault(ab, {})
@@ -863,6 +899,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                 slot.setdefault(name, []).append((r, cost))
         else:
             atr_skipped[0] += 1
+        if mctx is not None:
+            mctx.add_trade(i, xj, res)       # 次の取引の「期待値」判定に使う（決着済みだけ）
         i = xj + 1
     nn = len(wins) + len(losses)
     if nn < 8:
