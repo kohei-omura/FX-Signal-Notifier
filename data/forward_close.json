@@ -1,5 +1,5 @@
 {
- "updated": "2026-09-24T10:01:09+09:00",
+ "updated": "2026-09-24T12:01:13+09:00",
  "closes": {
   "1788853090277|GBP_JPY|long": {
    "result": "tp",
@@ -172,6 +172,42 @@
     "tp_sl": -1.016,
     "advice": -1.016,
     "advice_watch": 0.234
+   }
+  },
+  "1790216118552|EUR_JPY|short": {
+   "result": "sl",
+   "R": -1.0,
+   "bars": 2,
+   "held_min": 30,
+   "fill": 179.556,
+   "exit": 179.704,
+   "closed": 1790218800000,
+   "src": "server",
+   "mode": "day",
+   "sym": "EUR_JPY",
+   "side": "short",
+   "policies": {
+    "tp_sl": -1.0338,
+    "advice": -1.0338,
+    "advice_watch": -1.0338
+   }
+  },
+  "1790216118555|GBP_JPY|short": {
+   "result": "sl",
+   "R": -1.0,
+   "bars": 2,
+   "held_min": 30,
+   "fill": 208.864,
+   "exit": 209.041,
+   "closed": 1790218800000,
+   "src": "server",
+   "mode": "day",
+   "sym": "GBP_JPY",
+   "side": "short",
+   "policies": {
+    "tp_sl": -1.0508,
+    "advice": -1.0508,
+    "advice_watch": -1.0508
    }
   }
  }
