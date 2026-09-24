@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-24T02:33:08.961Z",
+  "updated": "2026-09-24T05:47:06.030Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -320,14 +320,26 @@
       "sl": 179.704,
       "b": 1.6013513513513513,
       "ts": 1790216118552,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 31,
       "pct": 31,
       "edgeAdj": 0,
       "mark": "no",
       "src": "sub",
-      "subFilter": "adx40"
+      "subFilter": "adx40",
+      "result": "sl",
+      "R": -1,
+      "closed": 1790218800000,
+      "bars": 2,
+      "heldMin": 30,
+      "exit": 179.704,
+      "policies": {
+        "tp_sl": -1.0338,
+        "advice": -1.0338,
+        "advice_watch": -1.0338
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "GBP_JPY",
@@ -340,14 +352,26 @@
       "sl": 209.041,
       "b": 1.5932203389830508,
       "ts": 1790216118555,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 62,
       "pct": 62,
       "edgeAdj": 0,
       "mark": "hold",
       "src": "sub",
-      "subFilter": "adx40"
+      "subFilter": "adx40",
+      "result": "sl",
+      "R": -1,
+      "closed": 1790218800000,
+      "bars": 2,
+      "heldMin": 30,
+      "exit": 209.041,
+      "policies": {
+        "tp_sl": -1.0508,
+        "advice": -1.0508,
+        "advice_watch": -1.0508
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "AUD_JPY",
@@ -360,14 +384,42 @@
       "sl": 111.1,
       "b": 1.6030534351145038,
       "ts": 1790217173995,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 62,
       "pct": 62,
       "edgeAdj": 0,
       "mark": "hold",
       "src": "sub",
-      "subFilter": "adx40"
+      "subFilter": "adx40",
+      "result": "sl",
+      "R": -1,
+      "closed": 1790219700000,
+      "bars": 2,
+      "heldMin": 30,
+      "exit": 111.1,
+      "policies": null,
+      "resolvedBy": "server"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "mtf",
+      "side": "short",
+      "entry": 209.431,
+      "fill": 209.431,
+      "sp": 0.009,
+      "tp": 209.02900000000002,
+      "sl": 209.68200000000002,
+      "b": 1.601593625498008,
+      "ts": 1790228816029,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 33,
+      "pct": 33,
+      "edgeAdj": 0,
+      "mark": "no",
+      "src": "main",
+      "subFilter": null
     }
   ]
 }
