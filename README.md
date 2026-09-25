@@ -40,7 +40,7 @@ tests/      オフラインのテスト一式（ネットワーク不要／GMO A
 | ファイル | 役割 |
 |---|---|
 | `index.html` | ダッシュボード画面 |
-| `tools.html` / `tools.js` | 分析ツール画面 |
+| `tools.html` / `tools.js` / `profit.js` | 分析ツール画面（`profit.js` は「⓪ 利益を伸ばす」：どこで戦うか・何をやめるか・いくら張るか） |
 | `manifest.webmanifest` / `sw.js` | PWA（ホーム画面アプリ化）用 |
 | `worker.js` | （任意）リアルタイム価格用のCloudflare Worker |
 | `requirements.txt` | 依存（requests） |

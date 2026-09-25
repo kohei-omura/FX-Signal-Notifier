@@ -31,7 +31,7 @@ th,td{text-align:right;padding:6px 5px;border-top:1px solid var(--line)}th{color
 .tr div{display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid var(--line)}
 .del{color:var(--down);cursor:pointer}
 svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9px}
-.warn{color:var(--down)}.good{color:var(--up)}
+.warn{color:var(--down)}.good{color:var(--up)}.bad{color:var(--down)}
 /* モード別くらべ。8列の表は画面幅に収まらず横にはみ出したので、縦積みにした。
    棒は固定幅ではなく残り幅いっぱい(flex)に伸ばす。狭い画面でも切れない。 */
 .mrow{border-top:1px solid var(--line);padding:9px 0}
@@ -56,6 +56,25 @@ svg.eq{width:100%;height:120px;margin-top:8px;background:#0b0f16;border-radius:9
 /* 通知キーはソースに書かない（このリポジトリは公開されている）。
    ダッシュボードの⚙で入れた値を同じ端末の localStorage から読む。 */
 function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnavi_gh"))||{}).notifyKey||""); }catch(e){ return ""; } }</script>
+
+<div class="sec" data-sec="4" onclick="toggleSection('4')" style="cursor:pointer">⓪ 利益を伸ばす（どこで戦い・何をやめ・いくら張るか）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
+<div class="card">
+  <div class="sec" style="font-size:12px;margin:2px 2px 6px">1. どこで戦うか（1年検証・モード×通貨）</div>
+  <div id="wherefight"></div>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">2. 何をやめるか（あなたの実績で、守っていたら）</div>
+  <div id="whatif"></div>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">3. いくら張るか（資金シミュレーション）</div>
+  <div class="rowf">
+    <div><label>元にする成績</label><select id="mcsrc" onchange="pfSrcChanged()"><option value="own">あなたの実績</option><option value="bt:mtf">上位足フォロー(1年検証)</option><option value="bt:swing">スイング(1年検証)</option><option value="bt:day">デイ(1年検証)</option><option value="bt:scalp">スキャル(1年検証)</option></select></div>
+    <div><label>1回のリスク(%)</label><input id="mcrisk" type="number" step="0.5" min="0.1"></div>
+  </div>
+  <div class="rowf" style="margin-top:6px">
+    <div><label>月あたりの回数</label><input id="mcfreq" type="number" min="1"></div>
+    <div><label>期間(か月)</label><input id="mcmon" type="number" value="12" min="1" max="60"></div>
+  </div>
+  <button class="bgo" style="margin-top:10px" onclick="runMonteCarlo()">シミュレーション</button>
+  <div id="mcout" style="margin-top:10px"></div>
+</div>
 
 <div class="sec" data-sec="0" onclick="toggleSection('0')" style="cursor:pointer">① 成績分析（トレード記録）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
 <div class="card">
@@ -168,12 +187,17 @@ function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnav
     <div><label>1回の許容リスク(%)</label><input id="rpct" type="number" value="2"></div>
   </div>
   <div class="rowf" style="margin-top:6px">
+    <div><label>通貨ペア</label><select id="rpair" onchange="riskSlHint()"><option value="USD_JPY">USD/JPY</option><option value="EUR_JPY">EUR/JPY</option><option value="GBP_JPY">GBP/JPY</option><option value="AUD_JPY">AUD/JPY</option></select></div>
+    <div><label>モード</label><select id="rmode" onchange="riskSlHint()"><option value="mtf">上位足フォロー</option><option value="swing">スイング</option><option value="day">デイ</option><option value="scalp">スキャル</option></select></div>
+  </div>
+  <div id="rslhint" class="note" style="margin-top:4px"></div>
+  <div class="rowf" style="margin-top:6px">
     <div><label>損切り幅 SL(pips)</label><input id="slp" type="number" value="5"></div>
     <div><label>通貨量(units)</label><input id="units" type="number" value="1000"></div>
   </div>
   <button class="bgo" style="margin-top:10px" onclick="calcRisk()">計算＆保存</button>
   <div class="stat" id="riskout" style="margin-top:10px"></div>
-  <div class="note">円ペア前提（1pip=0.01）。許容損失＝資金×リスク%。推奨通貨量＝許容損失 ÷ (SL pips × 0.01)。GMO最小は1,000通貨(0.1ロット)。</div>
+  <div class="note">円ペア前提（1pip=0.01）。許容損失＝資金×リスク%。推奨通貨量＝許容損失 ÷ (SL pips × 0.01) を<b>1,000通貨単位で切り捨て</b>（GMOの取引単位）。証拠金はレバレッジ25倍・選んだペアのレートで確認します。</div>
 </div>
 
 <div class="sec" data-sec="2" onclick="toggleSection('2')" style="cursor:pointer">③ スプレッド / コスト判定<span class="secarrow" style="margin-left:auto;color:var(--mut)">▼</span></div>
@@ -191,17 +215,17 @@ function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnav
 <div class="card">
   <div class="rowf">
     <div><label>ペア</label><select id="bsym"><option>USD_JPY</option><option>EUR_JPY</option><option>GBP_JPY</option><option>AUD_JPY</option></select></div>
-    <div><label>モード</label><select id="bmode"><option value="scalp">scalp(1分)</option><option value="day">day(5分)</option></select></div>
+    <div><label>モード</label><select id="bmode" onchange="btModeChanged()"><option value="day">デイ(15分)</option><option value="swing">スイング(1時間)</option><option value="scalp">スキャル(1分)</option></select></div>
   </div>
   <div class="rowf" style="margin-top:6px">
-    <div><label>期間(日)</label><input id="bdays" type="number" value="3"></div>
+    <div><label>期間(日)</label><input id="bdays" type="number" value="20" max="45"></div>
     <div><label>スプレッド(pips)</label><input id="bspr" type="number" value="0.4" step="0.1"></div>
   </div>
   <div class="rowf" style="margin-top:6px">
     <div><label>資金(円)※②から引継</label><input id="bcap" type="number" value="10000"></div>
     <div><label>リスク(%)※②から引継</label><input id="brisk" type="number" value="2"></div>
   </div>
-  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="btGreen" style="width:auto;margin:0">🟢 総合判定OKのみ（長期EMA200一致・ADX30-40・時間帯・ダウ一致の4項目中3以上で厳選）</label>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px"><input type="checkbox" id="btAdx" style="width:auto;margin:0">ADX40以上のみも並べる（デイの1年検証で前半・後半ともプラスだった絞り込み）</label>
   <div style="display:flex;gap:8px;margin-top:10px">
     <button class="bgo" style="flex:1" id="btbtn" onclick="runBacktest()">バックテスト実行</button>
     <button class="bsub" style="flex:1" onclick="runBacktestAll()">4ペア一括実行</button>
@@ -209,7 +233,10 @@ function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnav
   <div class="stat" id="btout" style="margin-top:10px"></div>
   <div id="btmsg" class="note"></div>
   <div id="bthist" class="note"></div>
-  <div class="note">直近データで、各シグナルをATR基準のTP/SL通りに取った場合を検証（スプレッド控除後）。要 WorkerのURL設定。過去成績は将来を保証しません。</div>
+  <div class="note">直近データで、各シグナルをアプリと同じTP/SL（ATR×モードの係数）で取った場合を検証（スプレッド控除後・R＝SL幅を1とした損益）。
+  数週間ぶんの結果は偶然で大きく振れます。<b>判断の軸は上の「どこで戦うか」（1年検証）</b>にして、ここは直近の地合いの確認に使ってください。
+  上位足フォロー(mtf)は上位足の取得が別に要るため、ここでは検証できません。要 WorkerのURL設定。</div>
 </div>
 <script src="tools.js"></script>
+<script src="profit.js"></script>
 </body></html>

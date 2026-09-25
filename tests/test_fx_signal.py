@@ -4223,7 +4223,7 @@ class NotifyKeySecretTest(unittest.TestCase):
       Worker側の NOTIFY_KEY を作り直すまでは古い値が生きている。
     """
 
-    FILES = ("index.html", "tools.html", "tools.js", "worker.js", "README.md")
+    FILES = ("index.html", "tools.html", "tools.js", "profit.js", "worker.js", "README.md")
 
     def test_no_literal_key_is_committed(self):
         bad = []
@@ -5437,6 +5437,294 @@ class DayMarkWeightsTest(unittest.TestCase):
             src = f.read()
         i = src.index("const CONFLUENCE_W_BY_MODE={")
         self.assertIn("厳密な事後検証ではない", src[i - 1500:i], "採用の弱さを書いていない")
+
+
+
+# ===== ツール画面(tools.js / profit.js)を丸ごとnodeで動かすための足場 =====
+TOOLS_STUB = r"""
+var __store = {};
+var localStorage = {getItem:function(k){return Object.prototype.hasOwnProperty.call(__store,k)?__store[k]:null;},
+  setItem:function(k,v){__store[k]=String(v);}, removeItem:function(k){delete __store[k];}};
+function __el(){ var e={innerHTML:'', textContent:'', value:'', checked:false, disabled:false, style:{}, dataset:{},
+  children:[], classList:{contains:function(){return false;},add:function(){},remove:function(){},toggle:function(){}},
+  appendChild:function(){}, setAttribute:function(){}, getAttribute:function(){return null;},
+  querySelector:function(){return __el();}, querySelectorAll:function(){return [];}, nextElementSibling:null};
+  return e; }
+var __els = {};
+var document = {
+  querySelector:function(sel){ return __els[sel]||(__els[sel]=__el()); },
+  getElementById:function(id){ return document.querySelector('#'+id); },
+  querySelectorAll:function(){ return []; },
+  createElement:function(){ return __el(); }, body:{appendChild:function(){},removeChild:function(){}}
+};
+var window = {}; var navigator = {};
+var alert=function(){}; var confirm=function(){return true;};
+var setTimeout=function(){}; var setInterval=function(){return 0;}; var clearInterval=function(){};
+var LIVE_PRICE_URL = "https://w.example";
+function notifyKey(){ return ""; }
+var __fetch = null;
+global.fetch = async function(u,o){ if(__fetch) return __fetch(u,o); throw new Error('offline'); };
+"""
+
+
+class ToolsHarness:
+    def _node(self, setup, body, seed_trades=None):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            tools = f.read()
+        with open(os.path.join(ROOT, "profit.js"), encoding="utf-8") as f:
+            profit = f.read()
+        seed = ""
+        if seed_trades is not None:
+            seed = "__store['fxnavi_trades']=" + json.dumps(json.dumps(seed_trades, ensure_ascii=False)) + ";\n"
+        script = (TOOLS_STUB + seed + setup + "\n" + tools + "\n" + profit + "\n"
+                  + "(async function(){ var OUT=await (async function(){" + body + "})();"
+                  + "console.log(JSON.stringify(OUT)); })().catch(function(e){ console.error(e&&e.stack||e); process.exit(1); });\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+            f.write(script); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=120)
+        self.assertEqual(out.returncode, 0, out.stderr[-3000:])
+        return json.loads(out.stdout.strip().splitlines()[-1])
+
+    @staticmethod
+    def trade(i, yen, pair="USD/JPY", **kw):
+        """i時間目に建てて30分後に決済した取引（JST）。"""
+        base = datetime.datetime(2026, 9, 1, 9, 0) + datetime.timedelta(hours=i)
+        close = base + datetime.timedelta(minutes=30)
+        d = {"pair": pair, "side": "買い", "yen": yen,
+             "ts": int((close - datetime.timedelta(hours=9)).replace(tzinfo=datetime.timezone.utc).timestamp() * 1000),
+             "opened_at": base.strftime("%Y-%m-%d %H:%M JST"), "closed_at": close.strftime("%Y-%m-%d %H:%M JST"),
+             "openSrc": "gmo"}
+        d.update(kw)
+        return d
+
+
+class ToolsChronologyTest(ToolsHarness, unittest.TestCase):
+    """成績の数字は時刻順で出すこと。保存順はCSVの並び（GMOは新しい順）で、時刻順ではない。"""
+
+    def test_losing_streak_is_counted_in_time_order(self):
+        # 時刻順: 勝 勝 勝 負 負 負 → 最大連敗3。保存順は交互に混ぜる（保存順のままだと1になる）
+        chrono = [self.trade(i, 100 if i < 3 else -100) for i in range(6)]
+        stored = [chrono[3], chrono[0], chrono[4], chrono[1], chrono[5], chrono[2]]
+        got = self._node("", "renderJournal(); return document.querySelector('#kpis').innerHTML;", stored)
+        m = re.search(r"最大連敗</div><div class=\"v[^\"]*\">(\d+)<", got)
+        self.assertEqual(m.group(1), "3", "保存順のまま連敗を数えている")
+
+    def test_deleting_from_the_sorted_list_removes_the_right_trade(self):
+        chrono = [self.trade(i, (i + 1) * 10) for i in range(4)]
+        stored = [chrono[2], chrono[0], chrono[3], chrono[1]]
+        got = self._node("", "renderJournal(); var h=document.querySelector('#trlist').innerHTML;"
+                         "var m=h.match(/delTrade\\((\\d+)\\)/); delTrade(+m[1]);"
+                         "return loadTrades().map(function(x){return x.yen;});", stored)
+        # 一覧の先頭は最新（40円）。それを消したら40円だけが消えること
+        self.assertEqual(sorted(got), [10, 20, 30])
+
+    def test_kelly_uses_the_latest_fifty_by_time(self):
+        # 古い50件は全敗、新しい50件は全勝。保存は新しい順。直近50件＝全勝 を見ること
+        old = [self.trade(i, -100, sl_pips=10, pips=-10) for i in range(50)]
+        new = [self.trade(100 + i, 150, sl_pips=10, pips=15) for i in range(50)]
+        got = self._node("", "return _kellyInputs();", list(reversed(old + new)))
+        self.assertEqual(got["p"], 1)
+        self.assertTrue(got["byR"])
+
+    def test_pair_names_are_escaped(self):
+        got = self._node("", "renderJournal(); return document.querySelector('#trlist').innerHTML;",
+                         [self.trade(0, 10, pair="<img src=x onerror=alert(1)>")])
+        self.assertNotIn("<img", got)
+
+
+class ToolsMarketHoursTest(ToolsHarness, unittest.TestCase):
+    """休場判定はニューヨーク時間で。JST固定だと夏時間でずれ、深夜0時を"24時"と読む環境もあった。"""
+
+    CASES = {"2026-09-25T15:30:00Z": False,   # 土曜0:30 JST（まだ開いている）
+             "2026-09-25T21:01:00Z": True,    # 土曜6:01 JST 夏時間の引け後
+             "2026-09-27T20:59:00Z": True,    # 月曜5:59 JST
+             "2026-09-27T21:01:00Z": False,   # 月曜6:01 JST 夏時間の寄り
+             "2026-01-09T21:30:00Z": False,   # 冬時間 土曜6:30 JST はまだ開いている
+             "2026-01-09T22:01:00Z": True}
+
+    def test_open_and_closed(self):
+        got = self._node("", "var o={};" + "".join(
+            "o[%s]=isFxClosed(new Date(%s));" % (json.dumps(k), json.dumps(k)) for k in self.CASES) + "return o;")
+        self.assertEqual(got, self.CASES)
+
+
+class ToolsBackupKeysTest(ToolsHarness, unittest.TestCase):
+    def test_keys_exist_and_secrets_are_not_exported(self):
+        got = self._node("", "return BACKUP_KEYS;")
+        self.assertIn("fxnavi_bt_hist", got)
+        self.assertNotIn("fxnavi_bthist", got, "存在しないキー名")
+        self.assertIn("fxnavi_entrylog", got)
+        self.assertNotIn("fxnavi_gh", got, "トークンと通知キーをファイルに書き出してしまう")
+
+
+class ToolsAppSyncTest(ToolsHarness, unittest.TestCase):
+    """アプリ決済の取込で、設計TP/SL幅とモードの出所を落とさないこと。"""
+
+    def test_fields(self):
+        pos = {"id": "p1", "symbol": "GBP_JPY", "side": "long", "entry": 200.0, "close_price": 200.2,
+               "close_pips": 20, "close_yen": 200, "closed_at": "2026-09-20 10:00", "opened_at": "2026-09-20 09:00",
+               "status": "closed", "tp_pips": 30, "sl_pips": 20, "mode": "mtf", "entry_mode": "day"}
+        setup = ("__fetch=async function(u){ return {ok:true, json:async function(){ return "
+                 + json.dumps({"positions": [pos]}) + "; }}; };")
+        got = self._node(setup, "await appSync(); var t=loadTrades()[0]; return {t:t, r:_tradeR(t)};", [])
+        self.assertEqual(got["t"]["sl_pips"], 20)
+        self.assertEqual(got["t"]["mode"], "mtf")
+        self.assertEqual(got["t"]["modeSrc"], "position", "建玉のモードを当時の画面モードと区別していない")
+        self.assertAlmostEqual(got["r"], 1.0)
+
+    def test_screen_mode_only_is_marked_operating(self):
+        pos = {"id": "p2", "symbol": "USD_JPY", "side": "short", "close_yen": -50, "status": "closed",
+               "closed_at": "2026-09-20 10:00", "entry_mode": "day"}
+        setup = ("__fetch=async function(u){ return {ok:true, json:async function(){ return "
+                 + json.dumps({"positions": [pos]}) + "; }}; };")
+        got = self._node(setup, "await appSync(); return loadTrades()[0];", [])
+        self.assertEqual(got["modeSrc"], "operating")
+
+
+class ToolsEntryLogMatchTest(ToolsHarness, unittest.TestCase):
+    """同じ建値の記録が複数ある時は、建てた時刻に一番近いものを採ること（以前は一律で新しい方）。"""
+
+    def test_nearest_in_time(self):
+        log = [{"symbol": "USD_JPY", "entry": 150.0, "logged_at": "2026-09-01 09:01:00", "mode": "day",
+                "mode_src": "position", "conf_mark": "🟢 エントリーOK"},
+               {"symbol": "USD_JPY", "entry": 150.0, "logged_at": "2026-09-20 15:00:00", "mode": "mtf",
+                "mode_src": "position", "conf_mark": "🔴 見送り"}]
+        tr = self.trade(0, 50, entry=150.0)   # 2026-09-01 09:00 に建てた
+        setup = "__store['fxnavi_entrylog']=" + json.dumps(json.dumps(log, ensure_ascii=False)) + ";"
+        got = self._node(setup, "entryLogAttach(); return loadTrades()[0];", [tr])
+        self.assertEqual(got["mode"], "day")
+        self.assertEqual(got["smark"], "🟢 エントリーOK")
+
+
+class ToolsBacktestParamsTest(ToolsHarness, unittest.TestCase):
+    """ツールの簡易バックテストは、サーバーと同じ足・係数で回すこと。
+    以前はデイを5分足・SL=ATR×1.0・TP=SL×1.5で回していた（実際は15分足・1.3・1.6）。"""
+
+    def test_same_as_engine(self):
+        got = self._node("", "return BP;")
+        for mode, js in got.items():
+            py = F.PARAMS[mode]
+            for k in ("interval", "ema_f", "ema_s", "rsi", "adx", "atr", "th", "slm", "tsr"):
+                if isinstance(py[k], str):
+                    self.assertEqual(js[k], py[k], "%s.%s" % (mode, k))
+                else:
+                    self.assertAlmostEqual(float(js[k]), float(py[k]), msg="%s.%s" % (mode, k))
+            self.assertEqual(list(js["macd"]), list(py["macd"]), mode)
+
+    def test_the_inverted_green_filter_is_gone(self):
+        with open(os.path.join(ROOT, "tools.js"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertNotIn("_confTools", src, "逆向きと分かった旧🟢定義で絞り込んでいる")
+
+
+class ToolsRiskLotTest(ToolsHarness, unittest.TestCase):
+    """推奨通貨量はGMOの取引単位(1,000通貨)で出すこと。"""
+
+    def _run(self, cap, rpct, slp, pair="USD_JPY"):
+        setup = ("__fetch=async function(){ return {ok:true, json:async function(){ return {data:[{symbol:'"
+                 + pair + "',bid:'150.0',ask:'150.002'}]}; }}; };")
+        return self._node(setup,
+            "document.querySelector('#cap').value='%s';document.querySelector('#rpct').value='%s';"
+            "document.querySelector('#slp').value='%s';document.querySelector('#units').value='1000';"
+            "document.querySelector('#rpair').value='%s';"
+            "await calcRisk(); return document.querySelector('#riskout').innerHTML;" % (cap, rpct, slp, pair))
+
+    def test_rounded_down_to_thousands(self):
+        html = self._run(100000, 2, 15)      # 2000円 / 0.15円 = 13,333 → 13,000
+        self.assertIn(">13,000<", html)
+
+    def test_too_small_account_is_flagged(self):
+        html = self._run(10000, 1, 20)       # 100円 / 0.20円 = 500通貨 → 1,000通貨でも超過
+        self.assertIn("最小の1,000通貨でも", html)
+
+
+class ProfitWhereToFightTest(ToolsHarness, unittest.TestCase):
+    BT = {"generated_at": "x", "modes": {
+        "day": {"policies": {"advice": {"n": 4000, "avg_r": -0.075, "ci_lo": -0.11, "ci_hi": -0.04, "winrate": 38, "cost_r": 0.04}},
+                "symbols": {},
+                "filter_holdout": {
+                    "first_half": {"絞り込みなし": {"n": 2000, "avg_r": -0.085}, "ADX40以上": {"n": 300, "avg_r": 0.047},
+                                   "上位足と一致": {"n": 900, "avg_r": -0.054}, "少なすぎ": {"n": 6, "avg_r": 0.7}},
+                    "second_half": {"絞り込みなし": {"n": 2000, "avg_r": -0.066}, "ADX40以上": {"n": 400, "avg_r": 0.029},
+                                    "上位足と一致": {"n": 900, "avg_r": -0.061}, "少なすぎ": {"n": 6, "avg_r": 0.8}}}},
+        "mtf": {"policies": {"advice": {"n": 700, "avg_r": 0.058, "ci_lo": -0.03, "ci_hi": 0.145, "winrate": 47, "cost_r": 0.03}},
+                "symbols": {}}}}
+
+    def test_verdicts_and_filter_evidence(self):
+        got = self._node("", "BT_CACHE=" + json.dumps(self.BT, ensure_ascii=False) + ";"
+                         "renderWhereToFight(BT_CACHE); return {html:document.querySelector('#wherefight').innerHTML,"
+                         "ev:pfFilterEvidence(BT_CACHE,'day').map(function(f){return f.name;})};")
+        self.assertEqual(got["ev"], ["ADX40以上"], "前半・後半の両方で良くなった絞り込みだけを出す")
+        self.assertIn("⛔", got["html"])
+        self.assertIn("負けは偶然ではありません", got["html"])
+        self.assertIn("まだ言えません", got["html"], "区間が0をまたぐmtfをプラス確定と言っている")
+
+
+class ProfitRuleWhatIfTest(ToolsHarness, unittest.TestCase):
+    def test_off_pairs_are_adopted_and_saving_is_counted(self):
+        tr = ([self.trade(i, 100) for i in range(10)]
+              + [self.trade(20 + i, -300, pair="TRY/JPY") for i in range(6)])
+        got = self._node("", "var w=pfRuleWhatIf(loadTrades(),null); return w;", tr)
+        off = [r for r in got["rules"] if r["id"] == "offpair"][0]
+        self.assertTrue(off["adopt"])
+        self.assertEqual(off["n"], 6)
+        self.assertEqual(got["total"], 1000 - 1800)
+        self.assertEqual(got["after"], 1000)
+
+    def test_a_rule_that_only_removes_winners_is_not_adopted(self):
+        tr = [self.trade(i, 200 if i % 2 else -100, pair="TRY/JPY") for i in range(10)]
+        got = self._node("", "return pfRuleWhatIf(loadTrades(),null);", tr)
+        off = [r for r in got["rules"] if r["id"] == "offpair"][0]
+        self.assertFalse(off["adopt"])
+        self.assertEqual(off["verdict"], "keep")
+
+    def test_tilt_uses_only_results_known_before_entry(self):
+        # 9:00 と 10:00 に建てて負け（それぞれ30分後に決済）。3回目は 10:15 に建てる＝
+        # 2回目はまだ決済していないので「2連敗の後」ではない。3回目は11:10まで持つので、
+        # 4回目(11:00)の時点で分かっている結果は2連敗。
+        a = self.trade(0, -100); b = self.trade(1, -100)
+        c = self.trade(1, 50); c["opened_at"] = "2026-09-01 10:15 JST"; c["closed_at"] = "2026-09-01 11:10 JST"
+        d = self.trade(2, 70)
+        got = self._node("", "return pfBehaviorFlags(loadTrades());", [a, b, c, d])
+        self.assertEqual([f["streak"] for f in got], [0, 1, 1, 2])
+        self.assertEqual([f["nth"] for f in got], [1, 2, 3, 4])
+
+
+class ProfitMonteCarloTest(ToolsHarness, unittest.TestCase):
+    def test_two_point_matches_mean_and_winrate(self):
+        got = self._node("", "var t=pfTwoPoint({n:100,winrate:38,avg_r:-0.075,cost_r:0.04});"
+                         "return {m:t.p*t.win+(1-t.p)*t.loss, p:t.p, loss:t.loss};")
+        self.assertAlmostEqual(got["m"], -0.075, places=9)
+        self.assertAlmostEqual(got["loss"], -1.04)
+
+    def test_negative_edge_shrinks_and_is_deterministic(self):
+        got = self._node("", "var t=pfTwoPoint({n:100,winrate:38,avg_r:-0.075,cost_r:0.04});"
+                         "var a=pfSimulate(t.draw,2,500,500), b=pfSimulate(t.draw,2,500,500);"
+                         "var p=pfTwoPoint({n:100,winrate:47,avg_r:0.15,cost_r:0.03});"
+                         "return {a:a,b:b,pos:pfSimulate(p.draw,1,500,500)};")
+        self.assertEqual(got["a"], got["b"], "同じ条件で結果が変わる")
+        self.assertLess(got["a"]["p50"], 1)
+        self.assertGreater(got["a"]["pLoss"], 0.5)
+        self.assertGreater(got["pos"]["p50"], 1)
+
+    def test_infeasible_risk_is_not_recommended(self):
+        """資金1万円・SL17pipsなら1,000通貨で1回1.7%。0.5%や1%を★にしてはいけない。"""
+        bt = {"modes": {"mtf": {"policies": {"advice": {"n": 700, "avg_r": 0.2, "ci_lo": 0.05, "ci_hi": 0.35,
+                                                           "winrate": 50, "cost_r": 0.03}},
+                                "symbols": {s: {"policies": {"advice": {"cost_r": {"USD_JPY": 0.2 / 17, "EUR_JPY": 0.4 / 17,
+                                    "GBP_JPY": 0.9 / 17, "AUD_JPY": 0.5 / 17}[s]}}} for s in ("USD_JPY", "EUR_JPY", "GBP_JPY", "AUD_JPY")}}}}
+        got = self._node("", "BT_CACHE=" + json.dumps(bt) + ";"
+                         "document.querySelector('#mcsrc').value='bt:mtf';document.querySelector('#mcrisk').value='1';"
+                         "document.querySelector('#mcfreq').value='15';document.querySelector('#mcmon').value='12';"
+                         "document.querySelector('#cap').value='10000';"
+                         "runMonteCarlo(); return document.querySelector('#mcout').innerHTML;")
+        self.assertIn("1,000通貨では不可", got)
+        self.assertNotRegex(got, r">(0\.5|1)% ★", "張れないリスク%を推奨している")
+        self.assertIn("最小の1,000通貨でも、1回の損失は約170円", got)
 
 
 if __name__ == "__main__":
