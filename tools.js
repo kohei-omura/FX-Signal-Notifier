@@ -1323,14 +1323,17 @@ function renderRegimeBands(backtest, mode){
     if(base&&k!=='適正(20〜80%)'){
       var z=bandDiffZ(base,v);
       cmp=(v.avg_r-base.avg_r>=0?'+':'')+(v.avg_r-base.avg_r).toFixed(3)
-         +'<br><span style="font-size:11px;opacity:.75">z='+(z>=0?'+':'')+z.toFixed(2)+'</span>';
+         +'<br><span style="font-size:10px;opacity:.75">z='+(z>=0?'+':'')+z.toFixed(2)+'</span>';
     }
-    return '<tr><td>'+k+'</td><td>'+v.n+'</td><td>'+v.winrate+'%</td>'
-      +'<td class="'+(und?'':(v.avg_r>=0?'good':'bad'))+'">'+(v.avg_r>=0?'+':'')+v.avg_r.toFixed(3)+'</td>'
-      +'<td style="font-size:11px;opacity:.8">'+(v.ci_lo>=0?'+':'')+v.ci_lo.toFixed(3)
-      +'〜'+(v.ci_hi>=0?'+':'')+v.ci_hi.toFixed(3)+(und?'<br><b>判定不能</b>':'')+'</td>'
-      +'<td>'+cmp+'</td>'
-      +'<td style="font-size:11px;opacity:.8">'+v.cost_r.toFixed(3)+'</td></tr>';
+    /* 7列だとスマホ幅からはみ出したので4列にまとめる。
+       勝率・コストは区分名の下、95%区間は期待Rの下に小さく出す。 */
+    var sm='<br><span style="font-size:10px;opacity:.7">';
+    return '<tr><td>'+k.replace('(','<br><span style="font-size:10px;opacity:.7">(')+'</span>'
+      +sm+'勝率'+v.winrate+'%・コスト'+v.cost_r.toFixed(3)+'</span></td><td>'+v.n+'</td>'
+      +'<td class="'+(und?'':(v.avg_r>=0?'good':'bad'))+'">'+(v.avg_r>=0?'+':'')+v.avg_r.toFixed(3)
+      +sm+(v.ci_lo>=0?'+':'')+v.ci_lo.toFixed(3)+'〜'+(v.ci_hi>=0?'+':'')+v.ci_hi.toFixed(3)
+      +(und?'<br><b>判定不能</b>':'')+'</span></td>'
+      +'<td>'+cmp+'</td></tr>';
   }).join('');
 
   // 通貨ごとに同じ向きに出ているか。1つの通貨だけで出ている差は採用できない。
@@ -1338,7 +1341,7 @@ function renderRegimeBands(backtest, mode){
   var names=Object.keys(syms);
   if(names.length){
     per='<table style="margin-top:10px"><thead><tr><th>ペア</th>'
-      +REGIME_ORDER.map(function(k){return '<th>'+k.replace(/\(.*/,'')+'</th>';}).join('')
+      +REGIME_ORDER.map(function(k){return '<th>'+({'クライマックス(95%〜)':'極端'}[k]||k.replace(/\(.*/,''))+'</th>';}).join('')
       +'</tr></thead><tbody>'
       +names.map(function(sy){
         var sb=syms[sy]&&syms[sy].atr_bands;
@@ -1379,15 +1382,15 @@ function renderRegimeBands(backtest, mode){
       +'</div>';
   }
 
-  el.innerHTML='<table><thead><tr><th>値幅</th><th>件数</th><th>勝率</th><th>期待R/回</th>'
-    +'<th>95%区間</th><th>適正との差</th><th>コスト</th></tr></thead>'
+  el.innerHTML='<table><thead><tr><th>値幅</th><th>件数</th><th>期待R/回<br><span style="font-weight:400;font-size:10px">95%区間</span></th>'
+    +'<th>適正との差</th></tr></thead>'
     +'<tbody>'+rows+'</tbody></table>'+verdict
     +((m.atr_bands_warmup)?'<div class="note" style="margin-top:6px">※ 期間の頭の '
        +m.atr_bands_warmup+'件は、順位を出すだけの本数が無いため区分なしです（合計 '
        +(m.policies&&m.policies.tp_sl?m.policies.tp_sl.n:'?')+'件）。</div>':'')
     +'<div class="note">🎯推奨で降りた場合の1回あたり期待R（スプレッド控除後）。'
     +'値幅はATRの直近200本での順位で、画面のレジームチップと同じ区分です。<br>'
-    +'<b>コスト欄は必ず右下がりになります</b>— 値幅が広い＝SLが広い＝スプレッドが1Rに占める割合が小さい、という算数だからです。'
+    +'<b>コスト（区分名の下）は必ず値幅が広いほど小さくなります</b>— 値幅が広い＝SLが広い＝スプレッドが1Rに占める割合が小さい、という算数だからです。'
     +'期待Rの差がコストの差とほぼ同じなら、それは「勝ちやすい」のではなく「取られにくい」だけです。</div>'
     +(per?'<div class="note" style="margin-top:10px"><b>通貨ごとの内訳</b>（1つの通貨だけで出ている差は採用できません）</div>'+per:'');
 }

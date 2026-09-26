@@ -8,6 +8,7 @@
    COVERED_PAIRS, MODE_SRC_OK, MODE_LABEL_T, MODE_TRADES_PER_MONTH, BT_CACHE）を使う。 */
 var PF_MODES=['mtf','swing','day','scalp'];
 var PF_SYMS=['USD_JPY','EUR_JPY','GBP_JPY','AUD_JPY'];
+var PF_SHORT={mtf:'上位足',swing:'スイング',day:'デイ',scalp:'スキャル'};
 function _pf(v,d){ return (v>=0?'+':'')+(+v).toFixed(d==null?3:d); }
 /* 95%区間で3つに分ける。区間が0をまたぐ間は、プラスでもマイナスでも「まだ分からない」。 */
 function pfVerdict(a){
@@ -45,16 +46,18 @@ function renderWhereToFight(bt){
   var el=document.getElementById('wherefight'); if(!el) return;
   bt=bt||BT_CACHE;
   if(!bt||!bt.modes){ el.innerHTML='<div class="note">1年検証(backtest.json)を読み込み中です。出ない時は「🧠 記録簿を取込」を押してください。</div>'; return; }
-  var icon={bad:'⛔',und:'',good:'✅'};
+  /* スマホ幅（320px〜）に6列を収める。⛔の絵文字と小数3桁を並べると1列が広がり、
+     右端の「全体」が枠の外へはみ出していた。判定は絵文字ではなく枠の色で示し、
+     数字は小数2桁にする（詳しい値は下の文章に3桁で出している）。 */
   var cell=function(a,bold){
     if(!a) return '<td style="opacity:.5">—</td>';
     var v=pfVerdict(a);
-    return '<td class="'+(v==='bad'?'bad':(v==='good'?'good':''))+'" style="font-size:11px'+(bold?';font-weight:700':'')+'">'
-      +(icon[v]||'')+_pf(a.avg_r)+'<br><span style="opacity:.6">n='+a.n+'</span></td>';
+    return '<td class="pfc'+(v==='bad'?' pfbad':(v==='good'?' pfgood':''))+(bold?' pfall':'')+'">'
+      +_pf(a.avg_r,2)+'<small>'+a.n+'</small></td>';
   };
   var rows=PF_MODES.map(function(m){
     if(!bt.modes[m]) return '';
-    return '<tr><td>'+(MODE_LABEL_T[m]||m)+'</td>'+PF_SYMS.map(function(s){return cell(_pfAdvice(bt,m,s));}).join('')
+    return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'+PF_SYMS.map(function(s){return cell(_pfAdvice(bt,m,s));}).join('')
       +cell(_pfAdvice(bt,m,null),true)+'</tr>';
   }).join('');
   // あなたの取引がどのモードに寄っているか
@@ -78,13 +81,14 @@ function renderWhereToFight(bt){
         +'前半・後半の両方で良くなった絞り込みです（件数 '+f.h1.n+'／'+f.h2.n+'・区間はまだ0をまたぎます）。');
     });
   });
-  el.innerHTML='<table><thead><tr><th>モード</th>'+PF_SYMS.map(function(s){return '<th>'+s.replace('_JPY','')+'</th>';}).join('')
+  el.innerHTML='<table class="pft"><thead><tr><th></th>'+PF_SYMS.map(function(s){return '<th>'+s.replace('_JPY','')+'</th>';}).join('')
     +'<th>全体</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="note" style="margin-top:4px"><span class="pfkey pfbad"></span>負けが確定的（95%区間が0未満）　'
+    +'<span class="pfkey pfgood"></span>勝ちが確定的　枠なし＝まだ分からない。小さい数字は件数。</div>'
     +'<div style="margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;line-height:1.85">'
     +lines.join('<br>')+'</div>'
     +'<div class="note">1回あたりの期待R（🎯推奨で決済・スプレッド控除後・'+escHtml(bt.generated_at||'')+' 時点の1年ぶん）。'
-    +'⛔＝95%区間が0未満（負けが確定的）／✅＝0より上。印の無いものは区間が0をまたぐ「まだ分からない」です。<br>'
-    +'通貨ごとの差の多くは偶然の範囲です。<b>良かった通貨だけを選ぶのは過去に合わせるだけ</b>なので、避ける根拠になるのは⛔だけです。</div>';
+    +'通貨ごとの差の多くは偶然の範囲です。<b>良かった通貨だけを選ぶのは過去に合わせるだけ</b>なので、避ける根拠になるのは赤枠だけです。</div>';
 }
 
 /* ===== 何をやめるか（あなたの実績で、ルールを守っていたらどうだったか） =====

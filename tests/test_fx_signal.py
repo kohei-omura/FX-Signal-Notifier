@@ -5662,6 +5662,10 @@ class ProfitWhereToFightTest(ToolsHarness, unittest.TestCase):
         self.assertIn("⛔", got["html"])
         self.assertIn("負けは偶然ではありません", got["html"])
         self.assertIn("まだ言えません", got["html"], "区間が0をまたぐmtfをプラス確定と言っている")
+        table = got["html"][:got["html"].index("</table>")]
+        self.assertNotIn("⛔", table, "表の中の絵文字で列が広がり、スマホ幅からはみ出す")
+        self.assertIn('class="pft"', table)
+        self.assertIn("pfbad", table)
 
 
 class ProfitRuleWhatIfTest(ToolsHarness, unittest.TestCase):
