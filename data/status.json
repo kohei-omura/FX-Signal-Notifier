@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-09-26 08:56 JST",
+  "generated_at": "2026-09-26 11:01 JST",
   "market_open": false,
   "mode": "mtf",
   "blackout": false,
@@ -266,7 +266,7 @@
       "hold_sl_min": 120,
       "tp_winrate": 17,
       "stats_n": 18,
-      "stats_ts": 1790378479,
+      "stats_ts": 1790388087,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -610,7 +610,7 @@
       "hold_sl_min": 112,
       "tp_winrate": 26,
       "stats_n": 19,
-      "stats_ts": 1790378479,
+      "stats_ts": 1790388088,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -941,7 +941,7 @@
       "hold_sl_min": 135,
       "tp_winrate": 45,
       "stats_n": 20,
-      "stats_ts": 1790378479,
+      "stats_ts": 1790388087,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1288,7 +1288,7 @@
       "hold_sl_min": 90,
       "tp_winrate": 42,
       "stats_n": 19,
-      "stats_ts": 1790378480,
+      "stats_ts": 1790388087,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1372,46 +1372,8 @@
   "closed_positions": [],
   "warnings": [
     {
-      "tag": "api:/ticker",
-      "msg": "API失敗 /ticker : status=5 [{'message_code': 'ERR-5201', 'message_string': 'MAINTENANCE. Please wait for a while'}]"
-    },
-    {
-      "tag": "ticker",
-      "msg": "現在値(ticker)を取得できませんでした"
-    },
-    {
-      "tag": "breaker",
-      "msg": "API連続失敗5回。以降は再試行を打ち切って早く抜ける"
-    },
-    {
-      "tag": "ohlc:AUD_JPY",
-      "msg": "AUD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:EUR_JPY",
-      "msg": "EUR_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:GBP_JPY",
-      "msg": "GBP_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:USD_JPY",
-      "msg": "USD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "mtf:1hour",
-      "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "mtf:4hour",
-      "msg": "USD_JPY の4hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "skip-status",
-      "msg": "価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）"
+      "tag": "cost",
+      "msg": "スプレッドが1リスクの58%を占めています（mtfモードはSL幅が狭すぎます）"
     }
-  ],
-  "degraded": true,
-  "degraded_at": "2026-09-26 10:56 JST"
+  ]
 }
