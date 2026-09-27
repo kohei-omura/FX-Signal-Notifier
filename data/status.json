@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-09-27 03:06 JST",
+  "generated_at": "2026-09-28 04:46 JST",
   "market_open": false,
   "mode": "mtf",
   "blackout": false,
@@ -252,86 +252,86 @@
         },
         "rsi": {
           "band": "押し目/戻り(35〜50)",
-          "n": 560,
+          "n": 559,
           "fast_rate": 18,
           "mfe": 0.651,
-          "avg_r": 0.092,
-          "ci_lo": -0.007,
-          "ci_hi": 0.191
+          "avg_r": 0.094,
+          "ci_lo": -0.005,
+          "ci_hi": 0.193
         }
       },
       "skip_reason": null,
       "next_news": null,
       "hold_tp_min": 285,
-      "hold_sl_min": 120,
-      "tp_winrate": 17,
-      "stats_n": 18,
-      "stats_ts": 1790442687,
+      "hold_sl_min": 105,
+      "tp_winrate": 18,
+      "stats_n": 17,
+      "stats_ts": 1790535996,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
-          "n": 18,
-          "winrate": 17,
-          "avg_r": -0.58,
-          "avg_r_gross": -0.567,
+          "n": 17,
+          "winrate": 18,
+          "avg_r": -0.554,
+          "avg_r_gross": -0.541,
           "cost_r": 0.013,
-          "sd": 0.9969,
+          "sd": 1.0214,
           "ci_lo": -1.04,
-          "ci_hi": -0.119,
+          "ci_hi": -0.069,
           "payoff": 1.6,
-          "pf": 0.32
+          "pf": 0.34
         },
         "advice": {
-          "n": 18,
-          "winrate": 39,
-          "avg_r": -0.308,
-          "avg_r_gross": -0.295,
+          "n": 17,
+          "winrate": 35,
+          "avg_r": -0.366,
+          "avg_r_gross": -0.353,
           "cost_r": 0.013,
-          "sd": 0.9683,
-          "ci_lo": -0.755,
-          "ci_hi": 0.14,
-          "payoff": 0.81,
-          "pf": 0.52
+          "sd": 0.9646,
+          "ci_lo": -0.825,
+          "ci_hi": 0.092,
+          "payoff": 0.83,
+          "pf": 0.45
         },
         "advice_watch": {
-          "n": 18,
-          "winrate": 67,
-          "avg_r": -0.07,
-          "avg_r_gross": -0.057,
+          "n": 17,
+          "winrate": 65,
+          "avg_r": -0.094,
+          "avg_r_gross": -0.081,
           "cost_r": 0.013,
-          "sd": 0.7276,
-          "ci_lo": -0.406,
-          "ci_hi": 0.267,
+          "sd": 0.7427,
+          "ci_lo": -0.447,
+          "ci_hi": 0.26,
           "payoff": 0.42,
-          "pf": 0.83
+          "pf": 0.77
         },
         "advice_tech": {
-          "n": 18,
-          "winrate": 39,
-          "avg_r": -0.308,
-          "avg_r_gross": -0.295,
+          "n": 17,
+          "winrate": 35,
+          "avg_r": -0.366,
+          "avg_r_gross": -0.353,
           "cost_r": 0.013,
-          "sd": 0.9683,
-          "ci_lo": -0.755,
-          "ci_hi": 0.14,
-          "payoff": 0.81,
-          "pf": 0.52
+          "sd": 0.9646,
+          "ci_lo": -0.825,
+          "ci_hi": 0.092,
+          "payoff": 0.83,
+          "pf": 0.45
         }
       },
       "bands": {
-        "中(基準+3〜10pt)": {
-          "n": 7,
-          "tp_sl": -0.639,
-          "advice": -0.014,
-          "advice_watch": 0.041,
-          "advice_tech": -0.014
-        },
         "弱(基準〜+3pt)": {
           "n": 10,
           "tp_sl": -0.495,
           "advice": -0.443,
           "advice_watch": -0.233,
           "advice_tech": -0.443
+        },
+        "中(基準+3〜10pt)": {
+          "n": 6,
+          "tp_sl": -0.577,
+          "advice": -0.131,
+          "advice_watch": -0.008,
+          "advice_tech": -0.131
         },
         "強(基準+10pt〜)": {
           "n": 1,
@@ -578,12 +578,12 @@
         "need_r": 1.0,
         "stretch": {
           "band": "逆張り(-0.3ATR〜)",
-          "n": 704,
+          "n": 703,
           "fast_rate": 20,
           "mfe": 0.649,
-          "avg_r": 0.049,
-          "ci_lo": -0.038,
-          "ci_hi": 0.137
+          "avg_r": 0.051,
+          "ci_lo": -0.037,
+          "ci_hi": 0.139
         },
         "adx": {
           "band": "適正(30〜40)",
@@ -596,12 +596,12 @@
         },
         "rsi": {
           "band": "押し目/戻り(35〜50)",
-          "n": 560,
+          "n": 559,
           "fast_rate": 18,
           "mfe": 0.651,
-          "avg_r": 0.092,
-          "ci_lo": -0.007,
-          "ci_hi": 0.191
+          "avg_r": 0.094,
+          "ci_lo": -0.005,
+          "ci_hi": 0.193
         }
       },
       "skip_reason": null,
@@ -610,7 +610,7 @@
       "hold_sl_min": 112,
       "tp_winrate": 26,
       "stats_n": 19,
-      "stats_ts": 1790442687,
+      "stats_ts": 1790535996,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -927,12 +927,12 @@
         },
         "rsi": {
           "band": "押し目/戻り(35〜50)",
-          "n": 560,
+          "n": 559,
           "fast_rate": 18,
           "mfe": 0.651,
-          "avg_r": 0.092,
-          "ci_lo": -0.007,
-          "ci_hi": 0.191
+          "avg_r": 0.094,
+          "ci_lo": -0.005,
+          "ci_hi": 0.193
         }
       },
       "skip_reason": null,
@@ -941,7 +941,7 @@
       "hold_sl_min": 135,
       "tp_winrate": 45,
       "stats_n": 20,
-      "stats_ts": 1790442687,
+      "stats_ts": 1790535996,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1256,12 +1256,12 @@
         "need_r": 1.0,
         "stretch": {
           "band": "逆張り(-0.3ATR〜)",
-          "n": 704,
+          "n": 703,
           "fast_rate": 20,
           "mfe": 0.649,
-          "avg_r": 0.049,
-          "ci_lo": -0.038,
-          "ci_hi": 0.137
+          "avg_r": 0.051,
+          "ci_lo": -0.037,
+          "ci_hi": 0.139
         },
         "adx": {
           "band": "弱め(25〜30)",
@@ -1274,12 +1274,12 @@
         },
         "rsi": {
           "band": "押し目/戻り(35〜50)",
-          "n": 560,
+          "n": 559,
           "fast_rate": 18,
           "mfe": 0.651,
-          "avg_r": 0.092,
-          "ci_lo": -0.007,
-          "ci_hi": 0.191
+          "avg_r": 0.094,
+          "ci_lo": -0.005,
+          "ci_hi": 0.193
         }
       },
       "skip_reason": null,
@@ -1288,7 +1288,7 @@
       "hold_sl_min": 90,
       "tp_winrate": 42,
       "stats_n": 19,
-      "stats_ts": 1790442687,
+      "stats_ts": 1790535996,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
