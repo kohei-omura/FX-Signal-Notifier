@@ -2370,6 +2370,10 @@ class SubNotifyTest(RunTestCase):
         self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
         self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
         F.in_blackout = lambda sym: False
+        # 上位足の向きはモックの値動き（実行日で変わる）から出るので、ここでは中立に固定する。
+        # 固定しないと、日によって1通貨が「上位足と逆行」で落ちてテストが揺れる。
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
         F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
         F.score_pair = lambda sym, oh: self._fake_score(20.0)
         parts, _ = F.sub_mode_signals({"positions": []},
@@ -2388,6 +2392,10 @@ class SubNotifyTest(RunTestCase):
         self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
         self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
         F.in_blackout = lambda sym: False
+        # 上位足の向きはモックの値動き（実行日で変わる）から出るので、ここでは中立に固定する。
+        # 固定しないと、日によって1通貨が「上位足と逆行」で落ちてテストが揺れる。
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
         F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
         F.score_pair = lambda sym, oh: self._fake_score(45.0)
         txt = F.sub_mode_signals({"positions": []},
@@ -2408,6 +2416,10 @@ class SubNotifyTest(RunTestCase):
         self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
         self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
         F.in_blackout = lambda sym: False
+        # 上位足の向きはモックの値動き（実行日で変わる）から出るので、ここでは中立に固定する。
+        # 固定しないと、日によって1通貨が「上位足と逆行」で落ちてテストが揺れる。
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
         F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
         F.score_pair = lambda sym, oh: self._fake_score(45.0)
         data = {"positions": [{"symbol": F.SYMBOLS[0], "side": "short",
@@ -2443,6 +2455,10 @@ class SubNotifyTest(RunTestCase):
         self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
         self.addCleanup(setattr, F, "in_blackout", F.__dict__["in_blackout"])
         F.in_blackout = lambda sym: False
+        # 上位足の向きはモックの値動き（実行日で変わる）から出るので、ここでは中立に固定する。
+        # 固定しないと、日によって1通貨が「上位足と逆行」で落ちてテストが揺れる。
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
         F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
         F.score_pair = lambda sym, oh: self._fake_score(45.0)
         F.sub_mode_signals({"positions": []}, subs=[{"mode": "day", "filter": "adx40"}])
@@ -5729,6 +5745,35 @@ class ProfitMonteCarloTest(ToolsHarness, unittest.TestCase):
         self.assertIn("1,000通貨では不可", got)
         self.assertNotRegex(got, r">(0\.5|1)% ★", "張れないリスク%を推奨している")
         self.assertIn("最小の1,000通貨でも、1回の損失は約170円", got)
+
+
+
+class PachiMachineEmbedTest(unittest.TestCase):
+    """パチンコ台（iframeに埋め込むHTML）が壊れずに取り出せ、実機寄せの部品を持つこと。"""
+
+    def _machine(self):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        script = r"""
+const fs=require('fs');const s=fs.readFileSync(process.argv[1]+'/index.html','utf8');
+const A='window.__MACHINE_HTML=`',i=s.indexOf(A)+A.length,j=s.indexOf('`;\n// オーバーレイ方式',i);
+process.stdout.write(eval('`'+s.slice(i,j)+'`'));"""
+        out = subprocess.run([node, "-e", script, ROOT], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout
+
+    def test_real_machine_parts(self):
+        html = self._machine()
+        for part in ('class="m-lamp"', 'id="mChance"', 'id="mSeg"', 'id="mCount"',
+                     "data-th", "setAttribute('data-n'", "function lamp(k)"):
+            self.assertIn(part, html)
+        self.assertTrue(html.rstrip().endswith("</html>"))
+
+    def test_the_slot_matches_the_machine_height(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("slot.clientWidth", src, "カード幅で高さを出すと台の下に隙間が空く")
 
 
 if __name__ == "__main__":
