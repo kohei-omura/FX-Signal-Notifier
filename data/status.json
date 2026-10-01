@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-10-01 09:50 JST",
+  "generated_at": "2026-10-01 09:56 JST",
   "market_open": true,
   "mode": "mtf",
   "blackout": false,
@@ -16,17 +16,17 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 157.804,
-      "ask": 157.809,
-      "rsi": 79.2,
-      "adx": 41.7,
-      "ema_f": 157.629,
-      "ema_s": 157.5,
-      "atr": 0.0861,
-      "tp_pips": 26.9,
-      "sl_pips": 16.8,
-      "score": 0.818,
-      "tech": 0.874,
+      "bid": 157.907,
+      "ask": 157.912,
+      "rsi": 82.2,
+      "adx": 41.8,
+      "ema_f": 157.65,
+      "ema_s": 157.51,
+      "atr": 0.0942,
+      "tp_pips": 29.4,
+      "sl_pips": 18.4,
+      "score": 0.84,
+      "tech": 0.9,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -34,7 +34,7 @@
         "手法:ブレイク",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI79",
+        "RSI82",
         "ADX42(強)"
       ],
       "closes": [
@@ -97,7 +97,7 @@
         157.724,
         157.717,
         157.786,
-        157.803
+        157.909
       ],
       "ema_f_series": [
         156.982,
@@ -159,7 +159,7 @@
         157.49,
         157.535,
         157.586,
-        157.629
+        157.65
       ],
       "ema_s_series": [
         156.955,
@@ -221,11 +221,11 @@
         157.41,
         157.438,
         157.47,
-        157.5
+        157.51
       ],
       "blackout": false,
-      "cost_r": 0.03,
-      "cost_r_base": 0.012,
+      "cost_r": 0.027,
+      "cost_r_base": 0.011,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -245,7 +245,7 @@
       "hold_sl_min": 90,
       "tp_winrate": 28,
       "stats_n": 18,
-      "stats_ts": 1790812261,
+      "stats_ts": 1790816174,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -329,25 +329,25 @@
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 178.86,
-      "ask": 178.865,
-      "rsi": 79.5,
-      "adx": 26.1,
-      "ema_f": 178.625,
-      "ema_s": 178.482,
-      "atr": 0.0917,
-      "tp_pips": 28.6,
-      "sl_pips": 17.9,
-      "score": 0.663,
-      "tech": 0.709,
+      "bid": 178.984,
+      "ask": 178.989,
+      "rsi": 82.8,
+      "adx": 26.3,
+      "ema_f": 178.65,
+      "ema_s": 178.493,
+      "atr": 0.1015,
+      "tp_pips": 31.7,
+      "sl_pips": 19.8,
+      "score": 0.677,
+      "tech": 0.726,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
-        "手法:順張りMA",
+        "手法:ブレイク",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI80",
+        "RSI83",
         "ADX26(強)"
       ],
       "closes": [
@@ -410,7 +410,7 @@
         178.695,
         178.735,
         178.861,
-        178.857
+        178.984
       ],
       "ema_f_series": [
         178.259,
@@ -472,7 +472,7 @@
         178.432,
         178.493,
         178.566,
-        178.625
+        178.65
       ],
       "ema_s_series": [
         178.156,
@@ -534,11 +534,11 @@
         178.369,
         178.403,
         178.444,
-        178.482
+        178.493
       ],
       "blackout": false,
-      "cost_r": 0.028,
-      "cost_r_base": 0.022,
+      "cost_r": 0.025,
+      "cost_r_base": 0.02,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -568,59 +568,59 @@
       "skip_reason": null,
       "next_news": null,
       "hold_tp_min": 375,
-      "hold_sl_min": 120,
-      "tp_winrate": 28,
-      "stats_n": 18,
-      "stats_ts": 1790812261,
+      "hold_sl_min": 128,
+      "tp_winrate": 26,
+      "stats_n": 19,
+      "stats_ts": 1790816174,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
-          "n": 18,
-          "winrate": 28,
-          "avg_r": -0.304,
-          "avg_r_gross": -0.278,
+          "n": 19,
+          "winrate": 26,
+          "avg_r": -0.341,
+          "avg_r_gross": -0.316,
           "cost_r": 0.026,
-          "sd": 1.1982,
-          "ci_lo": -0.858,
-          "ci_hi": 0.249,
+          "sd": 1.1757,
+          "ci_lo": -0.87,
+          "ci_hi": 0.187,
           "payoff": 1.6,
-          "pf": 0.62
+          "pf": 0.57
         },
         "advice": {
-          "n": 18,
-          "winrate": 28,
-          "avg_r": -0.424,
-          "avg_r_gross": -0.398,
+          "n": 19,
+          "winrate": 26,
+          "avg_r": -0.455,
+          "avg_r_gross": -0.429,
           "cost_r": 0.026,
-          "sd": 1.0403,
-          "ci_lo": -0.904,
-          "ci_hi": 0.057,
+          "sd": 1.0199,
+          "ci_lo": -0.914,
+          "ci_hi": 0.004,
           "payoff": 1.17,
-          "pf": 0.45
+          "pf": 0.42
         },
         "advice_watch": {
-          "n": 18,
-          "winrate": 78,
-          "avg_r": -0.013,
-          "avg_r_gross": 0.013,
+          "n": 19,
+          "winrate": 79,
+          "avg_r": -0.011,
+          "avg_r_gross": 0.014,
           "cost_r": 0.026,
-          "sd": 0.5771,
-          "ci_lo": -0.28,
-          "ci_hi": 0.253,
-          "payoff": 0.3,
-          "pf": 1.06
+          "sd": 0.5609,
+          "ci_lo": -0.264,
+          "ci_hi": 0.241,
+          "payoff": 0.28,
+          "pf": 1.07
         },
         "advice_tech": {
-          "n": 18,
-          "winrate": 28,
-          "avg_r": -0.424,
-          "avg_r_gross": -0.398,
+          "n": 19,
+          "winrate": 26,
+          "avg_r": -0.455,
+          "avg_r_gross": -0.429,
           "cost_r": 0.026,
-          "sd": 1.0403,
-          "ci_lo": -0.904,
-          "ci_hi": 0.057,
+          "sd": 1.0199,
+          "ci_lo": -0.914,
+          "ci_hi": 0.004,
           "payoff": 1.17,
-          "pf": 0.45
+          "pf": 0.42
         }
       },
       "bands": {
@@ -632,11 +632,11 @@
           "advice_tech": -0.372
         },
         "弱(基準〜+3pt)": {
-          "n": 8,
-          "tp_sl": -0.374,
-          "advice": -0.488,
-          "advice_watch": -0.071,
-          "advice_tech": -0.488
+          "n": 9,
+          "tp_sl": -0.445,
+          "advice": -0.547,
+          "advice_watch": -0.061,
+          "advice_tech": -0.547
         }
       },
       "near": {
@@ -652,17 +652,17 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 209.392,
-      "ask": 209.401,
-      "rsi": 79.0,
-      "adx": 24.1,
-      "ema_f": 209.112,
-      "ema_s": 208.935,
-      "atr": 0.1151,
-      "tp_pips": 35.9,
-      "sl_pips": 22.4,
-      "score": 0.651,
-      "tech": 0.678,
+      "bid": 209.544,
+      "ask": 209.553,
+      "rsi": 82.0,
+      "adx": 24.5,
+      "ema_f": 209.143,
+      "ema_s": 208.949,
+      "atr": 0.1279,
+      "tp_pips": 39.9,
+      "sl_pips": 24.9,
+      "score": 0.666,
+      "tech": 0.695,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -670,8 +670,8 @@
         "手法:レンジ逆張り",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI79",
-        "ADX24(弱)"
+        "RSI82",
+        "ADX25(弱)"
       ],
       "closes": [
         208.486,
@@ -733,7 +733,7 @@
         209.194,
         209.212,
         209.387,
-        209.39
+        209.544
       ],
       "ema_f_series": [
         208.369,
@@ -795,7 +795,7 @@
         208.893,
         208.957,
         209.043,
-        209.112
+        209.143
       ],
       "ema_s_series": [
         208.162,
@@ -857,11 +857,11 @@
         208.803,
         208.84,
         208.89,
-        208.935
+        208.949
       ],
       "blackout": false,
-      "cost_r": 0.04,
-      "cost_r_base": 0.04,
+      "cost_r": 0.036,
+      "cost_r_base": 0.036,
       "spread": {
         "pips": 0.9,
         "base": 0.9,
@@ -894,7 +894,7 @@
       "hold_sl_min": 135,
       "tp_winrate": 39,
       "stats_n": 18,
-      "stats_ts": 1790812261,
+      "stats_ts": 1790816174,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -978,17 +978,17 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 109.558,
-      "ask": 109.565,
-      "rsi": 68.0,
-      "adx": 21.4,
-      "ema_f": 109.467,
-      "ema_s": 109.398,
-      "atr": 0.0673,
-      "tp_pips": 21.0,
-      "sl_pips": 13.1,
-      "score": 0.519,
-      "tech": 0.54,
+      "bid": 109.637,
+      "ask": 109.644,
+      "rsi": 75.6,
+      "adx": 21.7,
+      "ema_f": 109.483,
+      "ema_s": 109.405,
+      "atr": 0.0713,
+      "tp_pips": 22.2,
+      "sl_pips": 13.9,
+      "score": 0.585,
+      "tech": 0.618,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -996,8 +996,8 @@
         "手法:レンジ逆張り",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI68",
-        "ADX21(弱)"
+        "RSI76",
+        "ADX22(弱)"
       ],
       "closes": [
         109.383,
@@ -1059,7 +1059,7 @@
         109.53,
         109.51,
         109.598,
-        109.558
+        109.637
       ],
       "ema_f_series": [
         109.442,
@@ -1121,7 +1121,7 @@
         109.38,
         109.406,
         109.445,
-        109.467
+        109.483
       ],
       "ema_s_series": [
         109.445,
@@ -1183,11 +1183,11 @@
         109.345,
         109.36,
         109.382,
-        109.398
+        109.405
       ],
       "blackout": false,
-      "cost_r": 0.053,
-      "cost_r_base": 0.038,
+      "cost_r": 0.05,
+      "cost_r_base": 0.036,
       "spread": {
         "pips": 0.7,
         "base": 0.7,
@@ -1217,59 +1217,59 @@
       "skip_reason": null,
       "next_news": null,
       "hold_tp_min": 75,
-      "hold_sl_min": 90,
-      "tp_winrate": 45,
-      "stats_n": 20,
-      "stats_ts": 1790812261,
+      "hold_sl_min": 82,
+      "tp_winrate": 43,
+      "stats_n": 21,
+      "stats_ts": 1790816175,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
-          "n": 20,
-          "winrate": 45,
-          "avg_r": 0.13,
-          "avg_r_gross": 0.17,
-          "cost_r": 0.04,
-          "sd": 1.3252,
-          "ci_lo": -0.451,
-          "ci_hi": 0.71,
+          "n": 21,
+          "winrate": 43,
+          "avg_r": 0.074,
+          "avg_r_gross": 0.114,
+          "cost_r": 0.041,
+          "sd": 1.317,
+          "ci_lo": -0.49,
+          "ci_hi": 0.637,
           "payoff": 1.6,
-          "pf": 1.31
+          "pf": 1.2
         },
         "advice": {
-          "n": 20,
-          "winrate": 50,
-          "avg_r": 0.2,
-          "avg_r_gross": 0.24,
-          "cost_r": 0.04,
-          "sd": 1.2977,
-          "ci_lo": -0.369,
-          "ci_hi": 0.768,
+          "n": 21,
+          "winrate": 48,
+          "avg_r": 0.14,
+          "avg_r_gross": 0.181,
+          "cost_r": 0.041,
+          "sd": 1.2938,
+          "ci_lo": -0.413,
+          "ci_hi": 0.694,
           "payoff": 1.48,
-          "pf": 1.48
+          "pf": 1.35
         },
         "advice_watch": {
-          "n": 20,
-          "winrate": 70,
-          "avg_r": -0.013,
-          "avg_r_gross": 0.028,
-          "cost_r": 0.04,
-          "sd": 0.8192,
-          "ci_lo": -0.372,
-          "ci_hi": 0.346,
+          "n": 21,
+          "winrate": 67,
+          "avg_r": -0.062,
+          "avg_r_gross": -0.021,
+          "cost_r": 0.041,
+          "sd": 0.8298,
+          "ci_lo": -0.417,
+          "ci_hi": 0.293,
           "payoff": 0.47,
-          "pf": 1.09
+          "pf": 0.94
         },
         "advice_tech": {
-          "n": 20,
-          "winrate": 50,
-          "avg_r": 0.2,
-          "avg_r_gross": 0.24,
-          "cost_r": 0.04,
-          "sd": 1.2977,
-          "ci_lo": -0.369,
-          "ci_hi": 0.768,
+          "n": 21,
+          "winrate": 48,
+          "avg_r": 0.14,
+          "avg_r_gross": 0.181,
+          "cost_r": 0.041,
+          "sd": 1.2938,
+          "ci_lo": -0.413,
+          "ci_hi": 0.694,
           "payoff": 1.48,
-          "pf": 1.48
+          "pf": 1.35
         }
       },
       "bands": {
@@ -1281,11 +1281,11 @@
           "advice_tech": 0.11
         },
         "弱(基準〜+3pt)": {
-          "n": 12,
-          "tp_sl": 0.26,
-          "advice": 0.26,
-          "advice_watch": 0.082,
-          "advice_tech": 0.26
+          "n": 13,
+          "tp_sl": 0.159,
+          "advice": 0.159,
+          "advice_watch": -0.005,
+          "advice_tech": 0.159
         }
       },
       "near": {
