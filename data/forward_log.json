@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-01T15:46:56.718Z",
+  "updated": "2026-10-02T13:51:19.827Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -1212,14 +1212,26 @@
       "sl": 177.32399999999998,
       "b": 1.5971223021582732,
       "ts": 1790868682516,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 62,
       "pct": 62,
       "edgeAdj": 0,
       "mark": "hold",
       "src": "sub",
-      "subFilter": "adx40"
+      "subFilter": "adx40",
+      "result": "sl",
+      "R": -1,
+      "closed": 1790877600000,
+      "bars": 9,
+      "heldMin": 135,
+      "exit": 177.324,
+      "policies": {
+        "tp_sl": -1.018,
+        "advice": -1.018,
+        "advice_watch": 0.3309
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "GBP_JPY",
@@ -1232,6 +1244,34 @@
       "sl": 208.198,
       "b": 1.6006711409395973,
       "ts": 1790869606717,
+      "open": false,
+      "edgeOn": true,
+      "rawPct": 62,
+      "pct": 62,
+      "edgeAdj": 0,
+      "mark": "hold",
+      "src": "sub",
+      "subFilter": "adx40",
+      "result": "sl",
+      "R": -1,
+      "closed": 1790872200000,
+      "bars": 2,
+      "heldMin": 30,
+      "exit": 208.198,
+      "policies": null,
+      "resolvedBy": "server"
+    },
+    {
+      "sym": "AUD_JPY",
+      "mode": "day",
+      "side": "short",
+      "entry": 109.05,
+      "fill": 109.05,
+      "sp": 0.007,
+      "tp": 108.737,
+      "sl": 109.24499999999999,
+      "b": 1.6051282051282052,
+      "ts": 1790871930080,
       "open": true,
       "edgeOn": true,
       "rawPct": 62,
@@ -1240,6 +1280,26 @@
       "mark": "hold",
       "src": "sub",
       "subFilter": "adx40"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "mtf",
+      "side": "short",
+      "entry": 208.618,
+      "fill": 208.618,
+      "sp": 0.009,
+      "tp": 208.006,
+      "sl": 209.001,
+      "b": 1.5979112271540472,
+      "ts": 1790949069543,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 46,
+      "pct": 46,
+      "edgeAdj": 0,
+      "mark": "no",
+      "src": "main",
+      "subFilter": null
     }
   ]
 }
