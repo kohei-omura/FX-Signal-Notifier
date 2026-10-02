@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-01 09:15 JST",
+  "generated_at": "2026-10-02 09:15 JST",
   "note": "判定ロジック候補の比較。randomは対照群（-スプレッド付近に出るのが正常）。",
   "modes": {
     "day": {
@@ -8,242 +8,242 @@
         "current": {
           "label": "現行（加重スコア）",
           "all": {
-            "n": 4128,
+            "n": 4143,
             "winrate": 38,
-            "avg_r": -0.079,
-            "avg_r_gross": -0.039,
+            "avg_r": -0.076,
+            "avg_r_gross": -0.036,
             "cost_r": 0.039,
-            "sd": 1.2378,
-            "ci_lo": -0.116,
-            "ci_hi": -0.041
+            "sd": 1.2387,
+            "ci_lo": -0.114,
+            "ci_hi": -0.038
           },
           "first_half": {
-            "n": 2062,
+            "n": 2056,
             "winrate": 37,
-            "avg_r": -0.087,
-            "avg_r_gross": -0.053,
+            "avg_r": -0.088,
+            "avg_r_gross": -0.054,
             "cost_r": 0.034,
-            "sd": 1.2368,
-            "ci_lo": -0.14,
-            "ci_hi": -0.033
+            "sd": 1.2361,
+            "ci_lo": -0.141,
+            "ci_hi": -0.035
           },
           "second_half": {
-            "n": 2066,
+            "n": 2089,
             "winrate": 38,
-            "avg_r": -0.07,
-            "avg_r_gross": -0.026,
-            "cost_r": 0.045,
-            "sd": 1.2392,
-            "ci_lo": -0.124,
-            "ci_hi": -0.017
+            "avg_r": -0.064,
+            "avg_r_gross": -0.02,
+            "cost_r": 0.044,
+            "sd": 1.2412,
+            "ci_lo": -0.118,
+            "ci_hi": -0.011
           }
         },
         "inverse": {
           "label": "現行の逆",
           "all": {
-            "n": 2647,
+            "n": 2672,
             "winrate": 52,
-            "avg_r": -0.022,
-            "avg_r_gross": 0.017,
+            "avg_r": -0.024,
+            "avg_r_gross": 0.014,
             "cost_r": 0.038,
-            "sd": 0.5833,
-            "ci_lo": -0.044,
-            "ci_hi": 0.001
+            "sd": 0.5815,
+            "ci_lo": -0.046,
+            "ci_hi": -0.002
           },
           "first_half": {
-            "n": 1329,
+            "n": 1337,
             "winrate": 52,
-            "avg_r": -0.014,
-            "avg_r_gross": 0.019,
+            "avg_r": -0.019,
+            "avg_r_gross": 0.014,
             "cost_r": 0.033,
-            "sd": 0.5621,
-            "ci_lo": -0.044,
-            "ci_hi": 0.017
+            "sd": 0.5603,
+            "ci_lo": -0.049,
+            "ci_hi": 0.011
           },
           "second_half": {
-            "n": 1318,
+            "n": 1336,
             "winrate": 51,
-            "avg_r": -0.03,
-            "avg_r_gross": 0.014,
+            "avg_r": -0.028,
+            "avg_r_gross": 0.015,
             "cost_r": 0.043,
-            "sd": 0.604,
-            "ci_lo": -0.062,
-            "ci_hi": 0.003
+            "sd": 0.602,
+            "ci_lo": -0.06,
+            "ci_hi": 0.004
           }
         },
         "donchian20": {
           "label": "20本ブレイク（順張り）",
           "all": {
-            "n": 4484,
+            "n": 4489,
             "winrate": 38,
             "avg_r": -0.075,
             "avg_r_gross": -0.033,
             "cost_r": 0.042,
-            "sd": 1.2439,
-            "ci_lo": -0.112,
+            "sd": 1.2441,
+            "ci_lo": -0.111,
             "ci_hi": -0.039
           },
           "first_half": {
-            "n": 2305,
+            "n": 2300,
             "winrate": 37,
-            "avg_r": -0.066,
-            "avg_r_gross": -0.031,
+            "avg_r": -0.069,
+            "avg_r_gross": -0.033,
             "cost_r": 0.036,
-            "sd": 1.2468,
-            "ci_lo": -0.117,
-            "ci_hi": -0.015
+            "sd": 1.2461,
+            "ci_lo": -0.12,
+            "ci_hi": -0.018
           },
           "second_half": {
-            "n": 2179,
+            "n": 2189,
             "winrate": 38,
-            "avg_r": -0.086,
-            "avg_r_gross": -0.036,
+            "avg_r": -0.081,
+            "avg_r_gross": -0.032,
             "cost_r": 0.049,
-            "sd": 1.2411,
-            "ci_lo": -0.138,
-            "ci_hi": -0.033
+            "sd": 1.2423,
+            "ci_lo": -0.133,
+            "ci_hi": -0.029
           }
         },
         "meanrev": {
           "label": "BB外＋RSI過熱の逆張り",
           "all": {
-            "n": 1191,
+            "n": 1206,
             "winrate": 52,
-            "avg_r": -0.012,
-            "avg_r_gross": 0.026,
+            "avg_r": -0.018,
+            "avg_r_gross": 0.019,
             "cost_r": 0.037,
-            "sd": 0.696,
-            "ci_lo": -0.051,
-            "ci_hi": 0.028
+            "sd": 0.6937,
+            "ci_lo": -0.057,
+            "ci_hi": 0.021
           },
           "first_half": {
-            "n": 591,
-            "winrate": 57,
-            "avg_r": 0.054,
-            "avg_r_gross": 0.086,
+            "n": 595,
+            "winrate": 56,
+            "avg_r": 0.043,
+            "avg_r_gross": 0.076,
             "cost_r": 0.033,
-            "sd": 0.6798,
-            "ci_lo": -0.001,
-            "ci_hi": 0.108
+            "sd": 0.679,
+            "ci_lo": -0.011,
+            "ci_hi": 0.098
           },
           "second_half": {
-            "n": 600,
-            "winrate": 48,
-            "avg_r": -0.076,
-            "avg_r_gross": -0.033,
+            "n": 611,
+            "winrate": 47,
+            "avg_r": -0.077,
+            "avg_r_gross": -0.036,
             "cost_r": 0.042,
-            "sd": 0.7065,
-            "ci_lo": -0.132,
-            "ci_hi": -0.019
+            "sd": 0.7031,
+            "ci_lo": -0.133,
+            "ci_hi": -0.022
           }
         },
         "session_break": {
           "label": "東京レンジ→ロンドンブレイク",
           "all": {
-            "n": 966,
-            "winrate": 39,
-            "avg_r": -0.035,
-            "avg_r_gross": 0.007,
+            "n": 962,
+            "winrate": 38,
+            "avg_r": -0.039,
+            "avg_r_gross": 0.003,
             "cost_r": 0.041,
-            "sd": 1.262,
-            "ci_lo": -0.114,
-            "ci_hi": 0.045
+            "sd": 1.2611,
+            "ci_lo": -0.118,
+            "ci_hi": 0.041
           },
           "first_half": {
-            "n": 480,
-            "winrate": 38,
-            "avg_r": -0.065,
-            "avg_r_gross": -0.03,
+            "n": 475,
+            "winrate": 37,
+            "avg_r": -0.071,
+            "avg_r_gross": -0.036,
             "cost_r": 0.035,
-            "sd": 1.2553,
-            "ci_lo": -0.178,
-            "ci_hi": 0.047
+            "sd": 1.2537,
+            "ci_lo": -0.184,
+            "ci_hi": 0.041
           },
           "second_half": {
-            "n": 486,
+            "n": 487,
             "winrate": 40,
-            "avg_r": -0.004,
-            "avg_r_gross": 0.043,
+            "avg_r": -0.006,
+            "avg_r_gross": 0.041,
             "cost_r": 0.047,
-            "sd": 1.2691,
-            "ci_lo": -0.117,
-            "ci_hi": 0.109
+            "sd": 1.2687,
+            "ci_lo": -0.119,
+            "ci_hi": 0.107
           }
         },
         "trend_pullback": {
           "label": "上位足方向へ押し目/戻り",
           "all": {
-            "n": 770,
+            "n": 769,
             "winrate": 44,
-            "avg_r": 0.014,
-            "avg_r_gross": 0.057,
-            "cost_r": 0.043,
-            "sd": 0.8743,
-            "ci_lo": -0.047,
-            "ci_hi": 0.076
+            "avg_r": 0.017,
+            "avg_r_gross": 0.06,
+            "cost_r": 0.042,
+            "sd": 0.8733,
+            "ci_lo": -0.044,
+            "ci_hi": 0.079
           },
           "first_half": {
-            "n": 381,
+            "n": 383,
             "winrate": 41,
-            "avg_r": -0.01,
-            "avg_r_gross": 0.026,
+            "avg_r": -0.007,
+            "avg_r_gross": 0.029,
             "cost_r": 0.036,
-            "sd": 0.855,
-            "ci_lo": -0.096,
-            "ci_hi": 0.076
+            "sd": 0.8525,
+            "ci_lo": -0.093,
+            "ci_hi": 0.078
           },
           "second_half": {
-            "n": 389,
+            "n": 386,
             "winrate": 48,
-            "avg_r": 0.039,
-            "avg_r_gross": 0.088,
+            "avg_r": 0.042,
+            "avg_r_gross": 0.091,
             "cost_r": 0.049,
-            "sd": 0.8933,
-            "ci_lo": -0.05,
-            "ci_hi": 0.127
+            "sd": 0.8939,
+            "ci_lo": -0.047,
+            "ci_hi": 0.131
           }
         },
         "random": {
           "label": "★対照群：無作為エントリー",
           "all": {
-            "n": 4375,
+            "n": 4425,
             "winrate": 38,
-            "avg_r": -0.061,
-            "avg_r_gross": -0.02,
+            "avg_r": -0.068,
+            "avg_r_gross": -0.027,
             "cost_r": 0.041,
-            "sd": 1.126,
-            "ci_lo": -0.095,
-            "ci_hi": -0.028
+            "sd": 1.1227,
+            "ci_lo": -0.101,
+            "ci_hi": -0.035
           },
           "first_half": {
-            "n": 2280,
+            "n": 2268,
             "winrate": 37,
-            "avg_r": -0.088,
-            "avg_r_gross": -0.053,
+            "avg_r": -0.077,
+            "avg_r_gross": -0.042,
             "cost_r": 0.035,
-            "sd": 1.1158,
-            "ci_lo": -0.134,
-            "ci_hi": -0.042
+            "sd": 1.118,
+            "ci_lo": -0.123,
+            "ci_hi": -0.031
           },
           "second_half": {
-            "n": 2202,
+            "n": 2160,
             "winrate": 37,
-            "avg_r": -0.107,
-            "avg_r_gross": -0.06,
+            "avg_r": -0.094,
+            "avg_r_gross": -0.046,
             "cost_r": 0.047,
-            "sd": 1.1098,
-            "ci_lo": -0.154,
-            "ci_hi": -0.061
+            "sd": 1.116,
+            "ci_lo": -0.141,
+            "ci_hi": -0.046
           }
         }
       },
       "noise_floor": {
         "seeds": 24,
-        "min": -0.092,
-        "p05": -0.09,
-        "median": -0.069,
-        "p95": -0.033,
-        "max": -0.032
+        "min": -0.084,
+        "p05": -0.082,
+        "median": -0.066,
+        "p95": -0.038,
+        "max": -0.037
       },
       "stop_width": {
         "rule": "trend_pullback",
@@ -252,48 +252,48 @@
           {
             "slm_mult": 1.0,
             "slm": 1.3,
-            "n": 770,
+            "n": 769,
             "winrate": 44,
-            "avg_r": 0.014,
-            "avg_r_gross": 0.057,
-            "cost_r": 0.043,
-            "sd": 0.8743,
-            "ci_lo": -0.047,
-            "ci_hi": 0.076
+            "avg_r": 0.017,
+            "avg_r_gross": 0.06,
+            "cost_r": 0.042,
+            "sd": 0.8733,
+            "ci_lo": -0.044,
+            "ci_hi": 0.079
           },
           {
             "slm_mult": 1.5,
             "slm": 1.95,
-            "n": 712,
-            "winrate": 43,
-            "avg_r": 0.02,
-            "avg_r_gross": 0.048,
+            "n": 710,
+            "winrate": 44,
+            "avg_r": 0.022,
+            "avg_r_gross": 0.049,
             "cost_r": 0.028,
-            "sd": 0.7373,
-            "ci_lo": -0.034,
-            "ci_hi": 0.074
+            "sd": 0.7381,
+            "ci_lo": -0.033,
+            "ci_hi": 0.076
           },
           {
             "slm_mult": 2.0,
             "slm": 2.6,
-            "n": 657,
+            "n": 655,
             "winrate": 44,
             "avg_r": 0.007,
-            "avg_r_gross": 0.027,
+            "avg_r_gross": 0.029,
             "cost_r": 0.021,
-            "sd": 0.5771,
-            "ci_lo": -0.038,
-            "ci_hi": 0.051
+            "sd": 0.5777,
+            "ci_lo": -0.037,
+            "ci_hi": 0.052
           },
           {
             "slm_mult": 3.0,
             "slm": 3.9,
-            "n": 525,
+            "n": 526,
             "winrate": 45,
             "avg_r": 0.012,
-            "avg_r_gross": 0.027,
+            "avg_r_gross": 0.026,
             "cost_r": 0.014,
-            "sd": 0.4095,
+            "sd": 0.4098,
             "ci_lo": -0.023,
             "ci_hi": 0.047
           }
@@ -306,113 +306,113 @@
         "current": {
           "label": "現行（加重スコア）",
           "all": {
-            "n": 388,
+            "n": 392,
             "winrate": 43,
-            "avg_r": 0.016,
-            "avg_r_gross": 0.03,
+            "avg_r": 0.009,
+            "avg_r_gross": 0.023,
             "cost_r": 0.014,
-            "sd": 1.2349,
-            "ci_lo": -0.107,
-            "ci_hi": 0.139
+            "sd": 1.2322,
+            "ci_lo": -0.113,
+            "ci_hi": 0.131
           },
           "first_half": {
-            "n": 204,
+            "n": 205,
             "winrate": 44,
-            "avg_r": 0.047,
-            "avg_r_gross": 0.059,
+            "avg_r": 0.048,
+            "avg_r_gross": 0.06,
             "cost_r": 0.012,
-            "sd": 1.2575,
-            "ci_lo": -0.125,
+            "sd": 1.2545,
+            "ci_lo": -0.124,
             "ci_hi": 0.22
           },
           "second_half": {
-            "n": 184,
-            "winrate": 43,
-            "avg_r": -0.019,
-            "avg_r_gross": -0.003,
+            "n": 187,
+            "winrate": 42,
+            "avg_r": -0.034,
+            "avg_r_gross": -0.017,
             "cost_r": 0.016,
-            "sd": 1.2119,
-            "ci_lo": -0.194,
-            "ci_hi": 0.156
+            "sd": 1.2093,
+            "ci_lo": -0.207,
+            "ci_hi": 0.14
           }
         },
         "inverse": {
           "label": "現行の逆",
           "all": {
-            "n": 152,
-            "winrate": 45,
-            "avg_r": -0.055,
-            "avg_r_gross": -0.042,
+            "n": 157,
+            "winrate": 43,
+            "avg_r": -0.065,
+            "avg_r_gross": -0.052,
             "cost_r": 0.013,
-            "sd": 0.3946,
-            "ci_lo": -0.118,
-            "ci_hi": 0.008
+            "sd": 0.3947,
+            "ci_lo": -0.127,
+            "ci_hi": -0.003
           },
           "first_half": {
-            "n": 85,
+            "n": 86,
             "winrate": 43,
             "avg_r": -0.053,
-            "avg_r_gross": -0.04,
+            "avg_r_gross": -0.041,
             "cost_r": 0.012,
-            "sd": 0.3529,
+            "sd": 0.3525,
             "ci_lo": -0.128,
-            "ci_hi": 0.022
+            "ci_hi": 0.021
           },
           "second_half": {
-            "n": 61,
-            "winrate": 46,
-            "avg_r": -0.088,
-            "avg_r_gross": -0.074,
+            "n": 72,
+            "winrate": 44,
+            "avg_r": -0.078,
+            "avg_r_gross": -0.064,
             "cost_r": 0.014,
-            "sd": 0.39,
-            "ci_lo": -0.186,
-            "ci_hi": 0.01
+            "sd": 0.4395,
+            "ci_lo": -0.18,
+            "ci_hi": 0.023
           }
         },
         "donchian20": {
           "label": "20本ブレイク（順張り）",
           "all": {
-            "n": 853,
+            "n": 858,
             "winrate": 42,
-            "avg_r": 0.038,
-            "avg_r_gross": 0.052,
+            "avg_r": 0.033,
+            "avg_r_gross": 0.047,
             "cost_r": 0.014,
-            "sd": 1.2314,
-            "ci_lo": -0.045,
-            "ci_hi": 0.12
+            "sd": 1.2293,
+            "ci_lo": -0.049,
+            "ci_hi": 0.116
           },
           "first_half": {
-            "n": 457,
+            "n": 458,
             "winrate": 41,
-            "avg_r": 0.023,
-            "avg_r_gross": 0.035,
+            "avg_r": 0.012,
+            "avg_r_gross": 0.023,
             "cost_r": 0.012,
-            "sd": 1.2377,
-            "ci_lo": -0.091,
-            "ci_hi": 0.136
+            "sd": 1.2313,
+            "ci_lo": -0.101,
+            "ci_hi": 0.124
           },
           "second_half": {
-            "n": 397,
-            "winrate": 43,
-            "avg_r": 0.052,
-            "avg_r_gross": 0.068,
+            "n": 407,
+            "winrate": 42,
+            "avg_r": 0.04,
+            "avg_r_gross": 0.056,
             "cost_r": 0.016,
-            "sd": 1.2252,
-            "ci_lo": -0.069,
-            "ci_hi": 0.172
+            "sd": 1.2255,
+            "ci_lo": -0.079,
+            "ci_hi": 0.159
           }
         },
         "meanrev": {
           "label": "BB外＋RSI過熱の逆張り",
           "all": {
-            "n": 194,
-            "winrate": 45,
-            "avg_r": 0.06,
-            "avg_r_gross": 0.072,
+            "n": 197,
+            "winrate": 44,
+            "avg_r": 0.055,
+            "avg_r_gross": 0.067,
             "cost_r": 0.012,
-            "sd": 1.1274,
-            "ci_lo": -0.099,
-            "ci_hi": 0.219
+            "sd": 1.1201,
+            "ci_lo": -0.101,
+            "ci_hi": 0.211
           },
           "first_half": {
             "n": 99,
@@ -425,90 +425,90 @@
             "ci_hi": 0.387
           },
           "second_half": {
-            "n": 95,
+            "n": 98,
             "winrate": 41,
-            "avg_r": -0.04,
-            "avg_r_gross": -0.026,
-            "cost_r": 0.014,
-            "sd": 1.0763,
-            "ci_lo": -0.256,
-            "ci_hi": 0.177
+            "avg_r": -0.047,
+            "avg_r_gross": -0.033,
+            "cost_r": 0.013,
+            "sd": 1.0618,
+            "ci_lo": -0.257,
+            "ci_hi": 0.163
           }
         },
         "session_break": {
           "label": "東京レンジ→ロンドンブレイク",
           "all": {
-            "n": 467,
+            "n": 466,
             "winrate": 42,
-            "avg_r": 0.049,
-            "avg_r_gross": 0.064,
+            "avg_r": 0.051,
+            "avg_r_gross": 0.066,
             "cost_r": 0.014,
-            "sd": 1.2049,
-            "ci_lo": -0.06,
-            "ci_hi": 0.159
+            "sd": 1.2093,
+            "ci_lo": -0.059,
+            "ci_hi": 0.161
           },
           "first_half": {
-            "n": 238,
+            "n": 237,
             "winrate": 38,
-            "avg_r": -0.055,
-            "avg_r_gross": -0.043,
+            "avg_r": -0.058,
+            "avg_r_gross": -0.046,
             "cost_r": 0.013,
-            "sd": 1.1772,
-            "ci_lo": -0.205,
-            "ci_hi": 0.094
+            "sd": 1.1805,
+            "ci_lo": -0.208,
+            "ci_hi": 0.092
           },
           "second_half": {
-            "n": 232,
+            "n": 233,
             "winrate": 45,
-            "avg_r": 0.152,
-            "avg_r_gross": 0.168,
+            "avg_r": 0.153,
+            "avg_r_gross": 0.169,
             "cost_r": 0.017,
-            "sd": 1.2243,
-            "ci_lo": -0.006,
-            "ci_hi": 0.309
+            "sd": 1.2287,
+            "ci_lo": -0.005,
+            "ci_hi": 0.311
           }
         },
         "random": {
           "label": "★対照群：無作為エントリー",
           "all": {
-            "n": 511,
-            "winrate": 42,
-            "avg_r": 0.047,
-            "avg_r_gross": 0.061,
+            "n": 514,
+            "winrate": 40,
+            "avg_r": 0.003,
+            "avg_r_gross": 0.017,
             "cost_r": 0.014,
-            "sd": 1.0989,
-            "ci_lo": -0.048,
-            "ci_hi": 0.142
+            "sd": 1.0838,
+            "ci_lo": -0.09,
+            "ci_hi": 0.097
           },
           "first_half": {
-            "n": 282,
+            "n": 270,
             "winrate": 38,
-            "avg_r": -0.071,
-            "avg_r_gross": -0.058,
+            "avg_r": 0.018,
+            "avg_r_gross": 0.03,
             "cost_r": 0.012,
-            "sd": 1.0006,
-            "ci_lo": -0.187,
-            "ci_hi": 0.046
+            "sd": 1.0656,
+            "ci_lo": -0.109,
+            "ci_hi": 0.145
           },
           "second_half": {
-            "n": 255,
-            "winrate": 36,
-            "avg_r": -0.076,
-            "avg_r_gross": -0.06,
-            "cost_r": 0.017,
-            "sd": 1.0469,
-            "ci_lo": -0.205,
-            "ci_hi": 0.052
+            "n": 264,
+            "winrate": 37,
+            "avg_r": -0.061,
+            "avg_r_gross": -0.045,
+            "cost_r": 0.016,
+            "sd": 1.0549,
+            "ci_lo": -0.188,
+            "ci_hi": 0.066
           }
         }
       },
       "noise_floor": {
         "seeds": 24,
-        "min": -0.09,
-        "p05": -0.074,
-        "median": -0.018,
-        "p95": 0.045,
-        "max": 0.046
+        "min": -0.075,
+        "p05": -0.072,
+        "median": -0.009,
+        "p95": 0.042,
+        "max": 0.092
       },
       "stop_width": {
         "rule": "meanrev",
@@ -517,50 +517,50 @@
           {
             "slm_mult": 1.0,
             "slm": 1.8,
-            "n": 194,
-            "winrate": 45,
-            "avg_r": 0.06,
-            "avg_r_gross": 0.072,
+            "n": 197,
+            "winrate": 44,
+            "avg_r": 0.055,
+            "avg_r_gross": 0.067,
             "cost_r": 0.012,
-            "sd": 1.1274,
-            "ci_lo": -0.099,
-            "ci_hi": 0.219
+            "sd": 1.1201,
+            "ci_lo": -0.101,
+            "ci_hi": 0.211
           },
           {
             "slm_mult": 1.5,
             "slm": 2.7,
-            "n": 166,
+            "n": 168,
             "winrate": 48,
             "avg_r": -0.041,
             "avg_r_gross": -0.032,
             "cost_r": 0.009,
-            "sd": 0.9198,
-            "ci_lo": -0.18,
-            "ci_hi": 0.099
+            "sd": 0.9146,
+            "ci_lo": -0.179,
+            "ci_hi": 0.097
           },
           {
             "slm_mult": 2.0,
             "slm": 3.6,
-            "n": 135,
+            "n": 137,
             "winrate": 54,
-            "avg_r": -0.028,
+            "avg_r": -0.029,
             "avg_r_gross": -0.022,
             "cost_r": 0.007,
-            "sd": 0.7756,
-            "ci_lo": -0.159,
-            "ci_hi": 0.102
+            "sd": 0.7701,
+            "ci_lo": -0.158,
+            "ci_hi": 0.1
           },
           {
             "slm_mult": 3.0,
             "slm": 5.4,
-            "n": 83,
+            "n": 84,
             "winrate": 62,
             "avg_r": 0.011,
             "avg_r_gross": 0.015,
             "cost_r": 0.004,
-            "sd": 0.5932,
-            "ci_lo": -0.117,
-            "ci_hi": 0.138
+            "sd": 0.5897,
+            "ci_lo": -0.115,
+            "ci_hi": 0.137
           }
         ]
       }
