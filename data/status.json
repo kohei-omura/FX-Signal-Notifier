@@ -1355,14 +1355,6 @@
       "msg": "EUR_JPY のローソク足が取得できませんでした"
     },
     {
-      "tag": "mtf:1hour",
-      "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "mtf:4hour",
-      "msg": "USD_JPY の4hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
       "tag": "ohlc:USD_JPY",
       "msg": "USD_JPY のローソク足が取得できませんでした"
     },
@@ -1371,10 +1363,18 @@
       "msg": "GBP_JPY のローソク足が取得できませんでした"
     },
     {
+      "tag": "mtf:1hour",
+      "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
+    },
+    {
+      "tag": "mtf:4hour",
+      "msg": "USD_JPY の4hour足が0本しか取れず、上位足の判定ができません"
+    },
+    {
       "tag": "skip-status",
       "msg": "価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）"
     }
   ],
   "degraded": true,
-  "degraded_at": "2026-10-03 10:41 JST"
+  "degraded_at": "2026-10-03 10:46 JST"
 }
