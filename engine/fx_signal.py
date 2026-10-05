@@ -60,7 +60,13 @@ TP_SL_RATIO = 1.5
 LINE_ENABLED = True             # LINE無料枠が復活したのでON。枠が厳しくなったらFalseで全停止できる
 NOTIFY_ENTRY_TO_LINE = True     # エントリーシグナルをLINEへ
 NOTIFY_ENTRY_TO_MAIL = True     # エントリーシグナルをメールへ
-NOTIFY_POSITION_TO_LINE = False # 保有中の利確/損切りサインもLINEに欲しくなったら True（メールには常に届く）
+# 保有中の 🎯利確推奨 / 🛑損切り推奨 もLINEへ送る（メールには常に届く）。
+# 2026-10-05 の1年検証(mtf 706件)で、この合図で降りた場合は前半+0.103R・後半+0.021R、
+# TPまで持った場合は前半+0.060R・後半-0.032R と、両方の半期で合図に従う方が良かった。
+# メールだけでは見ない人には届いておらず、実際にはTP/SLまで持つ形になっていた。
+# 送るのは take/cut に変わった瞬間の1通だけ（同じ建玉・同じ段階では繰り返さない）なので、
+# 月200通の無料枠への影響は小さい。
+NOTIFY_POSITION_TO_LINE = True
 
 VALID_BARS = 3
 MAX_CHASE_RATIO = 0.5
@@ -3158,7 +3164,7 @@ def main():
         warn(f"前向き検証の判定に失敗: {e}", tag="fwd", surface=False)
     # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
-    # LINE: シグナル通知だけ。保有中サインは NOTIFY_POSITION_TO_LINE=True の時のみ追加。
+    # LINE: シグナル通知＋保有中の take/cut（NOTIFY_POSITION_TO_LINE）。利確検討(watch)はメールだけ。
     line_parts = (((list(notify) if NOTIFY_ENTRY_TO_LINE else [])
                    + (list(sub_parts) if NOTIFY_ENTRY_TO_LINE else [])
                    + (list(m2_line) if NOTIFY_POSITION_TO_LINE else [])) if LINE_ENABLED else [])

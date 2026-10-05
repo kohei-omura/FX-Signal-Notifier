@@ -1564,7 +1564,9 @@ function checkPosNotify(){
   computeOpen().forEach(p=>{const a=posAdvice(p);if(!a)return;
     if((a.level==='take'||a.level==='cut')&&adv0[p.id]!==a.level){
       /* 保有中サインのLINE送信はしない。
-         サーバー側は NOTIFY_POSITION_TO_LINE=False（メールのみ）と決めているのに、
+         （当時サーバー側は NOTIFY_POSITION_TO_LINE=False（メールのみ）だった。今はサーバーが
+          take/cut をLINEにも送るので、画面から送ると二重になる。）
+         サーバーの設定を見ずに、
          画面側だけがWorker経由でLINEへ送っていて設定を素通りしていた。
          しかも画面とサーバーで別実装のため判定が食い違い、同じ建玉に対して
          短時間に何通も届く原因になっていた（実際4通連続で届いた）。

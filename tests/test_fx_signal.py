@@ -5815,5 +5815,24 @@ class ExitCandidateTest(unittest.TestCase):
         self.assertAlmostEqual(got["time16"], -0.05, places=6)
 
 
+
+class PositionAlertsToLineTest(unittest.TestCase):
+    """保有中の利確/損切りの合図はLINEにも届くこと。
+
+    1年検証では合図に従って降りる方が、TPまで持つより前半・後半とも良かった。
+    メールだけだと見ていない人には届かず、結果としてTP/SLまで持つことになっていた。"""
+
+    def test_take_and_cut_go_to_line(self):
+        self.assertTrue(F.NOTIFY_POSITION_TO_LINE)
+        with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def check_positions(")
+        body = src[i:src.index("def open_risk_yen(", i)]
+        # LINEに入るのは take/cut だけ（利確検討はメールのみ）
+        self.assertIn('if adv["level"] in ("take", "cut"):\n                    line_msgs.append', body)
+        # 段階が変わった時だけ（同じ建玉に何通も送らない）
+        self.assertIn('changed = prev_level != adv["level"]', body)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
