@@ -242,6 +242,40 @@ def filter_holdout(mode):
     return out
 
 
+def exit_holdout(mode):
+    """出口の候補（F.EXIT_CANDIDATES）を、前半と後半で別々に測る。
+
+       比べる相手は現行の「🎯推奨で降りる」(advice) と「TPまで持つ」(tp_sl)。
+       採用の条件は先に決めておく：前半・後半の両方で advice を上回ること。"""
+    out = {}
+    for lab, rng in (("first_half", (0.0, 0.5)), ("second_half", (0.5, 1.0)), ("all", None)):
+        parts = {}
+        for sym in F.SYMBOLS:
+            try:
+                st = F.compute_signal_stats(sym, entry_range=rng)
+            except Exception as e:
+                print(f"[WARN] {mode}/{sym} 出口候補 失敗: {e}", file=sys.stderr)
+                continue
+            if not st:
+                continue
+            for k in ("tp_sl", "advice"):
+                v = (st.get("policies") or {}).get(k)
+                if v:
+                    parts.setdefault(k, []).append(v)
+            for k, v in (st.get("exit_cand") or {}).items():
+                parts.setdefault(k, []).append(v)
+        out[lab] = {k: pool_summary(v) for k, v in parts.items() if v}
+    a, b = out.get("first_half") or {}, out.get("second_half") or {}
+    out["passed"] = [k for k in F.EXIT_CANDIDATES
+                     if k in a and k in b and "advice" in a and "advice" in b
+                     and a[k]["avg_r"] > a["advice"]["avg_r"] and b[k]["avg_r"] > b["advice"]["avg_r"]]
+    return out
+
+
+# 出口候補を測るモード（重いので運用候補だけ）
+EXIT_MODES = ("mtf", "day", "swing")
+
+
 def merge_previous(out, path):
     """今回回さなかったモードは、前回の結果をそのまま引き継ぐ（いつの結果かも残す）。"""
     try:
@@ -399,6 +433,7 @@ def run_mode(mode):
             "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
             "atr_bands_warmup": atr_warm, "fast": fast,
             "filter_holdout": filter_holdout(mode),
+            **({"exit_holdout": exit_holdout(mode)} if mode in EXIT_MODES else {}),
             "mark_holdout": mark_holdout(mode),
             "entry_variant": entry_variant_holdout(mode),
             **(({"pullback_sweep": sweep_pullback(mode),
@@ -428,6 +463,14 @@ def main():
             v = r["policies"].get(k)
             if v:
                 print(f"      {k:14} 勝率{v['winrate']:3}% 期待R{v['avg_r']:+.3f}")
+        eh = r.get("exit_holdout") or {}
+        for k in ("tp_sl", "advice") + tuple(F.EXIT_CANDIDATES):
+            row = [eh.get(h, {}).get(k) for h in ("all", "first_half", "second_half")]
+            if row[0]:
+                print(f"      出口{k:8} 全体{row[0]['avg_r']:+.3f}(区間{row[0]['ci_lo']:+.3f}〜{row[0]['ci_hi']:+.3f})"
+                      + "".join(f" {h}{x['avg_r']:+.3f}" for h, x in zip(("前半", "後半"), row[1:]) if x))
+        if eh:
+            print(f"      出口候補で前半・後半とも推奨決済を上回ったもの: {eh.get('passed') or 'なし'}")
         _bl = "戻り/押し目の深さ" if r.get("band_by") == "pullback" else "スコア"
         for bn in sorted(r["bands"], key=lambda x: {"弱": 0, "中": 1, "強": 2}.get(x[0], 9)):
             b = r["bands"][bn]

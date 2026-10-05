@@ -791,7 +791,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         _SERIES_CACHE[ck] = cached
     ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s, atrpct_s = cached
     wins, losses = [], []
-    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]; fast_r = {}; filt_r = {}
+    policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]; fast_r = {}; filt_r = {}; cand_r = {}
     n = len(oh); i = warm
     i_end = n - 1
     if entry_range:
@@ -854,6 +854,9 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         cost = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS) / sl_pips if sl_pips else 0.0
         for name, r in sim.items():
             policy_r.setdefault(name, []).append((r, cost))
+        for name, r in _simulate_exit_candidates(oh, i, side, entry, tp, sl, sl_pips,
+                                                 aligned_s=aligned_s).items():
+            cand_r.setdefault(name, []).append((r, cost))
         band_r.setdefault(_score_band(abs(total), th, rsi_s[i], side), []).append((sim, cost))
         # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す。
         # 期間の頭は順位を出すだけの本数が無く区分が付かない。黙って落とすと
@@ -979,6 +982,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
             fast[kind] = slot
     if filt_r:
         out["filters"] = {k: _r_summary(v) for k, v in filt_r.items() if v}
+    if cand_r:
+        out["exit_cand"] = {k: _r_summary(v) for k, v in cand_r.items() if v}
     if fast:
         fast["bars"] = FAST_BARS
         fast["bar_min"] = bar_min
@@ -1294,6 +1299,62 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
             if hit:
                 out[name] = (profit / risk) if risk else 0.0
                 break
+    return out
+
+
+# ===== 出口の候補（検証専用。ライブの助言・通知は変えない） =====
+# mtf の前向き検証は 9/24〜 の7件がすべて損切りで、うち4件は一度「🟡利確検討」まで
+# 伸びてから戻っていた（伸びた利益を守る仕組みが無い）。
+# 候補は先に決めた少数だけにする（何通りも試せば偶然どれかは良く見える）。
+#   be05     … 含み益が+0.5Rに届いたら、SLを建値へ（以後は負けない）
+#   be08     … 同じく+0.8Rで建値へ
+#   trail10  … +1.0Rに届いたら、最高値から0.5R戻ったところへSLを引き上げる
+#   htf_off  … 上位足の向きが建てた方向でなくなったら（レンジ化・逆転）その足の終値で降りる
+#   time16   … 16本（15分足で4時間）経っても含み益が無ければ降りる
+# SLの引き上げは「その足で届いたら、次の足から」効かせる（同じ足の中の順序は分からないため）。
+EXIT_CANDIDATES = ("be05", "be08", "trail10", "htf_off", "time16")
+
+
+def _simulate_exit_candidates(oh, i, side, entry, tp, sl, sl_pips, aligned_s=None):
+    n = len(oh)
+    buy = (side == "買い")
+    d = 1 if buy else -1
+    risk = sl_pips * PIP_SIZE
+    if not risk:
+        return {}
+    tsr = P.get("tsr", TP_SL_RATIO)
+
+    def run(be_at=None, trail_at=None, trail_gap=None, htf_off=False, time_bars=None):
+        stop = sl; best = 0.0
+        for j in range(i + 1, n):
+            h, l, c = oh[j]
+            if (buy and l <= stop) or (not buy and h >= stop):
+                return (stop - entry) * d / risk
+            if (buy and h >= tp) or (not buy and l <= tp):
+                return tsr
+            best = max(best, ((h - entry) if buy else (entry - l)) / risk)
+            new = None
+            if be_at is not None and best >= be_at:
+                new = entry
+            if trail_at is not None and best >= trail_at:
+                new = entry + d * (best - trail_gap) * risk
+            if new is not None:
+                stop = max(stop, new) if buy else min(stop, new)
+            if htf_off and aligned_s is not None and j < len(aligned_s):
+                al = aligned_s[j]
+                if al is not None and al * d <= 0:
+                    return (c - entry) * d / risk
+            if time_bars and j - i >= time_bars and (c - entry) * d <= 0:
+                return (c - entry) * d / risk
+        return None
+
+    out = {}
+    for name, kw in (("be05", {"be_at": 0.5}), ("be08", {"be_at": 0.8}),
+                     ("trail10", {"trail_at": 1.0, "trail_gap": 0.5}),
+                     ("htf_off", {"htf_off": True}), ("time16", {"time_bars": 16})):
+        r = run(**kw)
+        if r is not None:
+            out[name] = r
     return out
 
 

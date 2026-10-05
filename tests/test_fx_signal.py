@@ -5776,5 +5776,44 @@ process.stdout.write(eval('`'+s.slice(i,j)+'`'));"""
         self.assertIn("slot.clientWidth", src, "カード幅で高さを出すと台の下に隙間が空く")
 
 
+
+class ExitCandidateTest(unittest.TestCase):
+    """出口の候補（検証専用）が、想定どおりの値で降りること。"""
+
+    def setUp(self):
+        self.addCleanup(setattr, F, "P", F.P)
+        F.P = F.PARAMS["mtf"]
+
+    def _run(self, path, aligned=None):
+        # 買い: 建値100.00 / SL 99.80 (20pips) / TP 100.32 (1.6R)
+        oh = [(100.0, 100.0, 100.0)] + path
+        return F._simulate_exit_candidates(oh, 0, "買い", 100.0, 100.32, 99.80, 20.0, aligned_s=aligned)
+
+    def test_breakeven_saves_a_trade_that_fades(self):
+        # +0.6R（100.12）まで伸びてから、SLまで落ちる
+        got = self._run([(100.12, 100.02, 100.10), (100.05, 99.70, 99.75)])
+        self.assertEqual(got["be05"], 0.0, "+0.5Rで建値に上げていない")
+        self.assertAlmostEqual(got["be08"], -1.0, msg="+0.8Rに届いていないのに建値になっている")
+
+    def test_stop_moves_from_the_next_bar_only(self):
+        # 同じ足で+0.6Rと-1Rの両方に触れたら、建値ストップはまだ効いていない（保守的）
+        got = self._run([(100.12, 99.70, 99.75)])
+        self.assertAlmostEqual(got["be05"], -1.0)
+
+    def test_trailing_locks_profit(self):
+        # +1.2R(100.24)まで伸びて、そこから戻る → 1.2-0.5=+0.7R で決済
+        got = self._run([(100.24, 100.10, 100.20), (100.20, 99.90, 99.95)])
+        self.assertAlmostEqual(got["trail10"], 0.7, places=6)
+
+    def test_exit_when_the_higher_timeframe_turns(self):
+        got = self._run([(100.05, 99.95, 100.04), (100.06, 99.98, 100.02)], aligned=[1, 1, 0])
+        self.assertAlmostEqual(got["htf_off"], 0.1, places=6)
+
+    def test_time_stop(self):
+        path = [(100.02, 99.97, 99.99)] * 16 + [(100.0, 99.0, 99.0)]
+        got = self._run(path)
+        self.assertAlmostEqual(got["time16"], -0.05, places=6)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
