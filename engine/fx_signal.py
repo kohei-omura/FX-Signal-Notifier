@@ -60,13 +60,12 @@ TP_SL_RATIO = 1.5
 LINE_ENABLED = True             # LINE無料枠が復活したのでON。枠が厳しくなったらFalseで全停止できる
 NOTIFY_ENTRY_TO_LINE = True     # エントリーシグナルをLINEへ
 NOTIFY_ENTRY_TO_MAIL = True     # エントリーシグナルをメールへ
-# 保有中の 🎯利確推奨 / 🛑損切り推奨 もLINEへ送る（メールには常に届く）。
-# 2026-10-05 の1年検証(mtf 706件)で、この合図で降りた場合は前半+0.103R・後半+0.021R、
-# TPまで持った場合は前半+0.060R・後半-0.032R と、両方の半期で合図に従う方が良かった。
-# メールだけでは見ない人には届いておらず、実際にはTP/SLまで持つ形になっていた。
-# 送るのは take/cut に変わった瞬間の1通だけ（同じ建玉・同じ段階では繰り返さない）なので、
-# 月200通の無料枠への影響は小さい。
-NOTIFY_POSITION_TO_LINE = True
+# 保有中の 🎯利確推奨 / 🛑損切り推奨 はメールだけ。エントリー直後にTP/SLのOCOを入れる運用なので、
+# LINEに来ても既に注文が入っている（2026-10-05に一度Trueにしたが、使う人の運用に合わず戻した）。
+NOTIFY_POSITION_TO_LINE = False
+# mtf の保有中に「入った根拠（上位足の向き）」が弱まった・なくなった・戻った時はLINEにも送る。
+# OCOでは拾えない情報で、判断に使うのはこちら。状態が変わった時の1通だけ。
+NOTIFY_BASIS_TO_LINE = True
 
 VALID_BARS = 3
 MAX_CHASE_RATIO = 0.5
@@ -2690,10 +2689,62 @@ def load_prev_state():
         prev = read_json(STATUS_FILE) or {}
         for op in prev.get("open_positions", []):
             if op.get("id"):
-                out[op["id"]] = {"adv_level": op.get("adv_level"), "mfe": op.get("mfe")}
+                out[op["id"]] = {"adv_level": op.get("adv_level"), "mfe": op.get("mfe"),
+                                 "basis": op.get("basis")}
     except Exception:
         pass
     return out
+
+
+def mtf_basis(symbol, side):
+    """mtf 建玉の根拠（上位足の向き）が今どうなっているか。
+
+       full … 全部の上位足が建てた方向（入った時と同じ）
+       weak … 逆向きは無いが、レンジ化した上位足がある（勢いが落ちた）
+       gone … 建てた方向と逆向きの上位足がある（根拠がなくなった）"""
+    mv = mtf_view(symbol)
+    if not mv:
+        return None
+    d = 1 if side == "long" else -1
+    vals = [mv.get(tf, 0) or 0 for tf in MTF_TFS]
+    if any(v * d < 0 for v in vals):
+        lv = "gone"
+    elif all(v * d > 0 for v in vals):
+        lv = "full"
+    else:
+        lv = "weak"
+    return {"level": lv, "label": mv.get("label", "")}
+
+
+# 根拠の変化の通知文。数字は 2026-10-05 の1年検証（mtf 706件）から。
+BASIS_TEXT = {
+    "weak": ("⚠️ 根拠が弱まった",
+             "上位足の一部がレンジになりました（入った時は全部が建てた方向）。\n"
+             "  ※1年検証では、ここで降りてもOCOのまま持っても平均はほぼ同じでした"
+             "（OCOのまま +0.01R ／ ここで降りる +0.02R）。含み損益と合わせて判断してください。"),
+    "gone": ("⛔ 根拠がなくなった",
+             "建てた方向と逆向きの上位足が出ました。入った理由（上位足の向きに乗る）は今は成り立っていません。"),
+    "back": ("✅ 根拠が戻った",
+             "上位足がまた全部、建てた方向に揃いました。"),
+}
+
+
+def basis_message(prev_level, cur, info, side, mode):
+    """前回から根拠の状態が変わった時だけ通知文を返す（同じ状態では繰り返さない）。"""
+    lv = cur["level"]
+    if lv == "gone" and prev_level != "gone":
+        key = "gone"
+    elif lv == "weak" and prev_level in (None, "full"):
+        key = "weak"
+    elif lv == "full" and prev_level in ("weak", "gone"):
+        key = "back"
+    else:
+        return None, None
+    head, why = BASIS_TEXT[key]
+    msg = (f"{head} [{mode}] {info['symbol']} ({'買い' if side == 'long' else '売り'})\n"
+           f"  上位足: {cur['label']}\n  {why}\n"
+           f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円")
+    return key, msg
 
 
 def check_positions(data, ticker, prev_state=None):
@@ -2720,6 +2771,19 @@ def check_positions(data, ticker, prev_state=None):
             adv["mode"] = pmode
         print(f"[INFO] {info['symbol']} {side} 建値{info['entry']} 現在{info['current']} "
               f"{info['pips']:+}pips {info['yen']:+,}円" + (f" [{adv['label']} {adv['reason']}]" if adv else ""))
+        if adv and adv.get("mode") == "mtf":
+            try:
+                cur = mtf_basis(p["symbol"], side)
+            except Exception as e:
+                warn(f"根拠の判定に失敗 {p.get('symbol')}: {e}", tag="basis", surface=False)
+                cur = None
+            if cur:
+                adv["basis"] = cur["level"]; adv["basis_label"] = cur["label"]
+                key, msg = basis_message(prev.get("basis"), cur, info, side, "mtf")
+                if msg:
+                    mail_msgs.append(msg)
+                    line_msgs.append(("basis", msg))
+                    pos_events.append(("basis_" + key, info["symbol"]))
         if adv:
             adv["symbol"] = info["symbol"]
             advice_map[p.get("id")] = adv
@@ -2746,7 +2810,7 @@ def check_positions(data, ticker, prev_state=None):
                                    info["symbol"]))
                 # LINEには最重要(take/cut)だけ
                 if adv["level"] in ("take", "cut"):
-                    line_msgs.append(body + tail)
+                    line_msgs.append(("pos", body + tail))
     return mail_msgs, line_msgs, advice_map, pos_events
 
 
@@ -2943,7 +3007,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             if adv:
                 op.update({"adv_level":adv["level"], "adv_label":adv["label"], "adv_reason":adv["reason"],
                            "mfe":adv.get("mfe"), "profit_atr":adv.get("profit_atr"),
-                           "mode":adv.get("mode")})
+                           "mode":adv.get("mode"), "basis":adv.get("basis"),
+                           "basis_label":adv.get("basis_label")})
             open_pos.append(op)
         elif p.get("status") == "closed":
             closed_pos.append({k:p.get(k) for k in
@@ -3028,6 +3093,10 @@ def mail_subject(sig_events, pos_events, level_count):
             bits.append(f"{mark} " + "・".join(f(x) for x in got))
     for sg, mark in (("買い", "🟢買い"), ("売り", "🔴売り")):
         got = [s for g, s in sig_events if g == sg]
+        if got:
+            bits.append(f"{mark} " + "・".join(f(x) for x in got))
+    for lv, mark in (("basis_gone", "⛔根拠消失"), ("basis_weak", "⚠️根拠弱化"), ("basis_back", "✅根拠回復")):
+        got = pick(lv)
         if got:
             bits.append(f"{mark} " + "・".join(f(x) for x in got))
     if pick("watch"):
@@ -3164,10 +3233,12 @@ def main():
         warn(f"前向き検証の判定に失敗: {e}", tag="fwd", surface=False)
     # m1=推奨レベル設定（情報）, m2=保有中の利確/損切り/利確検討（要判断）, notify=エントリーシグナル
     # LINE: 無料枠オーバー中(LINE_ENABLED=False)は一切送らない。Trueでも保有中の最重要(take/cut)だけ。
-    # LINE: シグナル通知＋保有中の take/cut（NOTIFY_POSITION_TO_LINE）。利確検討(watch)はメールだけ。
+    # LINE: シグナル通知＋mtf建玉の根拠の変化（NOTIFY_BASIS_TO_LINE）。利確/損切りはメールだけ（OCO運用のため）。
     line_parts = (((list(notify) if NOTIFY_ENTRY_TO_LINE else [])
                    + (list(sub_parts) if NOTIFY_ENTRY_TO_LINE else [])
-                   + (list(m2_line) if NOTIFY_POSITION_TO_LINE else [])) if LINE_ENABLED else [])
+                   + [t for k, t in m2_line
+                      if (k == "basis" and NOTIFY_BASIS_TO_LINE) or (k == "pos" and NOTIFY_POSITION_TO_LINE)])
+                  if LINE_ENABLED else [])
     # メール: 推奨レベル設定 + 保有監視(利確/損切り/利確検討) + エントリー、すべて送る。
     mail_parts = (list(m1) + list(m2_mail)
                   + ((list(notify) + list(sub_parts)) if NOTIFY_ENTRY_TO_MAIL else []))

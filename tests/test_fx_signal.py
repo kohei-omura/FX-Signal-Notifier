@@ -5817,21 +5817,92 @@ class ExitCandidateTest(unittest.TestCase):
 
 
 class PositionAlertsToLineTest(unittest.TestCase):
-    """保有中の利確/損切りの合図はLINEにも届くこと。
+    """保有中の利確/損切りはメールだけ（OCOを入れているのでLINEは要らない）。
+    mtf の根拠（上位足の向き）の変化だけはLINEにも送る。"""
 
-    1年検証では合図に従って降りる方が、TPまで持つより前半・後半とも良かった。
-    メールだけだと見ていない人には届かず、結果としてTP/SLまで持つことになっていた。"""
+    def setUp(self):
+        for name in ("score_pair", "position_advice", "position_pl", "mtf_view"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        F.score_pair = lambda sym, oh=None: {"score": 0.5, "atr": 0.1}
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "watch", "label": "🟡 様子見",
+                                                        "reason": "明確なサインなし", "mfe": None}
+        F.position_pl = lambda p, t: {"symbol": p["symbol"], "side": p["side"], "entry": 208.9,
+                                      "current": 209.1, "pips": -20.0, "yen": -200}
+        self.view = {"1hour": -1, "4hour": -1}
+        F.mtf_view = lambda sym: dict(self.view, label="1h? / 4h?",
+                                      aligned=(self.view["1hour"] if self.view["1hour"] == self.view["4hour"] else 0))
 
-    def test_take_and_cut_go_to_line(self):
-        self.assertTrue(F.NOTIFY_POSITION_TO_LINE)
+    def _run(self, prev=None, mode="mtf"):
+        data = {"positions": [{"id": "p1", "symbol": "GBP_JPY", "side": "short", "entry": 208.9,
+                               "status": "open", "mode": mode}]}
+        ticker = {"GBP_JPY": {"bid": 209.1, "ask": 209.12}}
+        return F.check_positions(data, ticker, {"p1": prev or {}})
+
+    def test_settings(self):
+        self.assertFalse(F.NOTIFY_POSITION_TO_LINE, "OCO運用なので利確/損切りはLINEに送らない")
+        self.assertTrue(F.NOTIFY_BASIS_TO_LINE)
+
+    def test_weakened(self):
+        self.view = {"1hour": 0, "4hour": -1}
+        mail, line, adv, ev = self._run({"basis": "full"})
+        self.assertEqual(len(line), 1)
+        self.assertEqual(line[0][0], "basis")
+        self.assertIn("根拠が弱まった", line[0][1])
+        self.assertEqual(adv["p1"]["basis"], "weak")
+        self.assertIn(("basis_weak", "GBP_JPY"), ev)
+
+    def test_not_repeated_while_unchanged(self):
+        self.view = {"1hour": 0, "4hour": -1}
+        mail, line, adv, ev = self._run({"basis": "weak"})
+        self.assertEqual(line, [])
+        self.assertEqual(mail, [])
+
+    def test_gone_when_a_timeframe_turns_against(self):
+        self.view = {"1hour": 1, "4hour": -1}
+        mail, line, adv, ev = self._run({"basis": "weak"})
+        self.assertIn("根拠がなくなった", line[0][1])
+
+    def test_back(self):
+        mail, line, adv, ev = self._run({"basis": "gone"})
+        self.assertIn("根拠が戻った", line[0][1])
+        mail, line, adv, ev = self._run({"basis": "full"})
+        self.assertEqual(line, [], "揃ったままなら何も送らない")
+
+    def test_only_mtf_positions(self):
+        self.view = {"1hour": 1, "4hour": 1}
+        mail, line, adv, ev = self._run({"basis": "full"}, mode="day")
+        self.assertEqual(line, [])
+
+    def test_the_state_survives_to_the_next_run(self):
         with open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8") as f:
             src = f.read()
-        i = src.index("def check_positions(")
-        body = src[i:src.index("def open_risk_yen(", i)]
-        # LINEに入るのは take/cut だけ（利確検討はメールのみ）
-        self.assertIn('if adv["level"] in ("take", "cut"):\n                    line_msgs.append', body)
-        # 段階が変わった時だけ（同じ建玉に何通も送らない）
-        self.assertIn('changed = prev_level != adv["level"]', body)
+        self.assertIn('"basis": op.get("basis")', src, "前回の状態を読まないと毎回送ってしまう")
+        self.assertIn('"basis":adv.get("basis")', src, "状態をstatus.jsonに残していない")
+
+
+
+class BasisAlertRunTest(RunTestCase):
+    """5分ごとの本番処理(main)を通して、根拠の変化がLINEに届き、次の回には繰り返さないこと。"""
+
+    def test_main_sends_once_then_stays_quiet(self):
+        self.write(F.POSITIONS_FILE, {"positions": [
+            {"id": "m1", "symbol": "GBP_JPY", "side": "short", "entry": 208.9, "lot": 1000,
+             "tp_pips": 49.1, "sl_pips": 30.7, "status": "open", "mode": "mtf", "auto_set": True}]})
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda sym: {"1hour": 0, "4hour": -1, "aligned": 0, "label": "1h→レンジ / 4h↓下降"}
+        # 前回は「揃っていた」状態だったとする
+        self.write(F.STATUS_FILE, {"open_positions": [{"id": "m1", "basis": "full"}]})
+        F.main()
+        hits = [t for t in self.sent["line"] if "根拠が弱まった" in t]
+        self.assertEqual(len(hits), 1, self.sent["line"])
+        self.assertIn("GBP_JPY", hits[0])
+        op = [x for x in self.status()["open_positions"] if x["id"] == "m1"][0]
+        self.assertEqual(op["basis"], "weak")
+        # 次の回：状態が同じなら送らない
+        self.sent["line"].clear(); self.reset_caches()
+        F.main()
+        self.assertFalse([t for t in self.sent["line"] if "根拠" in t], self.sent["line"])
 
 
 if __name__ == "__main__":
