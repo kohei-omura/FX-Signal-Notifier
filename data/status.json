@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-10-06 14:35 JST",
+  "generated_at": "2026-10-06 14:40 JST",
   "market_open": true,
   "mode": "mtf",
   "blackout": false,
@@ -16,26 +16,26 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 158.127,
-      "ask": 158.132,
-      "rsi": 61.4,
-      "adx": 25.6,
-      "ema_f": 158.102,
-      "ema_s": 158.033,
-      "atr": 0.0749,
-      "tp_pips": 23.4,
-      "sl_pips": 14.6,
-      "score": 0.437,
-      "tech": 0.426,
+      "bid": 158.099,
+      "ask": 158.104,
+      "rsi": 59.0,
+      "adx": 25.1,
+      "ema_f": 158.098,
+      "ema_s": 158.031,
+      "atr": 0.0766,
+      "tp_pips": 23.9,
+      "sl_pips": 14.9,
+      "score": 0.395,
+      "tech": 0.377,
       "fund": 0.5,
       "signal": null,
-      "bias": "押し目待ち RSI61.4→40以下で買い",
+      "bias": "押し目待ち RSI59.0→40以下で買い",
       "reasons": [
         "手法:順張りMA",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI61",
-        "ADX26(強)"
+        "RSI59",
+        "ADX25(強)"
       ],
       "closes": [
         158.003,
@@ -97,7 +97,7 @@
         158.143,
         158.164,
         158.179,
-        158.127
+        158.105
       ],
       "ema_f_series": [
         158.117,
@@ -159,7 +159,7 @@
         158.053,
         158.075,
         158.096,
-        158.102
+        158.098
       ],
       "ema_s_series": [
         158.087,
@@ -221,11 +221,11 @@
         157.992,
         158.007,
         158.023,
-        158.033
+        158.031
       ],
       "blackout": false,
       "cost_r": 0.034,
-      "cost_r_base": 0.014,
+      "cost_r_base": 0.013,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -256,7 +256,7 @@
       "next_news": {
         "title": "BOJ Gov Ueda Speaks",
         "time": "15:35",
-        "in_min": 59,
+        "in_min": 54,
         "country": "JPY"
       },
       "hold_tp_min": 158,
@@ -346,31 +346,30 @@
         "need": 40,
         "label": "RSI",
         "way": "下",
-        "gap_now": 21.4
+        "gap_now": 19.0
       }
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 177.352,
-      "ask": 177.357,
-      "rsi": 57.6,
-      "adx": 26.9,
-      "ema_f": 177.358,
-      "ema_s": 177.289,
-      "atr": 0.0802,
-      "tp_pips": 25.0,
-      "sl_pips": 15.6,
-      "score": 0.359,
-      "tech": 0.351,
+      "bid": 177.321,
+      "ask": 177.326,
+      "rsi": 54.8,
+      "adx": 26.5,
+      "ema_f": 177.352,
+      "ema_s": 177.286,
+      "atr": 0.0819,
+      "tp_pips": 25.6,
+      "sl_pips": 16.0,
+      "score": 0.306,
+      "tech": 0.29,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:順張りMA",
         "EMA上(9vs21)",
-        "MACDヒスト+",
-        "RSI58",
-        "ADX27(強)"
+        "RSI55",
+        "ADX26(強)"
       ],
       "closes": [
         177.073,
@@ -432,7 +431,7 @@
         177.393,
         177.438,
         177.416,
-        177.351
+        177.321
       ],
       "ema_f_series": [
         177.09,
@@ -494,7 +493,7 @@
         177.322,
         177.345,
         177.359,
-        177.358
+        177.352
       ],
       "ema_s_series": [
         177.082,
@@ -556,11 +555,11 @@
         177.253,
         177.27,
         177.283,
-        177.289
+        177.286
       ],
       "blackout": false,
-      "cost_r": 0.032,
-      "cost_r_base": 0.026,
+      "cost_r": 0.031,
+      "cost_r_base": 0.025,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -577,6 +576,15 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
+        "stretch": {
+          "band": "逆張り(-0.3ATR〜)",
+          "n": 706,
+          "fast_rate": 20,
+          "mfe": 0.656,
+          "avg_r": 0.063,
+          "ci_lo": -0.025,
+          "ci_hi": 0.15
+        },
         "adx": {
           "band": "弱め(25〜30)",
           "n": 102,
@@ -591,7 +599,7 @@
       "next_news": {
         "title": "BOJ Gov Ueda Speaks",
         "time": "15:35",
-        "in_min": 59,
+        "in_min": 54,
         "country": "JPY"
       },
       "hold_tp_min": 375,
@@ -679,26 +687,26 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 208.971,
-      "ask": 208.98,
-      "rsi": 59.1,
-      "adx": 30.0,
-      "ema_f": 208.963,
-      "ema_s": 208.892,
-      "atr": 0.0839,
-      "tp_pips": 26.2,
-      "sl_pips": 16.4,
-      "score": 0.429,
-      "tech": 0.417,
+      "bid": 208.943,
+      "ask": 208.952,
+      "rsi": 56.4,
+      "adx": 29.4,
+      "ema_f": 208.957,
+      "ema_s": 208.89,
+      "atr": 0.0856,
+      "tp_pips": 26.7,
+      "sl_pips": 16.7,
+      "score": 0.378,
+      "tech": 0.356,
       "fund": 0.5,
       "signal": null,
-      "bias": "押し目待ち RSI59.1→40以下で買い",
+      "bias": "押し目待ち RSI56.4→40以下で買い",
       "reasons": [
         "手法:順張りMA",
         "EMA上(9vs21)",
         "MACDヒスト+",
-        "RSI59",
-        "ADX30(強)"
+        "RSI56",
+        "ADX29(強)"
       ],
       "closes": [
         208.882,
@@ -760,7 +768,7 @@
         209.002,
         209.049,
         209.033,
-        208.971
+        208.943
       ],
       "ema_f_series": [
         208.882,
@@ -822,7 +830,7 @@
         208.916,
         208.943,
         208.961,
-        208.963
+        208.957
       ],
       "ema_s_series": [
         208.904,
@@ -884,11 +892,11 @@
         208.851,
         208.869,
         208.884,
-        208.892
+        208.89
       ],
       "blackout": false,
-      "cost_r": 0.055,
-      "cost_r_base": 0.055,
+      "cost_r": 0.054,
+      "cost_r_base": 0.054,
       "spread": {
         "pips": 0.9,
         "base": 0.9,
@@ -906,20 +914,20 @@
         "bar_min": 15,
         "need_r": 1.0,
         "adx": {
-          "band": "適正(30〜40)",
-          "n": 68,
+          "band": "弱め(25〜30)",
+          "n": 102,
           "fast_rate": 18,
-          "mfe": 0.677,
-          "avg_r": -0.059,
-          "ci_lo": -0.322,
-          "ci_hi": 0.204
+          "mfe": 0.619,
+          "avg_r": 0.056,
+          "ci_lo": -0.179,
+          "ci_hi": 0.291
         }
       },
       "skip_reason": null,
       "next_news": {
         "title": "BOJ Gov Ueda Speaks",
         "time": "15:35",
-        "in_min": 59,
+        "in_min": 54,
         "country": "JPY"
       },
       "hold_tp_min": 255,
@@ -1009,30 +1017,30 @@
         "need": 40,
         "label": "RSI",
         "way": "下",
-        "gap_now": 19.1
+        "gap_now": 16.4
       }
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 110.175,
-      "ask": 110.182,
-      "rsi": 56.2,
-      "adx": 31.8,
-      "ema_f": 110.188,
+      "bid": 110.171,
+      "ask": 110.178,
+      "rsi": 55.6,
+      "adx": 31.5,
+      "ema_f": 110.187,
       "ema_s": 110.145,
-      "atr": 0.055,
-      "tp_pips": 17.2,
-      "sl_pips": 10.7,
-      "score": 0.332,
-      "tech": 0.32,
+      "atr": 0.0557,
+      "tp_pips": 17.4,
+      "sl_pips": 10.9,
+      "score": 0.319,
+      "tech": 0.304,
       "fund": 0.4,
       "signal": null,
-      "bias": "押し目待ち RSI56.2→40以下で買い",
+      "bias": "押し目待ち RSI55.6→40以下で買い",
       "reasons": [
         "手法:順張りMA",
         "EMA上(9vs21)",
         "RSI56",
-        "ADX32(強)"
+        "ADX31(強)"
       ],
       "closes": [
         110.081,
@@ -1094,7 +1102,7 @@
         110.22,
         110.229,
         110.201,
-        110.175
+        110.171
       ],
       "ema_f_series": [
         110.053,
@@ -1156,7 +1164,7 @@
         110.179,
         110.189,
         110.191,
-        110.188
+        110.187
       ],
       "ema_s_series": [
         110.011,
@@ -1221,8 +1229,8 @@
         110.145
       ],
       "blackout": false,
-      "cost_r": 0.065,
-      "cost_r_base": 0.047,
+      "cost_r": 0.064,
+      "cost_r_base": 0.046,
       "spread": {
         "pips": 0.7,
         "base": 0.7,
@@ -1253,7 +1261,7 @@
       "next_news": {
         "title": "BOJ Gov Ueda Speaks",
         "time": "15:35",
-        "in_min": 59,
+        "in_min": 54,
         "country": "JPY"
       },
       "hold_tp_min": 90,
@@ -1329,14 +1337,14 @@
         }
       },
       "near": {
-        "best": 16.2,
-        "at": "14:35",
+        "best": 15.6,
+        "at": "14:40",
         "fired": 0,
-        "now": 56.2,
+        "now": 55.6,
         "need": 40,
         "label": "RSI",
         "way": "下",
-        "gap_now": 16.2
+        "gap_now": 15.6
       }
     }
   ],
