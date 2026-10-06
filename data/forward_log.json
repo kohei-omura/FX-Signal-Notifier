@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-05T13:46:52.320Z",
+  "updated": "2026-10-06T09:50:52.928Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -1368,14 +1368,26 @@
       "sl": 177.64700000000002,
       "b": 1.5962145110410095,
       "ts": 1791200003762,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 46,
       "pct": 46,
       "edgeAdj": 0,
       "mark": "no",
       "src": "main",
-      "subFilter": null
+      "subFilter": null,
+      "result": "sl",
+      "R": -1,
+      "closed": 1791273600000,
+      "bars": 81,
+      "heldMin": 1215,
+      "exit": 177.647,
+      "policies": {
+        "tp_sl": -1.0284,
+        "advice": 0.5521,
+        "advice_watch": 0.3218
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "AUD_JPY",
@@ -1420,14 +1432,66 @@
       "sl": 208.326,
       "b": 1.5974025974025974,
       "ts": 1791208002319,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 63,
       "pct": 63,
       "edgeAdj": 0,
       "mark": "hold",
       "src": "main",
-      "subFilter": null
+      "subFilter": null,
+      "result": "tp",
+      "R": 1.5682,
+      "closed": 1791271800000,
+      "bars": 70,
+      "heldMin": 1050,
+      "exit": 209.126,
+      "policies": {
+        "tp_sl": 1.5708,
+        "advice": 0.6039,
+        "advice_watch": 0.4448
+      },
+      "resolvedBy": "server"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "swing",
+      "side": "long",
+      "entry": 209.43,
+      "fill": 209.439,
+      "sp": 0.009,
+      "tp": 210.204,
+      "sl": 209,
+      "b": 1.8,
+      "ts": 1791280242606,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 46,
+      "pct": 46,
+      "edgeAdj": 0,
+      "mark": "no",
+      "src": "sub",
+      "subFilter": "all"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "day",
+      "side": "long",
+      "entry": 209.43,
+      "fill": 209.439,
+      "sp": 0.009,
+      "tp": 209.701,
+      "sl": 209.261,
+      "b": 1.6035502958579884,
+      "ts": 1791280242927,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 85,
+      "pct": 85,
+      "edgeAdj": 0,
+      "mark": "ok",
+      "src": "sub",
+      "subFilter": "adx40"
     }
   ]
 }
