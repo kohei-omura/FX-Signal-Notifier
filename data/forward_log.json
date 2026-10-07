@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-06T13:32:14.569Z",
+  "updated": "2026-10-07T01:04:33.328Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -1464,14 +1464,26 @@
       "sl": 209,
       "b": 1.8,
       "ts": 1791280242606,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 46,
       "pct": 46,
       "edgeAdj": 0,
       "mark": "no",
       "src": "sub",
-      "subFilter": "all"
+      "subFilter": "all",
+      "result": "tp",
+      "R": 1.7791,
+      "closed": 1791335700000,
+      "bars": 58,
+      "heldMin": 3480,
+      "exit": 210.204,
+      "policies": {
+        "tp_sl": 1.7791,
+        "advice": 0.9791,
+        "advice_watch": 0.5163
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "GBP_JPY",
@@ -1568,14 +1580,66 @@
       "sl": 157.78099999999998,
       "b": 1.6042780748663101,
       "ts": 1791293524567,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 46,
       "pct": 47,
       "edgeAdj": 1,
       "mark": "no",
       "src": "main",
-      "subFilter": null
+      "subFilter": null,
+      "result": "tp",
+      "R": 1.5775,
+      "closed": 1791331200000,
+      "bars": 41,
+      "heldMin": 615,
+      "exit": 158.268,
+      "policies": {
+        "tp_sl": 1.5733,
+        "advice": 0.6845,
+        "advice_watch": 0.6203
+      },
+      "resolvedBy": "server"
+    },
+    {
+      "sym": "USD_JPY",
+      "mode": "swing",
+      "side": "long",
+      "entry": 158.488,
+      "fill": 158.493,
+      "sp": 0.005,
+      "tp": 158.939,
+      "sl": 158.237,
+      "b": 1.796812749003984,
+      "ts": 1791335063320,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 17,
+      "pct": 18,
+      "edgeAdj": 1,
+      "mark": "no",
+      "src": "sub",
+      "subFilter": "all"
+    },
+    {
+      "sym": "AUD_JPY",
+      "mode": "swing",
+      "side": "long",
+      "entry": 110.614,
+      "fill": 110.621,
+      "sp": 0.007,
+      "tp": 110.98400000000001,
+      "sl": 110.409,
+      "b": 1.8048780487804879,
+      "ts": 1791335063326,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 50,
+      "pct": 50,
+      "edgeAdj": 0,
+      "mark": "hold",
+      "src": "sub",
+      "subFilter": "all"
     }
   ]
 }
