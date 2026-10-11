@@ -348,6 +348,10 @@ class NotificationTest(RunTestCase):
         self.addCleanup(setattr, F, "entry_side", F.entry_side)
         F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: (
             "買い" if sym == "USD_JPY" else None)
+        # スプレッド/SL幅の見送りも外す。モックのATRは実行時刻で変わり、SL幅が数pipsまで
+        # 縮む時間帯には「スプレッドが広すぎる」で通知そのものが出なくなる（文面の検証にならない）。
+        self.addCleanup(setattr, F, "spread_blocks_entry", F.spread_blocks_entry)
+        F.spread_blocks_entry = lambda sp, sl_pips: None
         F.main()
         bodies = [b for _, b in self.sent["mail"]]
         entry_bodies = [b for b in bodies if "エントリー目安" in b]
@@ -1278,6 +1282,10 @@ class MtfNotificationTest(RunTestCase):
         self.addCleanup(setattr, F, "entry_side", F.entry_side)
         F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: (
             "買い" if sym == "USD_JPY" else None)
+        # スプレッド/SL幅の見送りも外す。モックのATRは実行時刻で変わり、SL幅が数pipsまで
+        # 縮む時間帯には「スプレッドが広すぎる」で通知そのものが出なくなる（文面の検証にならない）。
+        self.addCleanup(setattr, F, "spread_blocks_entry", F.spread_blocks_entry)
+        F.spread_blocks_entry = lambda sp, sl_pips: None
         F.main()
         self.assertEqual(self.status()["mode"], "day", "前提: dayで動いていること")
         bodies = [b for _, b in self.sent["mail"] if "エントリー目安" in b]
@@ -5903,6 +5911,51 @@ class BasisAlertRunTest(RunTestCase):
         self.sent["line"].clear(); self.reset_caches()
         F.main()
         self.assertFalse([t for t in self.sent["line"] if "根拠" in t], self.sent["line"])
+
+
+
+class TradeReviewTest(unittest.TestCase):
+    """記録簿の取引を、OCO(記録されたTP/SL)で1分足に当てて答え合わせすること。"""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "engine"))
+        import review_trades
+        self.R = review_trades
+        t0 = self.R._ts_jst("2026-10-01 10:00:30")
+        self.s = (int(t0.timestamp()) // 60 + 1) * 60000
+        self.e = {"symbol": "USD_JPY", "side": "買", "entry": 150.0, "tp_pips": 20, "sl_pips": 10,
+                  "logged_at": "2026-10-01 10:00:30", "mode": "mtf"}
+
+    def _r(self, e, bars):
+        return self.R.replay(e, bars_fn=lambda *a: bars)
+
+    def test_run_then_stop_is_counted_as_a_loss_that_had_run(self):
+        s = self.s
+        got = self._r(self.e, [(s, 150.07, 149.99, 150.05), (s + 60000, 150.06, 149.89, 149.9)])
+        self.assertEqual(got["result"], "sl")
+        self.assertEqual(got["mfe"], 0.7)
+
+    def test_both_in_one_bar_counts_as_stop(self):
+        got = self._r(self.e, [(self.s, 150.25, 149.85, 150.0)])
+        self.assertEqual(got["result"], "sl")
+
+    def test_ignores_moves_before_the_entry(self):
+        got = self._r(self.e, [(self.s - 60000, 150.30, 149.80, 150.0), (self.s, 150.21, 149.95, 150.2)])
+        self.assertEqual(got["result"], "tp")
+        self.assertEqual(got["r"], 2.0)
+
+    def test_short_uses_the_ask(self):
+        e = dict(self.e, side="売")
+        # 売りのSLは150.10。BIDの高値150.099でもASK(＋0.2pips)では届いている
+        got = self._r(e, [(self.s, 150.099, 149.95, 150.0)])
+        self.assertEqual(got["result"], "sl")
+
+    def test_summary_by_month(self):
+        s = self.s
+        bars = [(s, 150.21, 149.95, 150.2)]
+        rv = self.R.run([self.e, dict(self.e, logged_at="2026-08-01 10:00:30")], bars_fn=lambda *a: bars)
+        self.assertEqual(list(rv["by"]["month"]), ["2026-10"], "9月より前の記録を混ぜている")
+        self.assertEqual(rv["all"]["sum_r"], 2.0)
 
 
 if __name__ == "__main__":

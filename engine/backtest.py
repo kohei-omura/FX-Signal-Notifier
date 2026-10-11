@@ -558,6 +558,13 @@ def main():
     # 一部のモードだけ回した時に、他のモードの結果を消さない。
     # 以前は丸ごと上書きしていたので、手動で day だけ回すと scalp/swing/mtf の
     # 検証値が翌朝の定期実行まで消え、画面の「検証」欄が「—」になっていた。
+    # 実際に建てた取引の答え合わせ（記録簿のTP/SLでOCOを置いたとして1分足で再現）
+    try:
+        import review_trades
+        out["trade_review"] = review_trades.run()
+        review_trades.report(out["trade_review"])
+    except Exception as e:
+        print(f"[WARN] 取引の答え合わせに失敗: {e}", file=sys.stderr)
     out = merge_previous(out, OUT)
     F.write_json(OUT, out)
     print(f"[OK] {OUT} に保存")
