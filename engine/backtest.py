@@ -451,6 +451,8 @@ def main():
            "note": "1日1回の長期検証。status.json の統計（直近8日）より母数が多い。",
            "modes": {}}
     for mode in MODES:
+        if mode == "review":          # 取引の答え合わせだけ回す時の指定（モードではない）
+            continue
         if mode not in F.PARAMS:
             print(f"[WARN] 未知のモード: {mode}", file=sys.stderr); continue
         r = run_mode(mode)
@@ -551,7 +553,7 @@ def main():
                 best = h.get("best_th") if key == "holdout" else "/".join(map(str, h.get("best") or []))
                 print(f"      前半で最良の{lab} {best}: "
                       f"前半{f_['avg_r']:+.3f}(n={f_['n']}) → 後半{s_['avg_r']:+.3f}(n={s_['n']})")
-    if not out["modes"]:
+    if not out["modes"] and MODES != ["review"]:
         print("[ERROR] どのモードも集計できませんでした（既存の backtest.json は残します）",
               file=sys.stderr)
         sys.exit(1)
