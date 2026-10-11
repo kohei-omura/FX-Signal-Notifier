@@ -797,6 +797,7 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
     ef_s, es_s, rsi_s, md_s, bb_s, atr_s, adx_s, aligned_s, atrpct_s = cached
     wins, losses = [], []
     policy_r = {}; band_r = {}; atr_r = {}; atr_skipped = [0]; fast_r = {}; filt_r = {}; cand_r = {}
+    sess_r = {}
     n = len(oh); i = warm
     i_end = n - 1
     if entry_range:
@@ -862,6 +863,14 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         for name, r in _simulate_exit_candidates(oh, i, side, entry, tp, sl, sl_pips,
                                                  aligned_s=aligned_s).items():
             cand_r.setdefault(name, []).append((r, cost))
+        # 建てた時間帯（JST）別。実際の取引の答え合わせで、欧州時間だけが大きく勝ち、
+        # NY・東京時間が大きく負けていた。偶然かどうかを1年で確かめる。
+        # OCOで持つ使い方なので tp_sl を主に見る（advice も並べる）。
+        if i < len(times):
+            sess = session_of_ms(times[i] + bar_min * 60000)
+            for name in ("tp_sl", "advice"):
+                if name in sim:
+                    sess_r.setdefault(name, {}).setdefault(sess, []).append((sim[name], cost))
         band_r.setdefault(_score_band(abs(total), th, rsi_s[i], side), []).append((sim, cost))
         # 値幅が広い時ほど勝ちやすい、という体感を検証できるようにレジーム別にも残す。
         # 期間の頭は順位を出すだけの本数が無く区分が付かない。黙って落とすと
@@ -989,6 +998,9 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         out["filters"] = {k: _r_summary(v) for k, v in filt_r.items() if v}
     if cand_r:
         out["exit_cand"] = {k: _r_summary(v) for k, v in cand_r.items() if v}
+    if sess_r:
+        out["sessions"] = {pol: {k: _r_summary(v) for k, v in per.items() if v}
+                           for pol, per in sess_r.items()}
     if fast:
         fast["bars"] = FAST_BARS
         fast["bar_min"] = bar_min
@@ -1318,6 +1330,24 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
 #   time16   … 16本（15分足で4時間）経っても含み益が無ければ降りる
 # SLの引き上げは「その足で届いたら、次の足から」効かせる（同じ足の中の順序は分からないため）。
 EXIT_CANDIDATES = ("be05", "be08", "trail10", "htf_off", "time16")
+
+
+# 建てた時刻(JST)の時間帯。実際の取引の答え合わせ(review_trades.py)と同じ区切り。
+SESSIONS = ("東京(9-15)", "欧州(15-21)", "NY(21-6)", "早朝(6-9)")
+
+
+def session_of_hour(h):
+    if 6 <= h < 9:
+        return "早朝(6-9)"
+    if 9 <= h < 15:
+        return "東京(9-15)"
+    if 15 <= h < 21:
+        return "欧州(15-21)"
+    return "NY(21-6)"
+
+
+def session_of_ms(ms):
+    return session_of_hour(datetime.datetime.fromtimestamp(ms / 1000, JST).hour)
 
 
 def _simulate_exit_candidates(oh, i, side, entry, tp, sl, sl_pips, aligned_s=None):

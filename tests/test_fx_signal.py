@@ -5950,6 +5950,20 @@ class TradeReviewTest(unittest.TestCase):
         got = self._r(e, [(self.s, 150.099, 149.95, 150.0)])
         self.assertEqual(got["result"], "sl")
 
+    def test_alt_exits_on_the_same_path(self):
+        s = self.s
+        # +0.6R まで伸びてからSL → 建値ストップなら0、+0.8Rは届いていないので-1
+        got = self._r(self.e, [(s, 150.06, 149.99, 150.05), (s + 60000, 150.05, 149.89, 149.9)])
+        self.assertEqual(got["alt"]["be05"], 0.0)
+        self.assertEqual(got["alt"]["be08"], -1.0)
+
+    def test_sessions_match_the_backtest(self):
+        self.assertEqual(F.session_of_hour(16), "欧州(15-21)")
+        self.assertEqual(F.session_of_hour(23), "NY(21-6)")
+        self.assertEqual(F.session_of_hour(3), "NY(21-6)")
+        self.assertEqual(F.session_of_hour(10), "東京(9-15)")
+        self.assertEqual(F.session_of_hour(7), "早朝(6-9)")
+
     def test_summary_by_month(self):
         s = self.s
         bars = [(s, 150.21, 149.95, 150.2)]

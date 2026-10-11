@@ -41,6 +41,32 @@ def _bars(symbol, start, days):
     return [(t, h, l, c) for t, (h, l, c) in sorted(rows.items())]
 
 
+def _alt_exits(bars, buy, entry, tp, sl, risk, spr, tsr):
+    """同じ値動きで、別の降り方をした場合のR（建値ストップ・トレール）。
+       SLの引き上げは届いた足の次の足から効かせる（1分の中の順序は分からないため）。"""
+    out = {}
+    for name, be_at, tr_at, gap in (("be05", 0.5, None, None), ("be08", 0.8, None, None),
+                                    ("trail10", None, 1.0, 0.5)):
+        stop = sl; best = 0.0; res = None
+        for t, h, l, c in bars:
+            hi, lo = h + spr, l + spr
+            if (buy and lo <= stop) or (not buy and hi >= stop):
+                res = round((stop - entry) * (1 if buy else -1) / risk, 3); break
+            if (buy and hi >= tp) or (not buy and lo <= tp):
+                res = tsr; break
+            best = max(best, ((hi - entry) if buy else (entry - lo)) / risk)
+            new = None
+            if be_at is not None and best >= be_at:
+                new = entry
+            if tr_at is not None and best >= tr_at:
+                new = entry + (1 if buy else -1) * (best - gap) * risk
+            if new is not None:
+                stop = max(stop, new) if buy else min(stop, new)
+        if res is not None:
+            out[name] = res
+    return out
+
+
 def replay(e, bars_fn=_bars, now=None):
     """1件の取引をOCOで再現する。戻り値は dict（result: tp/sl/open/nodata）。"""
     sym = e.get("symbol"); side = e.get("side")
@@ -62,6 +88,7 @@ def replay(e, bars_fn=_bars, now=None):
     bars = [b for b in bars_fn(sym, t0, MAX_DAYS) if start_ms <= b[0] < end_ms]
     if not bars:
         return {"result": "nodata"}
+    alt = _alt_exits(bars, buy, entry, tp, sl, slp * F.PIP_SIZE, spr, round(tpp / slp, 3))
     mfe = 0.0; mae = 0.0
     for t, h, l, c in bars:
         hi, lo = h + spr, l + spr
@@ -71,11 +98,11 @@ def replay(e, bars_fn=_bars, now=None):
         adv = ((entry - lo) if buy else (hi - entry)) / (slp * F.PIP_SIZE)
         if hit_sl:
             return {"result": "sl", "r": -1.0, "mfe": round(max(mfe, 0.0), 2),
-                    "mins": round((t - start_ms) / 60000) + 1}
+                    "mins": round((t - start_ms) / 60000) + 1, "alt": alt}
         mfe = max(mfe, fav); mae = max(mae, adv)
         if hit_tp:
             return {"result": "tp", "r": round(tpp / slp, 3), "mfe": round(mfe, 2),
-                    "mae": round(mae, 2), "mins": round((t - start_ms) / 60000) + 1}
+                    "mae": round(mae, 2), "mins": round((t - start_ms) / 60000) + 1, "alt": alt}
     last = bars[-1][3] + spr
     return {"result": "open", "r_now": round((last - entry) * d / (slp * F.PIP_SIZE), 3),
             "mfe": round(mfe, 2), "mae": round(mae, 2)}
@@ -89,14 +116,7 @@ def _adx_band(v):
 
 
 def _hour_band(t):
-    h = t.hour
-    if 6 <= h < 9:
-        return "早朝(6-9)"
-    if 9 <= h < 15:
-        return "東京(9-15)"
-    if 15 <= h < 21:
-        return "欧州(15-21)"
-    return "NY(21-6)"
+    return F.session_of_hour(t.hour)      # 1年検証と同じ区切り
 
 
 def _summ(rows):
@@ -113,7 +133,10 @@ def _summ(rows):
             "sum_r": round(sum(rs), 2), "avg_r": round(m, 3),
             "ci_lo": round(m - 1.96 * se, 3), "ci_hi": round(m + 1.96 * se, 3),
             # 損切りになった取引のうち、一度は+0.5R以上伸びていた割合（伸びを守れていない度合い）
-            "sl_after_run": sum(1 for x in done if x["result"] == "sl" and (x.get("mfe") or 0) >= 0.5)}
+            "sl_after_run": sum(1 for x in done if x["result"] == "sl" and (x.get("mfe") or 0) >= 0.5),
+            # 同じ取引を別の降り方にしていたら（OCOのTP/SLは同じ・途中でSLだけ動かす）
+            "alt_sum_r": {k: round(sum((x.get("alt") or {}).get(k, x["r"]) for x in done), 2)
+                          for k in ("be05", "be08", "trail10")}}
 
 
 GROUPS = {

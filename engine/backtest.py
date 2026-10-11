@@ -272,6 +272,25 @@ def exit_holdout(mode):
     return out
 
 
+def session_holdout(mode):
+    """建てた時間帯（JST）別の成績を、前半と後半で別々に測る。
+       実際の取引では欧州時間だけが勝っていた。1年でも前半・後半とも同じ向きかを見る。"""
+    out = {}
+    for lab, rng in (("first_half", (0.0, 0.5)), ("second_half", (0.5, 1.0)), ("all", None)):
+        parts = {}
+        for sym in F.SYMBOLS:
+            try:
+                st = F.compute_signal_stats(sym, entry_range=rng)
+            except Exception as e:
+                print(f"[WARN] {mode}/{sym} 時間帯検証 失敗: {e}", file=sys.stderr)
+                continue
+            for pol, per in ((st or {}).get("sessions") or {}).items():
+                for k, v in per.items():
+                    parts.setdefault(pol, {}).setdefault(k, []).append(v)
+        out[lab] = {pol: {k: pool_summary(v) for k, v in per.items() if v} for pol, per in parts.items()}
+    return out
+
+
 # 出口候補を測るモード（重いので運用候補だけ）
 EXIT_MODES = ("mtf", "day", "swing")
 
@@ -433,7 +452,8 @@ def run_mode(mode):
             "band_by": ("pullback" if F.PARAMS[mode].get("rule") == "mtf_pullback" else "score"),
             "atr_bands_warmup": atr_warm, "fast": fast,
             "filter_holdout": filter_holdout(mode),
-            **({"exit_holdout": exit_holdout(mode)} if mode in EXIT_MODES else {}),
+            **({"exit_holdout": exit_holdout(mode),
+                "session_holdout": session_holdout(mode)} if mode in EXIT_MODES else {}),
             "mark_holdout": mark_holdout(mode),
             "entry_variant": entry_variant_holdout(mode),
             **(({"pullback_sweep": sweep_pullback(mode),
@@ -473,6 +493,12 @@ def main():
                       + "".join(f" {h}{x['avg_r']:+.3f}" for h, x in zip(("前半", "後半"), row[1:]) if x))
         if eh:
             print(f"      出口候補で前半・後半とも推奨決済を上回ったもの: {eh.get('passed') or 'なし'}")
+        sh = r.get("session_holdout") or {}
+        for k in F.SESSIONS:
+            row = [((sh.get(h) or {}).get("tp_sl") or {}).get(k) for h in ("all", "first_half", "second_half")]
+            if row[0]:
+                print(f"      時間帯{k:10} n={row[0]['n']:4} 全体{row[0]['avg_r']:+.3f}(区間{row[0]['ci_lo']:+.3f}〜{row[0]['ci_hi']:+.3f})"
+                      + "".join(f" {h}{x['avg_r']:+.3f}" for h, x in zip(("前半", "後半"), row[1:]) if x))
         _bl = "戻り/押し目の深さ" if r.get("band_by") == "pullback" else "スコア"
         for bn in sorted(r["bands"], key=lambda x: {"弱": 0, "中": 1, "強": 2}.get(x[0], 9)):
             b = r["bands"][bn]
