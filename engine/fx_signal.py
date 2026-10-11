@@ -126,6 +126,23 @@ MTF_EMA = (12, 26)             # 上位足のトレンド判定EMA
 # 再検討するなら、エントリー時刻ベースで各時台30件以上を貯め、Wilson下限/上限で判定すること。
 HOUR_FILTER_ON = False
 BAD_HOURS = set()   # JSTの時台。HOUR_FILTER_ON=True にする場合のみ使う
+# モード別に、建てない時間帯（JST）。採用の条件は先に決めてある：
+#   1年検証で前半・後半とも負け、かつ95%区間の上限が0未満、かつ実際の取引でも負けている。
+# デイのNY時間（21〜6時）は 2026-10-11 の検証で
+#   1年 1,406件 -0.208R/回 [-0.271,-0.144]・前半 -0.196R・後半 -0.220R（TPかSLまで持った場合）
+#   実際のデイ取引（9/1〜10/10）でもこの時間帯は20件3勝・合計 -12.2R。
+# デイの欧州時間(15〜21時)も1年では負け(-0.092R)だが、実際の取引では20件13勝 +13.8R と
+# 食い違うので止めない（答え合わせパネルで見続ける）。上位足フォロー・スイングのNY時間は
+# 1年の区間が0をまたぐか片方の半期だけの負けなので、条件を満たさず止めない。
+SESSION_BLOCK = {
+    "day": {"NY(21-6)": "NY時間(21〜6時)のデイは1年検証で前半・後半とも負け（約-0.2R/回）のため見送り"},
+}
+
+
+def session_block_reason(mode, now=None):
+    """そのモードで、今の時間帯は建てないことにしているか。理由の文字列か None。"""
+    now = now or datetime.datetime.now(JST)
+    return (SESSION_BLOCK.get(mode) or {}).get(session_of_hour(now.hour))
 
 # 往復コスト(pips)。index.html の SPREAD と同じ値。バックテストで引かないと
 # 「1Rが数pips」のスキャルほど結果が実態より良く出てしまう。
@@ -1634,6 +1651,8 @@ def sub_mode_signals(data, subs=None):
         m, fname = cfg["mode"], cfg["filter"]
         ok, flabel, fr = SUB_FILTERS[fname]
         with use_mode(m):
+            if session_block_reason(m):      # この時間帯はこのモードでは建てない
+                continue
             for sym in SYMBOLS:
                 if in_blackout(sym):
                     continue
@@ -2903,6 +2922,10 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                 sig = None; skip_reason = "上位足が順張りでない"
         if sig and HOUR_FILTER_ON and now.hour in BAD_HOURS:
             sig = None; skip_reason = f"{now.hour}時台は除外設定のため見送り"
+        if sig:
+            _sb = session_block_reason(MODE, now)
+            if _sb:
+                sig = None; skip_reason = _sb
         # 併用時の重複。同じ方向はリスクが倍になり、逆方向は両建てになる。
         # 逆方向は以前止めていなかったが、モードを切り替えた直後などに
         # 「デイの買いを持ったまま mtf の売りシグナル」が実際に起こりうる。

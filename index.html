@@ -455,6 +455,7 @@
       <div class="dcnt-c"><i>最高連チャン</i><b id="dc-run">0</b></div>
     </div>
   </div>
+  <div id="sessblock"></div>
   <div id="markevid"></div>
   <div id="subsig"></div>
   <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
@@ -1696,6 +1697,21 @@ const LIVE_NOTIFY_NEED_MTF=true;   // かつ上位足(1h/4h)がシグナル方�
 const BAD_HOURS=[];
 const HOUR_FILTER_ON=false;
 function inBadHour(){return HOUR_FILTER_ON&&BAD_HOURS.includes(new Date(Date.now()+9*3600e3).getUTCHours());}
+/* モード別に建てない時間帯（engine/fx_signal.py の SESSION_BLOCK と同じ）。
+   デイのNY時間(21〜6時)は1年検証で前半・後半とも約-0.2R/回、実際のデイ取引でも20件で-12.2R。
+   サーバーだけ止めて画面の⚡ライブが送ると、止めた意味が無くなるので同じ判定を持つ。 */
+const SESSION_BLOCK_JS={day:{'NY(21-6)':'NY時間(21〜6時)のデイは1年検証で前半・後半とも負け（約-0.2R/回）のため見送り'}};
+function sessionOfHourJS(h){ if(h>=6&&h<9)return '早朝(6-9)'; if(h>=9&&h<15)return '東京(9-15)'; if(h>=15&&h<21)return '欧州(15-21)'; return 'NY(21-6)'; }
+function renderSessionBlock(){
+  const el=document.getElementById('sessblock'); if(!el) return;
+  const why=sessionBlockReason((S&&S.mode)||'');
+  el.innerHTML=why?('<div class="card" style="margin-bottom:10px;border-color:var(--gold)">'
+    +'<div class="ev" style="font-weight:700">🕘 今の時間帯は新規の合図を止めています</div>'
+    +'<div class="er" style="font-size:12.5px;line-height:1.8">'+why+'。'
+    +'あなたの実際のデイ取引でも、この時間帯は20件で3勝・合計-12.2Rでした。保有中の監視と通知は続けています。</div></div>'):'';
+}
+function sessionBlockReason(mode,ms){ const h=new Date((ms||Date.now())+9*3600e3).getUTCHours();
+  return (SESSION_BLOCK_JS[mode]||{})[sessionOfHourJS(h)]||null; }
 // 上位足がシグナル方向と一致しているか。1=上昇一致 / -1=下降一致 / 0=レンジ・不一致
 function mtfAgree(pair){
   const m=MTF_BY_SYM[pair.symbol];
@@ -2430,6 +2446,7 @@ function renderSubSignals(){
 function render(){
   renderModeSw();
   try{renderMarkEvidence();}catch(e){}
+  try{renderSessionBlock();}catch(e){}
   try{renderSubSignals();}catch(e){}
   renderModeWarn();
   renderStale();
@@ -3409,6 +3426,7 @@ async function subLiveSignals(base){
   SUB_RUN_AT=Date.now();
   const now=Date.now(); let changed=false;
   for(const cfg of SUBNOTIFY){
+    if(sessionBlockReason(cfg.mode)) continue;   // この時間帯はこのモードでは建てない（サーバーと同じ）
     const info=SUB_INFO[cfg.mode], P=JS_PARAMS[cfg.mode];
     if(!info||!P) continue;
     const need=Math.max(P.ema_s,P.macd[1],P.adx*2,P.atr)+CHART_POINTS+30;
@@ -3509,6 +3527,8 @@ async function liveSignals(){
         if(_m&&_m.aligned===-_w)sig=null;}
       // ★実績の悪い時間帯は新規シグナルを出さない
       if(sig&&inBadHour())sig=null;
+      const _sb=sig?sessionBlockReason(MODE0):null;
+      if(_sb)sig=null;
       const pair={symbol:sym,bid:(PRICE[sym]?PRICE[sym].bid:r3(sc.price)),ask:(PRICE[sym]?PRICE[sym].ask:null),
         rsi:sc.rsi,adx:sc.adx,ema_f:r3(sc.ef),ema_s:r3(sc.es),atr:r4(sc.atr),tp_pips:sc.tp_pips,sl_pips:sc.sl_pips,
         score:sc.score,tech:sc.tech,fund:sc.fund,signal:sig,bias:pairBias(sc.score,sc.rsi,P,(MTF_BY_SYM[sym]||{}).aligned),reasons:sc.reasons,

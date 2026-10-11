@@ -112,6 +112,10 @@ class RunTestCase(unittest.TestCase):
         for name in ("STATS_DAYS", "STATS_MAX_BARS", "MODE", "P", "TECH_W", "FUND_W",
                      "ACCOUNT_JPY", "RISK_CAP_PCT"):
             self.addCleanup(setattr, F, name, getattr(F, name))
+        # 時間帯で建てない設定(SESSION_BLOCK)は実行時刻で効き方が変わる。既定では外し、
+        # 専用のテスト(SessionBlockTest)でだけ有効にする（夜に回すと他のテストが揺れるため）。
+        self.addCleanup(setattr, F, "SESSION_BLOCK", F.SESSION_BLOCK)
+        F.SESSION_BLOCK = {}
         self.sent = {"line": [], "mail": []}
         # 差し替える前の本物を残す。上書きしっぱなしだと、実際の送信処理を
         # 検証したいテストからは二度と本物に触れなくなる。
@@ -5970,6 +5974,70 @@ class TradeReviewTest(unittest.TestCase):
         rv = self.R.run([self.e, dict(self.e, logged_at="2026-08-01 10:00:30")], bars_fn=lambda *a: bars)
         self.assertEqual(list(rv["by"]["month"]), ["2026-10"], "9月より前の記録を混ぜている")
         self.assertEqual(rv["all"]["sum_r"], 2.0)
+
+
+
+class SessionBlockTest(RunTestCase):
+    """デイのNY時間(21〜6時)は新規の合図を出さない。サーバーと画面で同じ判定にする。"""
+
+    def setUp(self):
+        super().setUp()
+        F.SESSION_BLOCK = {"day": {"NY(21-6)": "NY時間(21〜6時)のデイは見送り"}}
+        self.addCleanup(setattr, F, "session_of_hour", F.__dict__["session_of_hour"])
+
+    def _force(self, sess):
+        F.session_of_hour = lambda h: sess
+
+    def test_day_signal_is_skipped_in_ny_hours(self):
+        self._force("NY(21-6)")
+        self.write(F.POSITIONS_FILE, {"positions": []})
+        self.addCleanup(setattr, F, "entry_side", F.entry_side)
+        F.entry_side = lambda sym, total, rv, th, aligned=None, pullback=None: "買い" if sym == "USD_JPY" else None
+        self.addCleanup(setattr, F, "spread_blocks_entry", F.spread_blocks_entry)
+        F.spread_blocks_entry = lambda sp, sl_pips: None
+        F.main()
+        p = [x for x in self.status()["pairs"] if x["symbol"] == "USD_JPY"][0]
+        self.assertIsNone(p["signal"])
+        self.assertIn("NY時間", p["skip_reason"])
+        self.assertFalse([t for t in self.sent["line"] if "エントリー目安" in t])
+
+    def test_other_sessions_and_modes_are_untouched(self):
+        self._force("欧州(15-21)")
+        self.assertIsNone(F.session_block_reason("day"))
+        self._force("NY(21-6)")
+        self.assertIsNone(F.session_block_reason("mtf"))
+        self.assertIsNone(F.session_block_reason("swing"))
+
+    def test_sub_mode_day_is_skipped_too(self):
+        self._force("NY(21-6)")
+        self.addCleanup(setattr, F, "score_pair", F.__dict__["score_pair"])
+        F.score_pair = lambda sym, oh: {"price": 154.0, "adx": 45.0, "rsi": 60.0, "score": 0.55,
+                                        "tp_pips": 24.0, "sl_pips": 15.0, "side": "買い", "tech": 0.5, "fund": 0.1}
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        parts, _ = F.sub_mode_signals({"positions": []}, subs=[{"mode": "day", "filter": "adx40"}])
+        self.assertEqual(parts, [])
+
+    def test_dashboard_matches_the_server(self):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無い")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("const SESSION_BLOCK_JS=")
+        j = src.index("function renderSessionBlock(){", i)
+        k = src.index("function sessionBlockReason(mode,ms){", j)
+        body = src[i:j] + src[k:src.index("|null; }", k) + len("|null; }")]
+        script = body + "\nvar o={};for(var h=0;h<24;h++){o[h]=[!!sessionBlockReason('day',Date.UTC(2026,9,12,h-9,30)),!!sessionBlockReason('mtf',Date.UTC(2026,9,12,h-9,30))];}console.log(JSON.stringify(o));"
+        out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        js = json.loads(out.stdout)
+        F.session_of_hour = F.__dict__["session_of_hour"]
+        for h in range(24):
+            t = datetime.datetime(2026, 10, 12, h, 30, tzinfo=F.JST)
+            py_day = bool(F.SESSION_BLOCK.get("day", {}).get(F.session_of_hour(h)))
+            self.assertEqual(js[str(h)][0], py_day, f"{h}時 デイの判定が画面とサーバーで違う")
+            self.assertFalse(js[str(h)][1])
+        self.assertIn('"day": {"NY(21-6)"', open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8").read())
 
 
 if __name__ == "__main__":

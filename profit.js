@@ -323,7 +323,82 @@ function runMonteCarlo(){
     +'1回の損益＝資金×リスク%×R で複利計算。1,000通貨単位への丸めとスプレッド拡大時の追加コストは含みません。'
     +'<br>同じ時間帯に同じ方向で複数持つと、実際の振れはこれより大きくなります（4通貨とも対円なので一斉に動く）。</div>';
 }
+/* ===== 0. 実際の取引の答え合わせ =====
+   記録簿（アプリで建てた取引）の建値・TP幅・SL幅でOCOを置いたとして、サーバーが
+   1分足でなぞった結果（backtest.json の trade_review）。端末のCSVが無くても月別の成績が出る。
+   時間帯は1年検証(session_holdout)と並べ、偶然かどうかを一緒に見られるようにする。 */
+var TR_SESS=['欧州(15-21)','NY(21-6)','東京(9-15)','早朝(6-9)'];
+function _trRow(lab,v,extra){
+  if(!v||!v.n) return '';
+  return '<tr><td>'+lab+'</td><td>'+v.n+'</td><td>'+v.winrate+'%</td>'
+    +'<td class="'+(v.sum_r>0?'good':(v.sum_r<0?'bad':''))+'"><b>'+_pf(v.sum_r,1)+'R</b></td>'+(extra||'')+'</tr>';
+}
+function trSessionYear(bt,mode,sess){
+  try{ var h=bt.modes[mode].session_holdout;
+       return {all:h.all.tp_sl[sess], a:h.first_half.tp_sl[sess], b:h.second_half.tp_sl[sess]}; }catch(e){ return null; }
+}
+/* 時間帯の成績が、1年検証でも前半・後半の両方で同じ向き（＝偶然ではなさそう）か */
+function trSessionVerdict(bt,sess){
+  var modes=['day','mtf','swing'], pos=0, neg=0, any=0;
+  modes.forEach(function(m){ var y=trSessionYear(bt,m,sess); if(!y||!y.a||!y.b||y.a.n<30||y.b.n<30) return; any++;
+    if(y.a.avg_r>0&&y.b.avg_r>0) pos++; else if(y.a.avg_r<0&&y.b.avg_r<0) neg++; });
+  return {any:any,pos:pos,neg:neg};
+}
+function renderTradeReview(bt){
+  var el=document.getElementById('tradereview'); if(!el) return;
+  bt=bt||BT_CACHE; var rv=bt&&bt.trade_review;
+  if(!rv||!rv.all){ el.innerHTML='<div class="note">答え合わせ（毎日05:30に更新）をまだ読み込めていません。「🧠 記録簿を取込」を押してください。</div>'; return; }
+  var by=rv.by||{}, months=Object.keys(by.month||{}).sort();
+  var mcards=months.map(function(m){ var v=by.month[m]; if(!v.n) return '';
+    return '<div class="kpi"><div class="l">'+(+m.slice(5,7))+'月（'+v.n+'件）</div>'
+      +'<div class="v '+(v.sum_r>0?'up':'dn')+'">'+_pf(v.sum_r,1)+'R</div>'
+      +'<div class="l" style="margin-top:2px">勝率'+v.winrate+'%</div></div>'; }).join('');
+  var sessRows=TR_SESS.map(function(k){
+    var v=(by.hour||{})[k]; if(!v||!v.n) return '';
+    var ys=['day','mtf','swing'].map(function(m){ var y=trSessionYear(bt,m,k); return y&&y.all?((m==='day'?'デ':m==='mtf'?'上':'ス')+_pf(y.all.avg_r,2)):''; }).filter(Boolean).join(' ');
+    return _trRow(k,v,'<td style="font-size:10px;opacity:.8">'+(ys||'—')+'</td>');
+  }).join('');
+  var MODE_JA={day:'デイ',mtf:'上位足',swing:'スイング',scalp:'スキャル'};
+  var mmRows=Object.keys(by.month_mode||{}).sort().map(function(k){ var p=k.split(' ');
+    return _trRow((+p[0].slice(5,7))+'月 '+escHtml(MODE_JA[p[1]]||p[1]||''),by.month_mode[k]); }).join('');
+  // 降り方の比較（同じ取引・同じ値動き）
+  var alt=rv.all.alt_sum_r||{};
+  var altTxt='<div style="margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;line-height:1.8">'
+    +'<b>損切りのうち '+rv.all.sl_after_run+'件は、一度 +0.5R 以上伸びてから戻っていました。</b><br>'
+    +'同じ取引で降り方だけ変えていたら（合計R）：OCOのまま <b>'+_pf(rv.all.sum_r,1)+'R</b>'
+    +(alt.be05!=null?' ／ +0.5Rで建値へ <b>'+_pf(alt.be05,1)+'R</b>':'')
+    +(alt.be08!=null?' ／ +0.8Rで建値へ <b>'+_pf(alt.be08,1)+'R</b>':'')
+    +(alt.trail10!=null?' ／ +1Rから0.5R戻りで利確 <b>'+_pf(alt.trail10,1)+'R</b>':'')
+    +'<br><span style="font-size:11px;opacity:.8">件数が少ないので、1年検証（上の「どこで戦うか」の下）と合わせて判断してください。</span></div>';
+  var last=(rv.trades||[]).slice(-10).reverse().map(function(x){
+    var r=(x.result==='tp'||x.result==='sl')?x.r:x.r_now;
+    var tag=x.result==='tp'?'TP':x.result==='sl'?'SL':'保有中';
+    return '<tr><td>'+escHtml(String(x.at||'').slice(5))+'</td><td>'+escHtml(String(x.symbol||'').replace('_JPY',''))+' '+escHtml(x.side||'')+'</td>'
+      +'<td>'+escHtml(x.mode||'')+'</td><td class="'+(r>0?'good':(r<0?'bad':''))+'">'+tag+' '+(r!=null?_pf(r,2):'')+'</td></tr>';
+  }).join('');
+  // 9月と10月の差がどこから来たか（時間帯×月）を1行で言う
+  var why='';
+  try{
+    var tm={}; (rv.trades||[]).forEach(function(x){ if(x.result!=='tp'&&x.result!=='sl') return;
+      var k=x.month+'|'+x.hour; var a=tm[k]||(tm[k]={n:0,r:0}); a.n++; a.r+=x.r; });
+    var line=months.map(function(m){ return (+m.slice(5,7))+'月：'+TR_SESS.map(function(s){ var a=tm[m+'|'+s]; return a?(s.replace(/\(.*/,'')+' '+a.n+'件 '+_pf(a.r,1)+'R'):''; }).filter(Boolean).join('・'); }).join('<br>');
+    why='<div style="margin-top:8px;padding:9px 12px;border:1px solid var(--gold);border-radius:9px;font-size:12.5px;line-height:1.8">'
+      +'<b>月ごとの時間帯の内訳</b><br>'+line
+      +'<br><span style="font-size:11px;opacity:.85">デイのNY時間(21〜6時)は1年検証でも前半・後半とも負けていたので、2026-10-11からこの時間帯のデイの新規合図を止めています。</span></div>';
+  }catch(e){}
+  el.innerHTML='<div class="stat">'+mcards+'</div>'+why
+    +'<div class="sec" style="font-size:11.5px;margin:12px 2px 4px">建てた時間帯（JST）</div>'
+    +'<table><thead><tr><th>時間帯</th><th>件数</th><th>勝率</th><th>合計</th><th>1年検証<br><span style="font-weight:400;font-size:9.5px">1回あたりR</span></th></tr></thead><tbody>'+sessRows+'</tbody></table>'
+    +'<div class="sec" style="font-size:11.5px;margin:12px 2px 4px">月×モード</div>'
+    +'<table><thead><tr><th>月・モード</th><th>件数</th><th>勝率</th><th>合計</th></tr></thead><tbody>'+mmRows+'</tbody></table>'
+    +altTxt
+    +'<div class="sec" style="font-size:11.5px;margin:12px 2px 4px">直近の取引</div>'
+    +'<table><thead><tr><th>日時</th><th>ペア</th><th>モード</th><th>結果R</th></tr></thead><tbody>'+last+'</tbody></table>'
+    +'<div class="note">'+escHtml(rv.assumption||'')+'。'+escHtml(rv.generated_at||'')+' 時点。'
+    +'1年検証の列は「デ＝デイ／上＝上位足フォロー／ス＝スイング」の、その時間帯に建てた場合の1回あたりR（TPかSLまで持った場合）。</div>';
+}
 function renderProfitPanels(){
+  try{ renderTradeReview(BT_CACHE); }catch(e){ console.warn(e); }
   try{ renderWhereToFight(BT_CACHE); }catch(e){ console.warn(e); }
   try{ renderRuleWhatIf(); }catch(e){ console.warn(e); }
   try{ var f=document.getElementById('mcfreq'); if(f&&!f.value) pfSrcChanged(); }catch(e){}

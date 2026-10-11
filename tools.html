@@ -75,7 +75,9 @@ function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnav
 
 <div class="sec" data-sec="4" onclick="toggleSection('4')" style="cursor:pointer">⓪ 利益を伸ばす（どこで戦い・何をやめ・いくら張るか）<span class="secarrow" style="margin-left:auto;color:var(--mut)">▲</span></div>
 <div class="card">
-  <div class="sec" style="font-size:12px;margin:2px 2px 6px">1. どこで戦うか（1年検証・モード×通貨）</div>
+  <div class="sec" style="font-size:12px;margin:2px 2px 6px">0. 実際の取引の答え合わせ（月別・時間帯別）</div>
+  <div id="tradereview"></div>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">1. どこで戦うか（1年検証・モード×通貨）</div>
   <div id="wherefight"></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">2. 何をやめるか（あなたの実績で、守っていたら）</div>
   <div id="whatif"></div>
