@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-15T17:17:40.491Z",
+  "updated": "2026-10-16T15:55:59.807Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -2476,14 +2476,26 @@
       "sl": 209.911,
       "b": 1.6,
       "ts": 1792075296441,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 63,
       "pct": 63,
       "edgeAdj": 0,
       "mark": "hold",
       "src": "main",
-      "subFilter": null
+      "subFilter": null,
+      "result": "sl",
+      "R": -1,
+      "closed": 1792085400000,
+      "bars": 11,
+      "heldMin": 165,
+      "exit": 209.911,
+      "policies": {
+        "tp_sl": -1.024,
+        "advice": -1.024,
+        "advice_watch": 0.112
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "GBP_JPY",
@@ -2496,12 +2508,44 @@
       "sl": 209.278,
       "b": 1.80078125,
       "ts": 1792084650489,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 33,
       "pct": 33,
       "edgeAdj": 0,
       "mark": "no",
+      "src": "sub",
+      "subFilter": "all",
+      "result": "tp",
+      "R": 1.7832,
+      "closed": 1792150200000,
+      "bars": 69,
+      "heldMin": 4140,
+      "exit": 210.712,
+      "policies": {
+        "tp_sl": 1.7824,
+        "advice": 0.2363,
+        "advice_watch": 0.1211
+      },
+      "resolvedBy": "server"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "swing",
+      "side": "long",
+      "entry": 210.571,
+      "fill": 210.58,
+      "sp": 0.009,
+      "tp": 211.322,
+      "sl": 210.154,
+      "b": 1.8009592326139086,
+      "ts": 1792166149803,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 50,
+      "pct": 50,
+      "edgeAdj": 0,
+      "mark": "hold",
       "src": "sub",
       "subFilter": "all"
     }
