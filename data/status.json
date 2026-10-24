@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-10-24 23:55 JST",
+  "generated_at": "2026-10-25 00:00 JST",
   "market_open": false,
   "mode": "mtf",
   "blackout": false,
@@ -273,74 +273,74 @@
       "next_news": null,
       "hold_tp_min": 112,
       "hold_sl_min": 90,
-      "tp_winrate": 33,
-      "stats_n": 18,
-      "stats_ts": 1792850143,
+      "tp_winrate": 35,
+      "stats_n": 17,
+      "stats_ts": 1792854052,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
-          "n": 18,
-          "winrate": 33,
-          "avg_r": -0.145,
-          "avg_r_gross": -0.133,
+          "n": 17,
+          "winrate": 35,
+          "avg_r": -0.095,
+          "avg_r_gross": -0.082,
           "cost_r": 0.012,
-          "sd": 1.2618,
-          "ci_lo": -0.728,
-          "ci_hi": 0.438,
+          "sd": 1.2816,
+          "ci_lo": -0.704,
+          "ci_hi": 0.515,
           "payoff": 1.6,
-          "pf": 0.8
+          "pf": 0.87
         },
         "advice": {
-          "n": 18,
-          "winrate": 39,
-          "avg_r": -0.063,
-          "avg_r_gross": -0.051,
+          "n": 17,
+          "winrate": 35,
+          "avg_r": -0.095,
+          "avg_r_gross": -0.082,
           "cost_r": 0.012,
-          "sd": 1.2506,
-          "ci_lo": -0.641,
+          "sd": 1.2816,
+          "ci_lo": -0.704,
           "ci_hi": 0.515,
-          "payoff": 1.44,
-          "pf": 0.92
+          "payoff": 1.6,
+          "pf": 0.87
         },
         "advice_watch": {
-          "n": 18,
-          "winrate": 67,
-          "avg_r": -0.014,
-          "avg_r_gross": -0.002,
+          "n": 17,
+          "winrate": 65,
+          "avg_r": -0.046,
+          "avg_r_gross": -0.033,
           "cost_r": 0.012,
-          "sd": 0.8079,
-          "ci_lo": -0.388,
-          "ci_hi": 0.359,
-          "payoff": 0.5,
-          "pf": 0.99
+          "sd": 0.8213,
+          "ci_lo": -0.436,
+          "ci_hi": 0.345,
+          "payoff": 0.49,
+          "pf": 0.91
         },
         "advice_tech": {
-          "n": 18,
-          "winrate": 39,
-          "avg_r": -0.063,
-          "avg_r_gross": -0.051,
+          "n": 17,
+          "winrate": 35,
+          "avg_r": -0.095,
+          "avg_r_gross": -0.082,
           "cost_r": 0.012,
-          "sd": 1.2506,
-          "ci_lo": -0.641,
+          "sd": 1.2816,
+          "ci_lo": -0.704,
           "ci_hi": 0.515,
-          "payoff": 1.44,
-          "pf": 0.92
+          "payoff": 1.6,
+          "pf": 0.87
         }
       },
       "bands": {
-        "弱(基準〜+3pt)": {
-          "n": 6,
-          "tp_sl": -0.58,
-          "advice": -0.333,
-          "advice_watch": -0.4,
-          "advice_tech": -0.333
-        },
         "中(基準+3〜10pt)": {
           "n": 10,
           "tp_sl": 0.29,
           "advice": 0.29,
           "advice_watch": 0.049,
           "advice_tech": 0.29
+        },
+        "弱(基準〜+3pt)": {
+          "n": 5,
+          "tp_sl": -0.494,
+          "advice": -0.494,
+          "advice_watch": -0.584,
+          "advice_tech": -0.494
         },
         "強(基準+10pt〜)": {
           "n": 2,
@@ -599,7 +599,7 @@
       "hold_sl_min": 405,
       "tp_winrate": 39,
       "stats_n": 18,
-      "stats_ts": 1792850143,
+      "stats_ts": 1792854051,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -917,69 +917,62 @@
       "skip_reason": null,
       "next_news": null,
       "hold_tp_min": 360,
-      "hold_sl_min": 180,
-      "tp_winrate": 36,
-      "stats_n": 22,
-      "stats_ts": 1792850143,
+      "hold_sl_min": 165,
+      "tp_winrate": 38,
+      "stats_n": 21,
+      "stats_ts": 1792854052,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
-          "n": 22,
-          "winrate": 36,
-          "avg_r": -0.092,
-          "avg_r_gross": -0.055,
+          "n": 21,
+          "winrate": 38,
+          "avg_r": -0.048,
+          "avg_r_gross": -0.01,
           "cost_r": 0.038,
-          "sd": 1.2785,
-          "ci_lo": -0.627,
-          "ci_hi": 0.442,
+          "sd": 1.2927,
+          "ci_lo": -0.601,
+          "ci_hi": 0.505,
           "payoff": 1.6,
-          "pf": 0.91
+          "pf": 0.98
         },
         "advice": {
-          "n": 22,
-          "winrate": 50,
-          "avg_r": 0.053,
-          "avg_r_gross": 0.091,
+          "n": 21,
+          "winrate": 48,
+          "avg_r": 0.039,
+          "avg_r_gross": 0.077,
           "cost_r": 0.038,
-          "sd": 1.1713,
-          "ci_lo": -0.437,
-          "ci_hi": 0.542,
-          "payoff": 1.19,
-          "pf": 1.19
+          "sd": 1.1984,
+          "ci_lo": -0.474,
+          "ci_hi": 0.551,
+          "payoff": 1.27,
+          "pf": 1.15
         },
         "advice_watch": {
-          "n": 22,
-          "winrate": 73,
-          "avg_r": -0.109,
-          "avg_r_gross": -0.071,
+          "n": 21,
+          "winrate": 71,
+          "avg_r": -0.137,
+          "avg_r_gross": -0.098,
           "cost_r": 0.038,
-          "sd": 0.6025,
-          "ci_lo": -0.36,
-          "ci_hi": 0.143,
-          "payoff": 0.28,
-          "pf": 0.74
+          "sd": 0.6023,
+          "ci_lo": -0.395,
+          "ci_hi": 0.121,
+          "payoff": 0.26,
+          "pf": 0.66
         },
         "advice_tech": {
-          "n": 22,
-          "winrate": 50,
-          "avg_r": 0.053,
-          "avg_r_gross": 0.091,
+          "n": 21,
+          "winrate": 48,
+          "avg_r": 0.039,
+          "avg_r_gross": 0.077,
           "cost_r": 0.038,
-          "sd": 1.1713,
-          "ci_lo": -0.437,
-          "ci_hi": 0.542,
-          "payoff": 1.19,
-          "pf": 1.19
+          "sd": 1.1984,
+          "ci_lo": -0.474,
+          "ci_hi": 0.551,
+          "payoff": 1.27,
+          "pf": 1.15
         }
       },
       "bands": {
-        "弱(基準〜+3pt)": {
-          "n": 12,
-          "tp_sl": 0.043,
-          "advice": 0.18,
-          "advice_watch": 0.113,
-          "advice_tech": 0.18
-        },
         "中(基準+3〜10pt)": {
           "n": 9,
           "tp_sl": -0.169,
@@ -993,6 +986,13 @@
           "advice": 0.272,
           "advice_watch": 0.275,
           "advice_tech": 0.272
+        },
+        "弱(基準〜+3pt)": {
+          "n": 11,
+          "tp_sl": 0.14,
+          "advice": 0.165,
+          "advice_watch": 0.079,
+          "advice_tech": 0.165
         }
       },
       "near": {
@@ -1259,7 +1259,7 @@
       "hold_sl_min": 60,
       "tp_winrate": 48,
       "stats_n": 21,
-      "stats_ts": 1792850143,
+      "stats_ts": 1792854051,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
