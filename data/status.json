@@ -1,6 +1,6 @@
 {
   "risk": {
-    "open_yen": 0,
+    "open_yen": 910,
     "cap_yen": 0,
     "pct": null,
     "full": false
@@ -562,9 +562,9 @@
       "cost_r": 0.015,
       "cost_r_base": 0.012,
       "spread": {
-        "pips": 0.5,
+        "pips": 0.6,
         "base": 0.5,
-        "mult": 1.0,
+        "mult": 1.2,
         "wide": false
       },
       "mtf": {
@@ -1326,6 +1326,27 @@
       }
     }
   ],
-  "open_positions": [],
+  "open_positions": [
+    {
+      "id": "p1793287232095",
+      "symbol": "GBP_JPY",
+      "side": "long",
+      "entry": 211.099,
+      "lot": 2000.0,
+      "current": 211.126,
+      "pips": 2.7,
+      "yen": 54,
+      "tp_price": 211.919,
+      "sl_price": 210.644,
+      "adv_level": "watch",
+      "adv_label": "🟡 利確検討",
+      "adv_reason": "ADX低下",
+      "mfe": 211.126,
+      "profit_atr": 0.11,
+      "mode": "swing",
+      "basis": null,
+      "basis_label": null
+    }
+  ],
   "closed_positions": []
 }
