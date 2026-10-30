@@ -5,10 +5,10 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-10-30 11:45 JST",
+  "generated_at": "2026-10-30 11:50 JST",
   "market_open": true,
   "mode": "mtf",
-  "blackout": true,
+  "blackout": false,
   "weights": {
     "tech": 0.85,
     "fund": 0.15
@@ -16,24 +16,24 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 157.445,
-      "ask": 157.45,
-      "rsi": 39.8,
+      "bid": 157.464,
+      "ask": 157.469,
+      "rsi": 41.3,
       "adx": 27.6,
-      "ema_f": 157.475,
-      "ema_s": 157.556,
-      "atr": 0.1128,
-      "tp_pips": 35.2,
-      "sl_pips": 22.0,
-      "score": -0.176,
-      "tech": -0.295,
+      "ema_f": 157.48,
+      "ema_s": 157.558,
+      "atr": 0.1152,
+      "tp_pips": 35.9,
+      "sl_pips": 22.5,
+      "score": -0.149,
+      "tech": -0.263,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:順張りMA",
         "EMA下(9vs21)",
-        "RSI40",
+        "RSI41",
         "ADX28(強)"
       ],
       "closes": [
@@ -96,7 +96,7 @@
         157.464,
         157.481,
         157.452,
-        157.442
+        157.464
       ],
       "ema_f_series": [
         157.991,
@@ -158,7 +158,7 @@
         157.494,
         157.491,
         157.483,
-        157.475
+        157.48
       ],
       "ema_s_series": [
         157.943,
@@ -220,10 +220,10 @@
         157.589,
         157.579,
         157.567,
-        157.556
+        157.558
       ],
-      "blackout": true,
-      "cost_r": 0.023,
+      "blackout": false,
+      "cost_r": 0.022,
       "cost_r_base": 0.009,
       "spread": {
         "pips": 0.5,
@@ -261,12 +261,7 @@
         }
       },
       "skip_reason": null,
-      "next_news": {
-        "title": "BOJ Outlook Report",
-        "time": "11:31",
-        "in_min": -14,
-        "country": "JPY"
-      },
+      "next_news": null,
       "hold_tp_min": 112,
       "hold_sl_min": 90,
       "tp_winrate": 32,
@@ -359,17 +354,17 @@
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 176.291,
-      "ask": 176.296,
-      "rsi": 48.5,
+      "bid": 176.298,
+      "ask": 176.303,
+      "rsi": 48.8,
       "adx": 15.1,
-      "ema_f": 176.319,
-      "ema_s": 176.326,
-      "atr": 0.1173,
-      "tp_pips": 36.6,
-      "sl_pips": 22.9,
-      "score": -0.032,
-      "tech": -0.108,
+      "ema_f": 176.32,
+      "ema_s": 176.327,
+      "atr": 0.1186,
+      "tp_pips": 37.0,
+      "sl_pips": 23.1,
+      "score": -0.024,
+      "tech": -0.099,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -438,7 +433,7 @@
         176.33,
         176.333,
         176.303,
-        176.293
+        176.299
       ],
       "ema_f_series": [
         176.043,
@@ -500,7 +495,7 @@
         176.331,
         176.331,
         176.326,
-        176.319
+        176.32
       ],
       "ema_s_series": [
         175.976,
@@ -562,9 +557,9 @@
         176.332,
         176.332,
         176.33,
-        176.326
+        176.327
       ],
-      "blackout": true,
+      "blackout": false,
       "cost_r": 0.022,
       "cost_r_base": 0.017,
       "spread": {
@@ -603,12 +598,7 @@
         }
       },
       "skip_reason": null,
-      "next_news": {
-        "title": "BOJ Outlook Report",
-        "time": "11:31",
-        "in_min": -14,
-        "country": "JPY"
-      },
+      "next_news": null,
       "hold_tp_min": 255,
       "hold_sl_min": 278,
       "tp_winrate": 44,
@@ -690,24 +680,24 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 210.879,
-      "ask": 210.888,
-      "rsi": 46.4,
+      "bid": 210.899,
+      "ask": 210.908,
+      "rsi": 47.8,
       "adx": 13.9,
-      "ema_f": 210.903,
-      "ema_s": 210.934,
-      "atr": 0.131,
-      "tp_pips": 40.9,
-      "sl_pips": 25.6,
-      "score": -0.039,
-      "tech": -0.135,
+      "ema_f": 210.907,
+      "ema_s": 210.936,
+      "atr": 0.1337,
+      "tp_pips": 41.7,
+      "sl_pips": 26.1,
+      "score": -0.013,
+      "tech": -0.104,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:様子見",
         "EMA下(9vs21)",
-        "RSI46",
+        "RSI48",
         "ADX14(弱)"
       ],
       "closes": [
@@ -770,7 +760,7 @@
         210.897,
         210.917,
         210.89,
-        210.88
+        210.903
       ],
       "ema_f_series": [
         210.476,
@@ -832,7 +822,7 @@
         210.912,
         210.913,
         210.908,
-        210.903
+        210.907
       ],
       "ema_s_series": [
         210.37,
@@ -894,11 +884,11 @@
         210.947,
         210.944,
         210.939,
-        210.934
+        210.936
       ],
-      "blackout": true,
-      "cost_r": 0.035,
-      "cost_r_base": 0.035,
+      "blackout": false,
+      "cost_r": 0.034,
+      "cost_r_base": 0.034,
       "spread": {
         "pips": 0.9,
         "base": 0.9,
@@ -935,12 +925,7 @@
         }
       },
       "skip_reason": null,
-      "next_news": {
-        "title": "BOJ Outlook Report",
-        "time": "11:31",
-        "in_min": -14,
-        "country": "JPY"
-      },
+      "next_news": null,
       "hold_tp_min": 330,
       "hold_sl_min": 165,
       "tp_winrate": 41,
@@ -1033,17 +1018,17 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 110.786,
-      "ask": 110.793,
-      "rsi": 49.9,
+      "bid": 110.788,
+      "ask": 110.795,
+      "rsi": 50.0,
       "adx": 16.1,
       "ema_f": 110.751,
       "ema_s": 110.769,
-      "atr": 0.108,
-      "tp_pips": 33.7,
-      "sl_pips": 21.1,
-      "score": 0.116,
-      "tech": 0.066,
+      "atr": 0.11,
+      "tp_pips": 34.3,
+      "sl_pips": 21.5,
+      "score": 0.117,
+      "tech": 0.067,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -1113,7 +1098,7 @@
         110.749,
         110.764,
         110.798,
-        110.787
+        110.788
       ],
       "ema_f_series": [
         111.127,
@@ -1239,9 +1224,9 @@
         110.767,
         110.769
       ],
-      "blackout": true,
+      "blackout": false,
       "cost_r": 0.033,
-      "cost_r_base": 0.024,
+      "cost_r_base": 0.023,
       "spread": {
         "pips": 0.7,
         "base": 0.7,
@@ -1266,24 +1251,10 @@
           "avg_r": 0.037,
           "ci_lo": -0.092,
           "ci_hi": 0.166
-        },
-        "rsi": {
-          "band": "押し目/戻り(35〜50)",
-          "n": 563,
-          "fast_rate": 19,
-          "mfe": 0.667,
-          "avg_r": 0.095,
-          "ci_lo": -0.003,
-          "ci_hi": 0.194
         }
       },
       "skip_reason": null,
-      "next_news": {
-        "title": "BOJ Outlook Report",
-        "time": "11:31",
-        "in_min": -14,
-        "country": "JPY"
-      },
+      "next_news": null,
       "hold_tp_min": 180,
       "hold_sl_min": 45,
       "tp_winrate": 47,
@@ -1371,16 +1342,16 @@
       "side": "long",
       "entry": 211.099,
       "lot": 2000.0,
-      "current": 210.879,
-      "pips": -22.0,
-      "yen": -440,
+      "current": 210.899,
+      "pips": -20.0,
+      "yen": -400,
       "tp_price": 211.919,
       "sl_price": 210.644,
-      "adv_level": "watch",
-      "adv_label": "🟡 利確検討",
-      "adv_reason": "まもなく重要指標（BOJ Outlook Report/発表中(±15分)）",
+      "adv_level": "hold",
+      "adv_label": "🟢 ホールド",
+      "adv_reason": "入った根拠が続いている（スコア+0.34）",
       "mfe": 211.196,
-      "profit_atr": -0.92,
+      "profit_atr": -0.83,
       "mode": "swing",
       "basis": null,
       "basis_label": null
