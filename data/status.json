@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-10-30 11:00 JST",
+  "generated_at": "2026-10-30 11:05 JST",
   "market_open": true,
   "mode": "mtf",
   "blackout": false,
@@ -16,24 +16,24 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 157.444,
-      "ask": 157.449,
-      "rsi": 39.4,
+      "bid": 157.492,
+      "ask": 157.497,
+      "rsi": 41.9,
       "adx": 26.8,
-      "ema_f": 157.49,
-      "ema_s": 157.587,
-      "atr": 0.1177,
-      "tp_pips": 36.7,
-      "sl_pips": 22.9,
-      "score": -0.239,
-      "tech": -0.37,
+      "ema_f": 157.498,
+      "ema_s": 157.591,
+      "atr": 0.1206,
+      "tp_pips": 37.6,
+      "sl_pips": 23.5,
+      "score": -0.193,
+      "tech": -0.315,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:順張りMA",
         "EMA下(9vs21)",
-        "RSI39",
+        "RSI42",
         "ADX27(強)"
       ],
       "closes": [
@@ -96,7 +96,7 @@
         157.44,
         157.476,
         157.422,
-        157.445
+        157.484
       ],
       "ema_f_series": [
         157.963,
@@ -158,7 +158,7 @@
         157.532,
         157.521,
         157.501,
-        157.49
+        157.498
       ],
       "ema_s_series": [
         157.92,
@@ -220,10 +220,10 @@
         157.633,
         157.619,
         157.601,
-        157.587
+        157.591
       ],
       "blackout": false,
-      "cost_r": 0.022,
+      "cost_r": 0.021,
       "cost_r_base": 0.009,
       "spread": {
         "pips": 0.5,
@@ -241,15 +241,6 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
-        "stretch": {
-          "band": "逆張り(-0.3ATR〜)",
-          "n": 701,
-          "fast_rate": 20,
-          "mfe": 0.665,
-          "avg_r": 0.062,
-          "ci_lo": -0.026,
-          "ci_hi": 0.15
-        },
         "adx": {
           "band": "弱め(25〜30)",
           "n": 100,
@@ -273,7 +264,7 @@
       "next_news": {
         "title": "BOJ Policy Rate",
         "time": "11:30",
-        "in_min": 29,
+        "in_min": 24,
         "country": "JPY"
       },
       "hold_tp_min": 112,
@@ -368,24 +359,23 @@
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 176.238,
-      "ask": 176.243,
-      "rsi": 45.9,
+      "bid": 176.301,
+      "ask": 176.306,
+      "rsi": 49.2,
       "adx": 17.5,
-      "ema_f": 176.313,
-      "ema_s": 176.324,
-      "atr": 0.1194,
-      "tp_pips": 37.2,
-      "sl_pips": 23.3,
-      "score": -0.092,
-      "tech": -0.179,
+      "ema_f": 176.326,
+      "ema_s": 176.33,
+      "atr": 0.1254,
+      "tp_pips": 39.1,
+      "sl_pips": 24.4,
+      "score": 0.001,
+      "tech": -0.069,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:様子見",
-        "MACDヒスト-",
-        "RSI46",
+        "RSI49",
         "ADX17(弱)"
       ],
       "closes": [
@@ -448,7 +438,7 @@
         176.453,
         176.314,
         176.23,
-        176.238
+        176.303
       ],
       "ema_f_series": [
         176.024,
@@ -510,7 +500,7 @@
         176.367,
         176.357,
         176.331,
-        176.313
+        176.326
       ],
       "ema_s_series": [
         175.947,
@@ -572,11 +562,11 @@
         176.346,
         176.343,
         176.332,
-        176.324
+        176.33
       ],
       "blackout": false,
-      "cost_r": 0.021,
-      "cost_r_base": 0.017,
+      "cost_r": 0.02,
+      "cost_r_base": 0.016,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -593,15 +583,6 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
-        "stretch": {
-          "band": "逆張り(-0.3ATR〜)",
-          "n": 701,
-          "fast_rate": 20,
-          "mfe": 0.665,
-          "avg_r": 0.062,
-          "ci_lo": -0.026,
-          "ci_hi": 0.15
-        },
         "adx": {
           "band": "無風(〜20)",
           "n": 330,
@@ -625,7 +606,7 @@
       "next_news": {
         "title": "BOJ Policy Rate",
         "time": "11:30",
-        "in_min": 29,
+        "in_min": 24,
         "country": "JPY"
       },
       "hold_tp_min": 255,
@@ -709,25 +690,24 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 210.849,
-      "ask": 210.858,
-      "rsi": 44.4,
+      "bid": 210.901,
+      "ask": 210.91,
+      "rsi": 47.9,
       "adx": 16.3,
-      "ema_f": 210.902,
-      "ema_s": 210.943,
-      "atr": 0.1366,
-      "tp_pips": 42.6,
-      "sl_pips": 26.6,
-      "score": -0.086,
-      "tech": -0.189,
+      "ema_f": 210.914,
+      "ema_s": 210.948,
+      "atr": 0.1421,
+      "tp_pips": 44.3,
+      "sl_pips": 27.7,
+      "score": -0.018,
+      "tech": -0.11,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:様子見",
         "EMA下(9vs21)",
-        "MACDヒスト-",
-        "RSI44",
+        "RSI48",
         "ADX16(弱)"
       ],
       "closes": [
@@ -790,7 +770,7 @@
         210.984,
         210.863,
         210.838,
-        210.848
+        210.909
       ],
       "ema_f_series": [
         210.417,
@@ -852,7 +832,7 @@
         210.953,
         210.935,
         210.915,
-        210.902
+        210.914
       ],
       "ema_s_series": [
         210.316,
@@ -914,11 +894,11 @@
         210.973,
         210.963,
         210.952,
-        210.943
+        210.948
       ],
       "blackout": false,
-      "cost_r": 0.034,
-      "cost_r_base": 0.034,
+      "cost_r": 0.032,
+      "cost_r_base": 0.032,
       "spread": {
         "pips": 0.9,
         "base": 0.9,
@@ -935,15 +915,6 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
-        "stretch": {
-          "band": "逆張り(-0.3ATR〜)",
-          "n": 701,
-          "fast_rate": 20,
-          "mfe": 0.665,
-          "avg_r": 0.062,
-          "ci_lo": -0.026,
-          "ci_hi": 0.15
-        },
         "adx": {
           "band": "無風(〜20)",
           "n": 330,
@@ -967,7 +938,7 @@
       "next_news": {
         "title": "BOJ Policy Rate",
         "time": "11:30",
-        "in_min": 29,
+        "in_min": 24,
         "country": "JPY"
       },
       "hold_tp_min": 330,
@@ -1062,17 +1033,17 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 110.765,
-      "ask": 110.772,
+      "bid": 110.768,
+      "ask": 110.775,
       "rsi": 48.7,
-      "adx": 19.2,
+      "adx": 19.1,
       "ema_f": 110.723,
       "ema_s": 110.766,
-      "atr": 0.1171,
-      "tp_pips": 36.5,
-      "sl_pips": 22.8,
-      "score": 0.045,
-      "tech": -0.017,
+      "atr": 0.1202,
+      "tp_pips": 37.5,
+      "sl_pips": 23.4,
+      "score": 0.047,
+      "tech": -0.015,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -1143,7 +1114,7 @@
         110.692,
         110.773,
         110.748,
-        110.766
+        110.767
       ],
       "ema_f_series": [
         111.147,
@@ -1270,8 +1241,8 @@
         110.766
       ],
       "blackout": false,
-      "cost_r": 0.031,
-      "cost_r_base": 0.022,
+      "cost_r": 0.03,
+      "cost_r_base": 0.021,
       "spread": {
         "pips": 0.7,
         "base": 0.7,
@@ -1311,7 +1282,7 @@
       "next_news": {
         "title": "BOJ Policy Rate",
         "time": "11:30",
-        "in_min": 29,
+        "in_min": 24,
         "country": "JPY"
       },
       "hold_tp_min": 180,
@@ -1401,16 +1372,16 @@
       "side": "long",
       "entry": 211.099,
       "lot": 2000.0,
-      "current": 210.849,
-      "pips": -25.0,
-      "yen": -500,
+      "current": 210.901,
+      "pips": -19.8,
+      "yen": -396,
       "tp_price": 211.919,
       "sl_price": 210.644,
       "adv_level": "watch",
       "adv_label": "🟡 利確検討",
-      "adv_reason": "まもなく重要指標（BOJ Policy Rate/約29分後）",
+      "adv_reason": "まもなく重要指標（BOJ Policy Rate/約24分後）",
       "mfe": 211.196,
-      "profit_atr": -1.08,
+      "profit_atr": -0.84,
       "mode": "swing",
       "basis": null,
       "basis_label": null
