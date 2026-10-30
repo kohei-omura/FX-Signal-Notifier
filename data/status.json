@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-10-30 13:45 JST",
+  "generated_at": "2026-10-30 13:50 JST",
   "market_open": true,
   "mode": "mtf",
   "blackout": false,
@@ -16,25 +16,25 @@
   "pairs": [
     {
       "symbol": "USD_JPY",
-      "bid": 157.317,
-      "ask": 157.322,
-      "rsi": 41.8,
-      "adx": 33.6,
-      "ema_f": 157.358,
-      "ema_s": 157.441,
-      "atr": 0.1319,
-      "tp_pips": 41.2,
-      "sl_pips": 25.7,
-      "score": -0.166,
-      "tech": -0.283,
+      "bid": 157.415,
+      "ask": 157.42,
+      "rsi": 46.8,
+      "adx": 32.5,
+      "ema_f": 157.377,
+      "ema_s": 157.45,
+      "atr": 0.1391,
+      "tp_pips": 43.4,
+      "sl_pips": 27.1,
+      "score": -0.047,
+      "tech": -0.143,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:順張りMA",
         "EMA下(9vs21)",
-        "RSI42",
-        "ADX34(強)"
+        "RSI47",
+        "ADX33(強)"
       ],
       "closes": [
         157.912,
@@ -96,7 +96,7 @@
         157.33,
         157.302,
         157.308,
-        157.316
+        157.415
       ],
       "ema_f_series": [
         157.948,
@@ -158,7 +158,7 @@
         157.403,
         157.383,
         157.368,
-        157.358
+        157.377
       ],
       "ema_s_series": [
         157.95,
@@ -220,11 +220,11 @@
         157.485,
         157.468,
         157.453,
-        157.441
+        157.45
       ],
       "blackout": false,
-      "cost_r": 0.019,
-      "cost_r_base": 0.008,
+      "cost_r": 0.018,
+      "cost_r_base": 0.007,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -241,15 +241,6 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
-        "stretch": {
-          "band": "逆張り(-0.3ATR〜)",
-          "n": 701,
-          "fast_rate": 20,
-          "mfe": 0.665,
-          "avg_r": 0.062,
-          "ci_lo": -0.026,
-          "ci_hi": 0.15
-        },
         "adx": {
           "band": "適正(30〜40)",
           "n": 71,
@@ -273,7 +264,7 @@
       "next_news": {
         "title": "BOJ Press Conference",
         "time": "14:30",
-        "in_min": 44,
+        "in_min": 39,
         "country": "JPY"
       },
       "hold_tp_min": 112,
@@ -368,17 +359,17 @@
     },
     {
       "symbol": "EUR_JPY",
-      "bid": 176.03,
-      "ask": 176.035,
-      "rsi": 39.7,
-      "adx": 23.5,
-      "ema_f": 176.115,
-      "ema_s": 176.201,
-      "atr": 0.1292,
-      "tp_pips": 40.3,
-      "sl_pips": 25.2,
-      "score": -0.26,
-      "tech": -0.376,
+      "bid": 176.103,
+      "ask": 176.108,
+      "rsi": 44.2,
+      "adx": 22.6,
+      "ema_f": 176.131,
+      "ema_s": 176.208,
+      "atr": 0.1361,
+      "tp_pips": 42.5,
+      "sl_pips": 26.5,
+      "score": -0.168,
+      "tech": -0.268,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
@@ -386,8 +377,8 @@
         "手法:様子見",
         "EMA下(9vs21)",
         "MACDヒスト-",
-        "RSI40",
-        "ADX24(弱)"
+        "RSI44",
+        "ADX23(弱)"
       ],
       "closes": [
         175.869,
@@ -449,7 +440,7 @@
         176.086,
         176.042,
         176.021,
-        176.021
+        176.104
       ],
       "ema_f_series": [
         175.852,
@@ -511,7 +502,7 @@
         176.199,
         176.167,
         176.138,
-        176.115
+        176.131
       ],
       "ema_s_series": [
         175.902,
@@ -573,11 +564,11 @@
         176.258,
         176.238,
         176.219,
-        176.201
+        176.208
       ],
       "blackout": false,
-      "cost_r": 0.02,
-      "cost_r_base": 0.016,
+      "cost_r": 0.019,
+      "cost_r_base": 0.015,
       "spread": {
         "pips": 0.5,
         "base": 0.5,
@@ -594,15 +585,6 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
-        "stretch": {
-          "band": "逆張り(-0.3ATR〜)",
-          "n": 701,
-          "fast_rate": 20,
-          "mfe": 0.665,
-          "avg_r": 0.062,
-          "ci_lo": -0.026,
-          "ci_hi": 0.15
-        },
         "adx": {
           "band": "弱(20〜25)",
           "n": 188,
@@ -626,7 +608,7 @@
       "next_news": {
         "title": "BOJ Press Conference",
         "time": "14:30",
-        "in_min": 44,
+        "in_min": 39,
         "country": "JPY"
       },
       "hold_tp_min": 255,
@@ -710,25 +692,25 @@
     },
     {
       "symbol": "GBP_JPY",
-      "bid": 210.645,
-      "ask": 210.654,
-      "rsi": 40.6,
-      "adx": 18.0,
-      "ema_f": 210.729,
-      "ema_s": 210.816,
-      "atr": 0.1512,
-      "tp_pips": 47.2,
-      "sl_pips": 29.5,
-      "score": -0.166,
-      "tech": -0.284,
+      "bid": 210.753,
+      "ask": 210.762,
+      "rsi": 45.9,
+      "adx": 16.9,
+      "ema_f": 210.75,
+      "ema_s": 210.826,
+      "atr": 0.16,
+      "tp_pips": 49.9,
+      "sl_pips": 31.2,
+      "score": -0.063,
+      "tech": -0.163,
       "fund": 0.5,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:様子見",
         "EMA下(9vs21)",
-        "RSI41",
-        "ADX18(弱)"
+        "RSI46",
+        "ADX17(弱)"
       ],
       "closes": [
         210.499,
@@ -790,7 +772,7 @@
         210.684,
         210.65,
         210.636,
-        210.646
+        210.753
       ],
       "ema_f_series": [
         210.436,
@@ -852,7 +834,7 @@
         210.81,
         210.778,
         210.749,
-        210.729
+        210.75
       ],
       "ema_s_series": [
         210.412,
@@ -914,11 +896,11 @@
         210.873,
         210.853,
         210.833,
-        210.816
+        210.826
       ],
       "blackout": false,
-      "cost_r": 0.031,
-      "cost_r_base": 0.031,
+      "cost_r": 0.029,
+      "cost_r_base": 0.029,
       "spread": {
         "pips": 0.9,
         "base": 0.9,
@@ -935,15 +917,6 @@
         "bars": 4,
         "bar_min": 15,
         "need_r": 1.0,
-        "stretch": {
-          "band": "逆張り(-0.3ATR〜)",
-          "n": 701,
-          "fast_rate": 20,
-          "mfe": 0.665,
-          "avg_r": 0.062,
-          "ci_lo": -0.026,
-          "ci_hi": 0.15
-        },
         "adx": {
           "band": "無風(〜20)",
           "n": 330,
@@ -967,7 +940,7 @@
       "next_news": {
         "title": "BOJ Press Conference",
         "time": "14:30",
-        "in_min": 44,
+        "in_min": 39,
         "country": "JPY"
       },
       "hold_tp_min": 330,
@@ -1062,24 +1035,25 @@
     },
     {
       "symbol": "AUD_JPY",
-      "bid": 110.748,
-      "ask": 110.755,
-      "rsi": 48.1,
-      "adx": 17.1,
-      "ema_f": 110.764,
-      "ema_s": 110.77,
-      "atr": 0.1149,
-      "tp_pips": 35.8,
-      "sl_pips": 22.4,
-      "score": 0.052,
-      "tech": -0.009,
+      "bid": 110.821,
+      "ask": 110.828,
+      "rsi": 51.8,
+      "adx": 16.5,
+      "ema_f": 110.779,
+      "ema_s": 110.777,
+      "atr": 0.1209,
+      "tp_pips": 37.7,
+      "sl_pips": 23.6,
+      "score": 0.152,
+      "tech": 0.109,
       "fund": 0.4,
       "signal": null,
       "bias": "対象外（上位足がレンジ）",
       "reasons": [
         "手法:様子見",
-        "RSI48",
-        "ADX17(弱)"
+        "MACDヒスト+",
+        "RSI52",
+        "ADX16(弱)"
       ],
       "closes": [
         110.843,
@@ -1141,7 +1115,7 @@
         110.775,
         110.757,
         110.749,
-        110.747
+        110.82
       ],
       "ema_f_series": [
         110.939,
@@ -1203,7 +1177,7 @@
         110.778,
         110.773,
         110.769,
-        110.764
+        110.779
       ],
       "ema_s_series": [
         111.03,
@@ -1265,11 +1239,11 @@
         110.776,
         110.775,
         110.772,
-        110.77
+        110.777
       ],
       "blackout": false,
-      "cost_r": 0.031,
-      "cost_r_base": 0.022,
+      "cost_r": 0.03,
+      "cost_r_base": 0.021,
       "spread": {
         "pips": 0.7,
         "base": 0.7,
@@ -1294,22 +1268,13 @@
           "avg_r": 0.037,
           "ci_lo": -0.092,
           "ci_hi": 0.166
-        },
-        "rsi": {
-          "band": "押し目/戻り(35〜50)",
-          "n": 563,
-          "fast_rate": 19,
-          "mfe": 0.667,
-          "avg_r": 0.095,
-          "ci_lo": -0.003,
-          "ci_hi": 0.194
         }
       },
       "skip_reason": null,
       "next_news": {
         "title": "BOJ Press Conference",
         "time": "14:30",
-        "in_min": 44,
+        "in_min": 39,
         "country": "JPY"
       },
       "hold_tp_min": 180,
@@ -1399,16 +1364,16 @@
       "side": "long",
       "entry": 211.099,
       "lot": 2000.0,
-      "current": 210.645,
-      "pips": -45.4,
-      "yen": -908,
+      "current": 210.753,
+      "pips": -34.6,
+      "yen": -692,
       "tp_price": 211.919,
       "sl_price": 210.644,
       "adv_level": "cut",
       "adv_label": "🛑 損切り推奨",
-      "adv_reason": "SLに接触（210.644）— 現在値は210.645まで戻しています。GMOのOCOが約定済みか確認してください",
+      "adv_reason": "SLに接触（210.644）— 現在値は210.753まで戻しています。GMOのOCOが約定済みか確認してください",
       "mfe": 211.196,
-      "profit_atr": -1.7,
+      "profit_atr": -1.3,
       "mode": "swing",
       "basis": null,
       "basis_label": null
