@@ -29,8 +29,14 @@ PARAMS = {
               "bb":(20,2.0),"adx":14,"atr":14,"th":0.35,"slm":1.0,"tsr":1.5},
     "day":   {"interval":"15min","ema_f":9,"ema_s":21,"rsi":14,"macd":(12,26,9),
               "bb":(20,2.0),"adx":14,"atr":14,"th":0.40,"slm":1.3,"tsr":1.6},
+    # judge="tech": 向きは tech（テクニカルだけの点数）で決める。
+    # スイングは テク:ファンダ=0.45:0.55 で、ファンダは通貨ごとの固定値（USD/JPY +0.5 等）なので
+    # total が常に +0.275 前後かさ上げされ、売りの -0.45 に構造上届かなかった
+    # （1年374件すべて買い。10月の実際のスイング取引も30件すべて買いで -5.0R）。
+    # tech は -1〜+1 で対称。2026-11-01 の1年検証で 前半 +0.046→+0.052R・後半 -0.148→-0.043R と
+    # 両方の半期で良くなったので採用（後半はまだマイナス＝勝てると証明されたわけではない）。
     "swing": {"interval":"1hour","ema_f":12,"ema_s":26,"rsi":14,"macd":(12,26,9),
-              "bb":(20,2.0),"adx":14,"atr":14,"th":0.45,"slm":1.8,"tsr":1.8},
+              "bb":(20,2.0),"adx":14,"atr":14,"th":0.45,"slm":1.8,"tsr":1.8,"judge":"tech"},
     # 上位足(1h/4h)で方向を決め、15分足の押し目/戻りで入る。デイとスイングの併用形。
     # 候補6種の検証で、唯一ノイズ帯を安定して超えた構造（1年781件・素の実力+0.052R）。
     # SL幅はデイの1.5倍。素の実力を保ったままスプレッド比率を4.3%→2.8%に下げられる
@@ -595,6 +601,11 @@ def _compose_score(symbol, price, ef, es, rv, hist, hist_prev, bb_mid, bb_sd, a,
             "ema_sig": ema_sig, "macd_sig": macd_sig, "bb_sig": bb_sig}
 
 
+def judge_value(r):
+    """しきい値と比べる点数。judge="tech" のモードはテクニカルだけ、それ以外は total。"""
+    return r["tech"] if P.get("judge") == "tech" else r["total"]
+
+
 def entry_side(symbol, total, rv, th, aligned=None, pullback=None):
     """そのモードのエントリー判定。ライブもバックテストもここを通す。
 
@@ -663,7 +674,7 @@ def _score_pair_uncached(symbol, ohlc):
     reasons.insert(0, "手法:"+_method)
 
     th = P["th"]
-    side = entry_side(symbol, total, rv, th)
+    side = entry_side(symbol, judge_value(r), rv, th)
     tp_pips, sl_pips = suggest_tp_sl(a)
     return {"price":price, "ef":ef, "es":es, "rsi":round(rv,1), "adx":round(adx_val,1),
             "atr":round(a,4), "tp_pips":tp_pips, "sl_pips":sl_pips,
@@ -836,9 +847,10 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                 ef, es, rv = ef_s[i], es_s[i], rsi_s[i]
                 md, bb, ax = md_s[i], bb_s[i], adx_s[i]
                 if None not in (ef, es, rv) and None not in (md, bb, ax):
-                    total = _compose_score(symbol, closes[i], ef, es, rv,
-                                           md[0], md[1], bb[0], bb[1], a, ax[0])["total"]
-                    side = entry_side(symbol, total, rv, th, aligned=aligned_s[i],
+                    _r = _compose_score(symbol, closes[i], ef, es, rv,
+                                        md[0], md[1], bb[0], bb[1], a, ax[0])
+                    total = _r["total"]
+                    side = entry_side(symbol, judge_value(_r), rv, th, aligned=aligned_s[i],
                                       pullback=pullback_override)
         if not side:
             i += 1; continue
@@ -1854,6 +1866,8 @@ def score_range(symbol=None):
        FUND_BIAS の固定値。つまり範囲は固定で、この外のしきい値は
        一度も通らない（スイングの売りが実際そうなっていた）。
        symbol を省いた時は、全通貨のうち最も外側まで届く範囲を返す。"""
+    if P.get("judge") == "tech":
+        return -1.0, 1.0                 # tech は -1〜+1 で対称（ファンダの下駄が乗らない）
     syms = [symbol] if symbol else list(SYMBOLS)
     los, his = [], []
     for sym in syms:
@@ -2177,8 +2191,10 @@ def stamp_new_entries(data):
             "ctx_src": "entry" if from_entry else "logged",
             # アプリが記録した総合判定（confluence）。エントリー時点の値。
             "conf_pct": p.get("entry_score"), "conf_mark": p.get("entry_mark"),
-            "strength": (lambda: _entry_strength(score, rsi_v, side, th))()
-                        if pmode == MODE else _strength_in_mode(pmode, score, rsi_v, side, th),
+            # 強さはそのモードが向きを決める点数で測る（スイングは tech）
+            "strength": (lambda _s: _entry_strength(_s, rsi_v, side, th)
+                         if pmode == MODE else _strength_in_mode(pmode, _s, rsi_v, side, th))(
+                tech_v if (PARAMS.get(pmode) or {}).get("judge") == "tech" and tech_v is not None else score),
             "mtf_label": mtf.get("label"),
             "mtf_aligned": mtf.get("aligned"),
             # 上位足との関係：順張り / 逆行 / レンジ
@@ -2945,7 +2961,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
             if _blk:
                 sig = None; skip_reason = _blk
         bias = pair_bias(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
-        gaps[sym] = entry_gap(sc["score"], sc.get("rsi"), (mtf or {}).get("aligned"))
+        gaps[sym] = entry_gap(sc["tech"] if P.get("judge") == "tech" else sc["score"],
+                              sc.get("rsi"), (mtf or {}).get("aligned"))
         if sig:
             fired_today.add(sym)
 

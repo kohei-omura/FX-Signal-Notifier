@@ -2976,13 +2976,17 @@ class ReachableThresholdTest(unittest.TestCase):
 class CanSignalTest(RunTestCase):
     """出せない向きを「優勢」とだけ出さないこと。
 
-    スイングは構造上、売りシグナルを出せない（スコアの下限 -0.175〜-0.230、
-    売りに必要なのは -0.45）。それを「売り優勢」とだけ表示すると、
-    絶対に出ない合図をユーザーに待たせることになる。
+    スイングは total（テク0.45＋ファンダ0.55）で判定していた頃、構造上売れなかった
+    （下限 -0.175〜-0.230、売りに必要なのは -0.45）。2026-11-01 から向きは tech で決める
+    （judge="tech"）ので売れる。ここでは、total判定に戻すと売れなくなる仕組みも固定しておく。
     """
+
+    OLD_SWING = {k: v for k, v in F.PARAMS["swing"].items() if k != "judge"}
 
     def test_score_range_is_fixed_per_mode(self):
         F.MODE = "swing"; F.P = F.PARAMS["swing"]; F.TECH_W, F.FUND_W = 0.45, 0.55
+        self.assertEqual(F.score_range("USD_JPY"), (-1.0, 1.0), "tech判定は対称")
+        F.P = self.OLD_SWING
         lo, hi = F.score_range("USD_JPY")
         self.assertAlmostEqual(lo, -0.175, places=6)
         self.assertAlmostEqual(hi, 0.725, places=6)
@@ -2991,10 +2995,12 @@ class CanSignalTest(RunTestCase):
         self.assertAlmostEqual(lo, -0.775, places=6)
         self.assertAlmostEqual(hi, 0.925, places=6)
 
-    def test_swing_cannot_sell_but_others_can(self):
+    def test_swing_can_sell_after_the_tech_fix(self):
         F.MODE = "swing"; F.P = F.PARAMS["swing"]; F.TECH_W, F.FUND_W = 0.45, 0.55
         self.assertTrue(F.can_signal(1))
-        self.assertFalse(F.can_signal(-1), "スイングで売りが出せることになっている")
+        self.assertTrue(F.can_signal(-1), "スイングがまた売れなくなっている（1年374件すべて買いだった不具合）")
+        F.P = self.OLD_SWING
+        self.assertFalse(F.can_signal(-1), "total判定だと売れない、という前提が崩れている")
         for m in ("scalp", "day"):
             F.MODE = m; F.P = F.PARAMS[m]; F.TECH_W, F.FUND_W = 0.85, 0.15
             self.assertTrue(F.can_signal(1), m)
@@ -3007,9 +3013,11 @@ class CanSignalTest(RunTestCase):
         self.assertTrue(F.can_signal(-1))
 
     def test_the_card_says_so_instead_of_just_sell_bias(self):
-        F.MODE = "swing"; F.P = F.PARAMS["swing"]; F.TECH_W, F.FUND_W = 0.45, 0.55
+        F.MODE = "swing"; F.P = self.OLD_SWING; F.TECH_W, F.FUND_W = 0.45, 0.55
         self.assertIn("買いしか出せません", F.pair_bias(-0.10, 40.0, 0))
         self.assertEqual(F.pair_bias(0.30, 60.0, 0), "買い優勢")
+        F.P = F.PARAMS["swing"]
+        self.assertEqual(F.pair_bias(-0.10, 40.0, 0), "売り優勢", "直したのに『買いしか出せません』と出ている")
         F.MODE = "day"; F.P = F.PARAMS["day"]; F.TECH_W, F.FUND_W = 0.85, 0.15
         self.assertEqual(F.pair_bias(-0.10, 40.0, 0), "売り優勢")
 
@@ -3026,7 +3034,8 @@ class CanSignalTest(RunTestCase):
         head = ("const SYMS=" + json.dumps(list(F.SYMBOLS)) + ";\n"
                 "const FUND_BIAS=" + json.dumps(F.FUND_BIAS) + ";\nlet S={mode:'day'};\n")
         cases = [{"mode": m, "th": F.PARAMS[m]["th"],
-                  **({"rule": "mtf_pullback"} if F.PARAMS[m].get("rule") else {})}
+                  **({"rule": "mtf_pullback"} if F.PARAMS[m].get("rule") else {}),
+                  **({"judge": F.PARAMS[m]["judge"]} if F.PARAMS[m].get("judge") else {})}
                  for m in F.PARAMS]
         script = (head + tfw + "\n" + src[i:end]
                   + "\nconsole.log(JSON.stringify(" + json.dumps(cases)
@@ -6038,6 +6047,32 @@ class SessionBlockTest(RunTestCase):
             self.assertEqual(js[str(h)][0], py_day, f"{h}時 デイの判定が画面とサーバーで違う")
             self.assertFalse(js[str(h)][1])
         self.assertIn('"day": {"NY(21-6)"', open(os.path.join(ROOT, "engine", "fx_signal.py"), encoding="utf-8").read())
+
+
+
+class SwingTechJudgeTest(unittest.TestCase):
+    """スイングの向きは tech で決める。サーバー・1年検証・画面が同じ点数を見ること。"""
+
+    def test_params_match(self):
+        self.assertEqual(F.PARAMS["swing"].get("judge"), "tech")
+        for m in ("day", "mtf", "scalp"):
+            self.assertIsNone(F.PARAMS[m].get("judge"), f"{m} まで変えている（検証で良くならなかった）")
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("th:0.45,slm:1.8,tsr:1.8,days:20,cap:1000,judge:'tech'}", src)
+
+    def test_a_negative_tech_sells_in_swing(self):
+        with F.use_mode("swing"):
+            self.assertEqual(F.judge_value({"tech": -0.6, "total": 0.005}), -0.6)
+            self.assertEqual(F.entry_side("USD_JPY", F.judge_value({"tech": -0.6, "total": 0.005}), 40.0, F.P["th"]), "売り")
+        with F.use_mode("day"):
+            self.assertEqual(F.judge_value({"tech": -0.6, "total": 0.005}), 0.005)
+
+    def test_every_dashboard_side_uses_the_judge(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertNotRegex(src, r"side=total>=P\.th", "画面のどこかがまだ total で向きを決めている")
+        self.assertIn("entrySide(judgeVal(P,tech,total),rv,P,_al)", src)
 
 
 if __name__ == "__main__":
