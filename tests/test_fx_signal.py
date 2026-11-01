@@ -6075,5 +6075,95 @@ class SwingTechJudgeTest(unittest.TestCase):
         self.assertIn("entrySide(judgeVal(P,tech,total),rv,P,_al)", src)
 
 
+
+class ProfitLockTest(unittest.TestCase):
+    """保有中の「利益を守る」合図。モードごとに1年検証で選んだルールで、SLを動かす価格を知らせる。"""
+
+    P = {"id": "x", "symbol": "USD_JPY", "side": "long", "entry": 150.0, "sl_pips": 20.0, "tp_pips": 32.0}
+
+    def _info(self, cur):
+        return {"symbol": "USD_JPY", "entry": 150.0, "current": cur, "pips": round((cur - 150) * 100, 1), "yen": 0}
+
+    def test_rules_per_mode(self):
+        self.assertEqual(F.EXIT_RULE, {"mtf": "advice", "day": "trail10", "swing": "be05"})
+        self.assertIsNone(F.lock_stop_r("trail10", 0.9))
+        self.assertEqual(F.lock_stop_r("trail10", 1.2), 0.7)
+        self.assertEqual(F.lock_stop_r("be05", 0.5), 0.0)
+        self.assertIsNone(F.lock_stop_r("be05", 0.4))
+
+    def test_trail_tells_the_price_and_steps_up_only(self):
+        # +1.2R(150.24)まで伸びて、今は150.20 → SLを +0.7R = 150.14 へ
+        lock, msg = F.lock_message("trail10", None, self.P, self._info(150.20), "long", "day", 150.24)
+        self.assertEqual(lock, 0.7)
+        self.assertIn("150.14", msg)
+        self.assertIn("🔒 利益を守る", msg)
+        # 少しだけ伸びた（+1.3R）→ 0.3R上がっていないので送らない
+        lock2, msg2 = F.lock_message("trail10", lock, self.P, self._info(150.25), "long", "day", 150.26)
+        self.assertIsNone(msg2); self.assertEqual(lock2, 0.7)
+        # +1.6R → +1.1R(150.22) へ。0.4R上がったので送る
+        lock3, msg3 = F.lock_message("trail10", lock, self.P, self._info(150.30), "long", "day", 150.32)
+        self.assertEqual(lock3, 1.1); self.assertIn("150.22", msg3)
+
+    def test_short_side_and_breakeven(self):
+        p = dict(self.P, side="short")
+        lock, msg = F.lock_message("be05", None, p, self._info(149.88), "short", "swing", 149.88)
+        self.assertEqual(lock, 0.0)
+        self.assertIn("150.0", msg)
+        self.assertIn("建値", msg)
+
+    def test_silent_when_price_already_fell_back(self):
+        # +0.6Rまで伸びたが、今は建値より下 → 今さら建値ストップを勧めても即決済になる
+        lock, msg = F.lock_message("be05", None, self.P, self._info(149.98), "long", "swing", 150.12)
+        self.assertIsNone(msg)
+        self.assertIsNone(lock, "送っていないのに送った扱いにすると、戻った時に二度と送らない")
+
+
+class ProfitLockRoutingTest(PositionAlertsToLineTest):
+    """check_positions を通して、day は🔒、mtf は早めの🎯/🛑だけがLINEに乗ること。"""
+
+    def test_day_lock_goes_to_line_once(self):
+        F.position_pl = lambda p, t: {"symbol": p["symbol"], "side": p["side"], "entry": 150.0,
+                                      "current": 150.22, "pips": 22.0, "yen": 220}
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "watch", "label": "🟡 様子見",
+                                                        "reason": "明確なサインなし", "mfe": 150.24}
+        data = {"positions": [{"id": "d1", "symbol": "USD_JPY", "side": "long", "entry": 150.0,
+                               "sl_pips": 20.0, "status": "open", "mode": "day"}]}
+        ticker = {"USD_JPY": {"bid": 150.22, "ask": 150.222}}
+        mail, line, adv, ev = F.check_positions(data, ticker, {"d1": {}})
+        self.assertEqual([k for k, _ in line], ["exit"])
+        self.assertEqual(adv["d1"]["lock_r"], 0.7)
+        mail, line, adv, ev = F.check_positions(data, ticker, {"d1": {"lock_r": 0.7}})
+        self.assertEqual(line, [], "同じ位置で二度送っている")
+
+    def test_mtf_early_take_goes_to_line_but_tp_touch_does_not(self):
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "take", "label": "🎯 利確推奨",
+                                                        "reason": "上位足が逆向き", "mfe": None}
+        mail, line, adv, ev = self._run({"basis": "full", "adv_level": "watch"})
+        self.assertIn("exit", [k for k, _ in line])
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "take", "label": "🎯 利確推奨",
+                                                        "reason": "TP接触", "mfe": None, "touched": True}
+        mail, line, adv, ev = self._run({"basis": "full", "adv_level": "watch"})
+        self.assertNotIn("exit", [k for k, _ in line], "OCOで済むTP接触をLINEに送っている")
+
+
+
+class ProfitLockRunTest(RunTestCase):
+    def test_main_sends_lock_to_line(self):
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        self.write(F.POSITIONS_FILE, {"positions": [
+            {"id": "d9", "symbol": "USD_JPY", "side": "long", "entry": 100.0, "lot": 1000,
+             "tp_pips": 32.0, "sl_pips": 20.0, "status": "open", "mode": "day", "auto_set": True}]})
+        # 建値はモックの現在値よりずっと下（=大きな含み益）。最高値は今の値段にしておく
+        self.addCleanup(setattr, F, "position_advice", F.__dict__["position_advice"])
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "watch", "label": "🟡 様子見",
+                                                        "reason": "明確なサインなし",
+                                                        "mfe": t[p["symbol"]]["bid"]}
+        F.main()
+        locks = [t for t in self.sent["line"] if "🔒 利益を守る" in t]
+        self.assertEqual(len(locks), 1, self.sent["line"])
+        op = [x for x in self.status()["open_positions"] if x["id"] == "d9"][0]
+        self.assertIsNotNone(op.get("lock_r"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

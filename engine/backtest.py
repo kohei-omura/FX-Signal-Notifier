@@ -266,9 +266,14 @@ def exit_holdout(mode):
                 parts.setdefault(k, []).append(v)
         out[lab] = {k: pool_summary(v) for k, v in parts.items() if v}
     a, b = out.get("first_half") or {}, out.get("second_half") or {}
-    out["passed"] = [k for k in F.EXIT_CANDIDATES
-                     if k in a and k in b and "advice" in a and "advice" in b
-                     and a[k]["avg_r"] > a["advice"]["avg_r"] and b[k]["avg_r"] > b["advice"]["avg_r"]]
+    def beats(base):
+        return [k for k in ("advice",) + tuple(F.EXIT_CANDIDATES)
+                if k != base and k in a and k in b and base in a and base in b
+                and a[k]["avg_r"] > a[base]["avg_r"] and b[k]["avg_r"] > b[base]["avg_r"]]
+    out["passed"] = [k for k in beats("advice") if k != "advice"]
+    # 使う人はOCOでTP/SLまで持つ。比べる相手はその持ち方（tp_sl）。
+    # fx_signal.EXIT_RULE はここに出たものから選ぶ。
+    out["passed_vs_oco"] = beats("tp_sl")
     return out
 
 
@@ -493,6 +498,8 @@ def main():
                       + "".join(f" {h}{x['avg_r']:+.3f}" for h, x in zip(("前半", "後半"), row[1:]) if x))
         if eh:
             print(f"      出口候補で前半・後半とも推奨決済を上回ったもの: {eh.get('passed') or 'なし'}")
+            print(f"      前半・後半ともOCOのまま(tp_sl)を上回ったもの: {eh.get('passed_vs_oco') or 'なし'}"
+                  f" ／ 使用中のルール: {F.EXIT_RULE.get(mode, 'なし')}")
         sh = r.get("session_holdout") or {}
         for k in F.SESSIONS:
             row = [((sh.get(h) or {}).get("tp_sl") or {}).get(k) for h in ("all", "first_half", "second_half")]
