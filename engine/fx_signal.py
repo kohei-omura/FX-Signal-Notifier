@@ -1371,7 +1371,9 @@ def _simulate_exit_policies(symbol, oh, closes, i, side, entry, tp, sl, sl_pips,
 #   htf_off  … 上位足の向きが建てた方向でなくなったら（レンジ化・逆転）その足の終値で降りる
 #   time16   … 16本（15分足で4時間）経っても含み益が無ければ降りる
 # SLの引き上げは「その足で届いたら、次の足から」効かせる（同じ足の中の順序は分からないため）。
-EXIT_CANDIDATES = ("be05", "be08", "trail10", "htf_off", "time16")
+#   be05_trail … be05 と trail10 を合わせる。+0.5Rで建値へ、+1.0Rからは最高値の0.5R下を追う
+#                （早い段階の戻りは建値で守り、伸びた分はトレールで確保する、先に決めた組み合わせ1案だけ）
+EXIT_CANDIDATES = ("be05", "be08", "trail10", "htf_off", "time16", "be05_trail")
 
 
 # 建てた時刻(JST)の時間帯。実際の取引の答え合わせ(review_trades.py)と同じ区切り。
@@ -1428,6 +1430,7 @@ def _simulate_exit_candidates(oh, i, side, entry, tp, sl, sl_pips, aligned_s=Non
     out = {}
     for name, kw in (("be05", {"be_at": 0.5}), ("be08", {"be_at": 0.8}),
                      ("trail10", {"trail_at": 1.0, "trail_gap": 0.5}),
+                     ("be05_trail", {"be_at": 0.5, "trail_at": 1.0, "trail_gap": 0.5}),
                      ("htf_off", {"htf_off": True}), ("time16", {"time_bars": 16})):
         r = run(**kw)
         if r is not None:
@@ -2831,6 +2834,10 @@ def lock_stop_r(rule, best_r):
         return 0.0 if best_r >= 0.5 else None
     if rule == "trail10":
         return round(best_r - 0.5, 2) if best_r >= 1.0 else None
+    if rule == "be05_trail":
+        if best_r >= 1.0:
+            return round(best_r - 0.5, 2)
+        return 0.0 if best_r >= 0.5 else None
     return None
 
 
@@ -2858,7 +2865,10 @@ def lock_message(rule, prev_lock, p, info, side, mode, mfe_price):
         return prev_lock, None
     price = round(entry + d * stop_r * risk, 3)
     what = ("建値" if stop_r == 0 else f"建値{'+' if stop_r > 0 else ''}{stop_r:.1f}R")
-    why = {"be05": "+0.5Rに届いたので、SLを建値へ。ここから戻っても負けません。",
+    why = {"be05": "+0.5Rに届いたので、SLを建値へ。ここから戻っても損は出ません（プラスマイナスゼロで終わります）。",
+           "be05_trail": ("+0.5Rに届いたので、SLを建値へ。ここから戻っても損は出ません（プラスマイナスゼロで終わります）。"
+                          if best_r < 1.0 else
+                          f"最高 +{best_r:.1f}R まで伸びました。SLを最高値から0.5R下へ上げると、戻っても +{stop_r:.1f}R が残ります。"),
            "trail10": f"最高 +{best_r:.1f}R まで伸びました。SLを最高値から0.5R下へ上げると、"
                       f"戻っても +{stop_r:.1f}R が残ります。"}[rule]
     msg = (f"🔒 利益を守る [{mode}] {info['symbol']} ({'買い' if side == 'long' else '売り'})\n"
@@ -2907,7 +2917,7 @@ def check_positions(data, ticker, prev_state=None):
                     line_msgs.append(("basis", msg))
                     pos_events.append(("basis_" + key, info["symbol"]))
         rule = EXIT_RULE.get(adv.get("mode")) if adv else None
-        if adv and rule in ("be05", "trail10"):
+        if adv and rule in ("be05", "trail10", "be05_trail"):
             new_lock, msg = lock_message(rule, prev.get("lock_r"), p, info, side,
                                          adv.get("mode"), adv.get("mfe"))
             adv["lock_r"] = new_lock

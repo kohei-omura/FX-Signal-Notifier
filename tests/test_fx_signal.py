@@ -2958,8 +2958,12 @@ class ReachableThresholdTest(unittest.TestCase):
             sorted(f"swing/{s} 買いの損切り" for s in F.SYMBOLS),
             "到達できない損切り判定が増減した")
 
-    def test_the_measured_swing_trades_are_all_buys(self):
-        """実測でも裏が取れていること（1年386件すべて買い）。
+    def test_the_measured_swing_trades_include_sells(self):
+        """実測で、スイングに売りが出ていること。
+
+        判定を total から tech に直す前は 1年386件すべて買いだった。直した後の検証
+        （2026-11-03時点 710件）では売り353・買い357。売りが0に戻ったら不具合の再発。
+        まだ直す前の検証結果しか無い間（買いだけ）は、再計算を待つ。
 
         backtest.json が無い環境では飛ばす。"""
         path = os.path.join(ROOT, "data", "backtest.json")
@@ -2970,7 +2974,8 @@ class ReachableThresholdTest(unittest.TestCase):
         side = ((sw.get("fast") or {}).get("side")) or {}
         if not side:
             self.skipTest("side の集計がまだ無い")
-        self.assertNotIn("売り", side, "売りが出た＝到達範囲が変わっている")
+        self.assertIn("売り", side, "スイングが買いしか出していない（判定が total に戻っていないか）")
+        self.assertIn("買い", side)
 
 
 class CanSignalTest(RunTestCase):
@@ -5829,6 +5834,21 @@ class ExitCandidateTest(unittest.TestCase):
     def test_exit_when_the_higher_timeframe_turns(self):
         got = self._run([(100.05, 99.95, 100.04), (100.06, 99.98, 100.02)], aligned=[1, 1, 0])
         self.assertAlmostEqual(got["htf_off"], 0.1, places=6)
+
+    def test_breakeven_then_trail_combined(self):
+        # +0.6R → 建値で守る。続けて+1.2Rまで伸びて戻る → トレールで +0.7R
+        s_ = [(100.12, 100.02, 100.10), (100.24, 100.10, 100.20), (100.20, 99.90, 99.95)]
+        got = self._run(s_)
+        self.assertAlmostEqual(got["be05_trail"], 0.7, places=6)
+        # +0.6Rで止まって戻る → 建値(0)。trail10単独だと-1のまま
+        got2 = self._run([(100.12, 100.02, 100.10), (100.05, 99.70, 99.75)])
+        self.assertEqual(got2["be05_trail"], 0.0)
+        self.assertAlmostEqual(got2["trail10"], -1.0)
+
+    def test_lock_rule_for_the_combination(self):
+        self.assertIsNone(F.lock_stop_r("be05_trail", 0.4))
+        self.assertEqual(F.lock_stop_r("be05_trail", 0.6), 0.0)
+        self.assertEqual(F.lock_stop_r("be05_trail", 1.4), 0.9)
 
     def test_time_stop(self):
         path = [(100.02, 99.97, 99.99)] * 16 + [(100.0, 99.0, 99.0)]

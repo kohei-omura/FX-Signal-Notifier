@@ -46,7 +46,7 @@ def _alt_exits(bars, buy, entry, tp, sl, risk, spr, tsr):
        SLの引き上げは届いた足の次の足から効かせる（1分の中の順序は分からないため）。"""
     out = {}
     for name, be_at, tr_at, gap in (("be05", 0.5, None, None), ("be08", 0.8, None, None),
-                                    ("trail10", None, 1.0, 0.5)):
+                                    ("trail10", None, 1.0, 0.5), ("be05_trail", 0.5, 1.0, 0.5)):
         stop = sl; best = 0.0; res = None
         for t, h, l, c in bars:
             hi, lo = h + spr, l + spr
@@ -136,7 +136,7 @@ def _summ(rows):
             "sl_after_run": sum(1 for x in done if x["result"] == "sl" and (x.get("mfe") or 0) >= 0.5),
             # 同じ取引を別の降り方にしていたら（OCOのTP/SLは同じ・途中でSLだけ動かす）
             "alt_sum_r": {k: round(sum((x.get("alt") or {}).get(k, x["r"]) for x in done), 2)
-                          for k in ("be05", "be08", "trail10")}}
+                          for k in ("be05", "be08", "trail10", "be05_trail")}}
 
 
 GROUPS = {
