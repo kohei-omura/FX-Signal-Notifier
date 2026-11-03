@@ -6105,7 +6105,7 @@ class ProfitLockTest(unittest.TestCase):
         return {"symbol": "USD_JPY", "entry": 150.0, "current": cur, "pips": round((cur - 150) * 100, 1), "yen": 0}
 
     def test_rules_per_mode(self):
-        self.assertEqual(F.EXIT_RULE, {"mtf": "advice", "day": "trail10", "swing": "be05"})
+        self.assertEqual(F.EXIT_RULE, {"mtf": "advice", "day": "trail10", "swing": "be05_trail"})
         self.assertIsNone(F.lock_stop_r("trail10", 0.9))
         self.assertEqual(F.lock_stop_r("trail10", 1.2), 0.7)
         self.assertEqual(F.lock_stop_r("be05", 0.5), 0.0)
@@ -6123,6 +6123,19 @@ class ProfitLockTest(unittest.TestCase):
         # +1.6R → +1.1R(150.22) へ。0.4R上がったので送る
         lock3, msg3 = F.lock_message("trail10", lock, self.P, self._info(150.30), "long", "day", 150.32)
         self.assertEqual(lock3, 1.1); self.assertIn("150.22", msg3)
+
+    def test_swing_combination_moves_to_breakeven_then_trails(self):
+        # +0.6R → 建値へ（プラスマイナスゼロと明記する）
+        lock, msg = F.lock_message("be05_trail", None, self.P, self._info(150.11), "long", "swing", 150.12)
+        self.assertEqual(lock, 0.0)
+        self.assertIn("プラスマイナスゼロ", msg)
+        # +1.4R(150.28)まで伸びた → +0.9R(150.18) へ。前回(建値)より0.9R上がるので送る
+        lock2, msg2 = F.lock_message("be05_trail", lock, self.P, self._info(150.26), "long", "swing", 150.28)
+        self.assertEqual(lock2, 0.9)
+        self.assertIn("150.18", msg2)
+        # 少し伸びただけ(+1.5R)なら、まだ0.3R上がっていないので送らない
+        lock3, msg3 = F.lock_message("be05_trail", lock2, self.P, self._info(150.29), "long", "swing", 150.30)
+        self.assertIsNone(msg3)
 
     def test_short_side_and_breakeven(self):
         p = dict(self.P, side="short")
