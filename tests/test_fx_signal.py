@@ -6105,7 +6105,7 @@ class ProfitLockTest(unittest.TestCase):
         return {"symbol": "USD_JPY", "entry": 150.0, "current": cur, "pips": round((cur - 150) * 100, 1), "yen": 0}
 
     def test_rules_per_mode(self):
-        self.assertEqual(F.EXIT_RULE, {"mtf": "advice", "day": "trail10", "swing": "be05_trail"})
+        self.assertEqual(F.EXIT_RULE, {"mtf": "advice", "day": "be05_trail", "swing": "be05_trail"})
         self.assertIsNone(F.lock_stop_r("trail10", 0.9))
         self.assertEqual(F.lock_stop_r("trail10", 1.2), 0.7)
         self.assertEqual(F.lock_stop_r("be05", 0.5), 0.0)
