@@ -90,13 +90,14 @@ class RunTestCase(unittest.TestCase):
         # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
         for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE", "NEAR_FILE",
-                   "QUOTE_FILE"):
+                   "QUOTE_FILE", "LINE_PENDING_FILE"):
             self.addCleanup(setattr, F, _n, getattr(F, _n))
         F.FWD_LOG_FILE = p("forward_log.json")
         F.FWD_CLOSE_FILE = p("forward_close.json")
         F.SUB_STATE_FILE = p("sub_signals.json")
         F.NEAR_FILE = p("near_miss.json")
         F.QUOTE_FILE = p("quote_hist.json")
+        F.LINE_PENDING_FILE = p("line_pending.json")
         self.addCleanup(setattr, F, "_QUOTES", None)
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
@@ -793,8 +794,12 @@ class StrategyCompareTest(RunTestCase):
         agg = pool_summary(parts)
         cost = sum(p["cost_r"] * p["n"] for p in parts) / sum(p["n"] for p in parts)
         # 無作為なら期待Rは -コスト。信頼区間がそこを含んでいれば装置は妥当。
-        self.assertLessEqual(agg["ci_lo"], -cost)
-        self.assertGreaterEqual(agg["ci_hi"], -cost)
+        # 模擬データは日付で変わるので、95%区間のままだと約5%の日に偶然外れてテストが揺れる
+        # （2026-11-04に実際に落ちた）。99%区間（95%区間の2.58/1.96倍）で見る。
+        half = (agg["ci_hi"] - agg["ci_lo"]) / 2 * (2.58 / 1.96)
+        mean = (agg["ci_hi"] + agg["ci_lo"]) / 2
+        self.assertLessEqual(mean - half, -cost)
+        self.assertGreaterEqual(mean + half, -cost)
 
     def test_noise_floor_brackets_the_control(self):
         """ノイズの範囲が、単発の対照群の結果を含むこと。
@@ -6196,6 +6201,72 @@ class ProfitLockRunTest(RunTestCase):
         self.assertEqual(len(locks), 1, self.sent["line"])
         op = [x for x in self.status()["open_positions"] if x["id"] == "d9"][0]
         self.assertIsNotNone(op.get("lock_r"))
+
+
+
+class LinePendingTest(RunTestCase):
+    """LINEに送れなかった🔒・根拠の変化は控えておき、次の回に送り直すこと。"""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("position_advice", "position_pl", "mtf_view", "score_pair"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        self.addCleanup(setattr, F, "LINE_ENABLED", F.LINE_ENABLED)
+        self.real_quota = F.check_line_quota
+        self.addCleanup(setattr, F, "check_line_quota", F.check_line_quota)
+        F.check_line_quota = lambda token=None: None
+        os.environ["LINE_CHANNEL_ACCESS_TOKEN"] = "x"
+        self.addCleanup(os.environ.pop, "LINE_CHANNEL_ACCESS_TOKEN", None)
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        self.write(F.POSITIONS_FILE, {"positions": [
+            {"id": "s1", "symbol": "USD_JPY", "side": "long", "entry": 100.0, "lot": 1000,
+             "tp_pips": 36.0, "sl_pips": 20.0, "status": "open", "mode": "swing", "auto_set": True}]})
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "watch", "label": "🟡 様子見",
+                                                        "reason": "明確なサインなし",
+                                                        "mfe": t[p["symbol"]]["bid"]}
+
+    def test_failed_send_is_kept_and_resent(self):
+        sent = []
+        def send(text):
+            sent.append(text); return len(sent) > 1          # 1回目は拒否(429)、2回目から成功
+        F.notify_line = send
+        F.main()
+        self.assertEqual(len(sent), 1)
+        self.assertIn("🔒 利益を守る", sent[0])
+        kept = F.load_line_pending()
+        self.assertEqual(len(kept), 1, "送れなかった🔒を控えていない")
+        # 次の回：状態は進んでいるので新しい🔒は出ないが、控えを送り直す
+        self.reset_caches()
+        F.main()
+        self.assertEqual(len(sent), 2)
+        self.assertIn("再送", sent[1])
+        self.assertIn("🔒 利益を守る", sent[1])
+        self.assertEqual(F.load_line_pending(), [], "送れたのに控えが残っている")
+        # さらに次の回：もう何も送らない
+        self.reset_caches()
+        F.main()
+        self.assertEqual(len(sent), 2)
+
+    def test_old_items_are_dropped(self):
+        old = int(datetime.datetime.now(F.JST).timestamp()) - (F.LINE_PENDING_TTL_MIN + 5) * 60
+        F.save_line_pending([{"text": "古い🔒", "at": old}])
+        self.assertEqual(F.load_line_pending(), [])
+
+    def test_quota_warning(self):
+        class R:
+            def __init__(self, j): self._j = j
+            def json(self): return self._j
+        real = F.requests.get
+        self.addCleanup(setattr, F.requests, "get", real)
+        F.requests.get = lambda url, **k: R({"type": "limited", "value": 200} if url.endswith("/quota")
+                                            else {"totalUsage": 170})
+        self.real_quota("tok")
+        self.assertTrue([w for w in F._WARNINGS if w.get("tag") == "line-quota"])
+        F._WARNINGS.clear()
+        F.requests.get = lambda url, **k: R({"type": "limited", "value": 200} if url.endswith("/quota")
+                                            else {"totalUsage": 50})
+        self.real_quota("tok")
+        self.assertFalse([w for w in F._WARNINGS if w.get("tag") == "line-quota"])
 
 
 if __name__ == "__main__":

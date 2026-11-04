@@ -3264,6 +3264,59 @@ def mail_subject(sig_events, pos_events, level_count):
     return f"【FX/{MODE}】{body}"
 
 
+# ===== LINEに送れなかった大事な通知の再送 =====
+# 2026-10-31 04:25 から、LINEの月の上限(200通)で送信が拒否されていた(HTTP 429)。
+# 「通知済み」の状態(🔒の位置・根拠の状態)だけが先に進むため、拒否された🔒や根拠の変化は
+# 二度と送られず消えていた。送れなかった時は控えておき、次の回で送り直す。
+# 対象は「利益を守る」と「根拠の変化」だけ（古くなるとかえって誤解を招くので3時間で捨てる）。
+# 新規エントリーの合図は鮮度が命なので、ここでは扱わない。
+LINE_PENDING_FILE = data_path("line_pending.json")
+LINE_PENDING_TTL_MIN = 180
+LINE_QUOTA_WARN = 0.8        # 月の上限の何割を超えたら画面に警告するか
+
+
+def load_line_pending(now_ts=None):
+    now_ts = now_ts if now_ts is not None else int(datetime.datetime.now(JST).timestamp())
+    try:
+        items = (read_json(LINE_PENDING_FILE) or {}).get("items") or []
+    except Exception:
+        return []
+    return [x for x in items if isinstance(x, dict) and x.get("text")
+            and now_ts - int(x.get("at") or 0) <= LINE_PENDING_TTL_MIN * 60]
+
+
+def save_line_pending(items):
+    if not items:
+        if os.path.exists(LINE_PENDING_FILE):
+            try:
+                os.remove(LINE_PENDING_FILE)
+            except OSError:
+                pass
+        return
+    write_json(LINE_PENDING_FILE, {"items": items})
+
+
+def check_line_quota(token=None):
+    """今月の送信数が上限に近づいたら、画面に警告を出す。取得に失敗しても通知には影響しない。"""
+    token = token or os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+    if not token:
+        return None
+    try:
+        h = {"Authorization": f"Bearer {token}"}
+        q = requests.get("https://api.line.me/v2/bot/message/quota", headers=h, timeout=10).json()
+        u = requests.get("https://api.line.me/v2/bot/message/quota/consumption", headers=h, timeout=10).json()
+        limit, used = q.get("value"), u.get("totalUsage")
+        if q.get("type") != "limited" or not limit or used is None:
+            return None
+        if used >= limit * LINE_QUOTA_WARN:
+            warn(f"LINEの今月の送信数が上限に近づいています（{used}/{limit}通）。"
+                 f"上限に達すると、エントリーも利益を守る通知も届かなくなります",
+                 tag="line-quota")
+        return used, limit
+    except Exception:
+        return None
+
+
 def notify_line(text):
     """LINEへ送る。失敗は必ず warn() を通す。
 
@@ -3401,6 +3454,15 @@ def main():
 
     if not market_open:
         print(f"[INFO] {now_str} 市場クローズ（エントリー判定スキップ）")
+    # 大事な通知（🔒・根拠の変化）のうち今回LINEに乗せるもの。送れなかった時の控えにする。
+    important = ([t for k, t in m2_line if (k == "basis" and NOTIFY_BASIS_TO_LINE)
+                  or (k == "exit" and NOTIFY_EXIT_TO_LINE)] if LINE_ENABLED else [])
+    pending = load_line_pending() if LINE_ENABLED else []
+    if pending:
+        have = set(line_parts)
+        resend = [("（再送・前回はLINEに届きませんでした）\n" + x["text"]) for x in pending
+                  if x["text"] not in have]
+        line_parts = list(resend) + list(line_parts)
     if not (line_parts or mail_parts):
         print(f"[INFO] {now_str} 通知なし（mode={MODE}）。"); return
     subject = mail_subject(sig_events, pos_events, len(m1))
@@ -3409,7 +3471,16 @@ def main():
     tail = "\n\n※スコアは目安です。最適値の保証ではなく自己責任で。"
     if line_parts:
         print("[LINE]\n" + "\n\n".join(line_parts))
-        notify_line(head + "\n\n".join(line_parts) + tail)
+        sent = notify_line(head + "\n\n".join(line_parts) + tail)
+        if sent:
+            save_line_pending([])
+            check_line_quota()
+        elif LINE_ENABLED and os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"):
+            now_ts = int(datetime.datetime.now(JST).timestamp())
+            keep = {x["text"]: x for x in pending}
+            for t in important:
+                keep.setdefault(t, {"text": t, "at": now_ts})
+            save_line_pending(list(keep.values()))
     if mail_parts:
         notify_mail(subject, head + "\n\n".join(mail_parts) + tail)
     # 送信で出た警告を画面へ回す（送れていないことに気づけるように）
