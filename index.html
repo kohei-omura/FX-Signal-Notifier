@@ -558,6 +558,7 @@ footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(-
     <span>レバ</span><input id="r_lev" class="inp" inputmode="numeric" style="width:48px;padding:6px 8px" onchange="setRisk()">倍
     <span style="opacity:.6">→ 必要証拠金は価格から自動</span>
   </div>
+  <div id="poolbar"></div>
   <div class="dcnt" id="dcnt" onclick="toggleCounter()">
     <div class="dcnt-h"><span id="dcnt-mode">本日</span>のデータ<span class="dcnt-tap">タップで切替</span></div>
     <div class="dcnt-g">
@@ -2057,8 +2058,9 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   if(p.sl_pips){const L=recLot(p.sl_pips,p.bid);
     if(L){
       if(L.units>=1000){const reason=L.bind==='margin'?'証拠金上限':'リスク上限';
-        lotBox=`<div class="entry"><div class="er">💴 推奨数量 <b>${L.units.toLocaleString()}通貨</b>（${reason}基準 ／ 必要証拠金¥${Math.round(L.marginPer1000)}/千通貨 ／ リスク¥${Math.round(L.riskYen)}=資金${RISK.risk}% ／ SL ${fmt(p.sl_pips)}p）</div></div>`;
-      }else{const why=L.marginUnits<1000?`証拠金不足（1,000通貨に¥${Math.round(L.marginPer1000)}必要・資金¥${Math.round(RISK.cap)}）`:`リスク過大（最小1,000通貨で実リスク¥${Math.round(L.minRisk)}=資金${L.minPct.toFixed(1)}%）`;
+        lotBox=`<div class="entry"><div class="er">💴 推奨数量 <b>${L.units.toLocaleString()}通貨</b> ／ 最大 <b style="color:var(--gold)">${L.maxUnits.toLocaleString()}通貨</b>（${reason==='証拠金上限'?'証拠金の空き':reason}基準 ／ 必要証拠金¥${Math.round(L.marginPer1000)}/千通貨 ／ リスク¥${Math.round(L.riskYen)}=資金${RISK.risk}% ／ SL ${fmt(p.sl_pips)}p）`
+          +`<br><span style="font-size:11px;opacity:.8">最大＝共通資金の空き¥${Math.round(Math.max(0,L.pool.free)).toLocaleString()}いっぱい（リスク¥${Math.round(L.maxRiskYen).toLocaleString()}=資金${L.maxRiskPct.toFixed(1)}%・ロスカットに近づくため上限の目安）</span></div></div>`;
+      }else{const why=L.marginUnits<1000?`証拠金の空き不足（1,000通貨に¥${Math.round(L.marginPer1000)}必要・空き¥${Math.round(Math.max(0,L.pool.free))}／Carry Navi使用¥${Math.round(L.pool.mCa)}）`:`リスク過大（最小1,000通貨で実リスク¥${Math.round(L.minRisk)}=資金${L.minPct.toFixed(1)}%）`;
         lotBox=`<div class="entry down"><div class="er">💴 推奨: <b>見送り</b> — ${why}</div></div>`;}
     }}
   // 機能C/D/B 表示行
@@ -2564,6 +2566,7 @@ function render(){
   renderModeWarn();
   renderStale();
   try{renderRiskBar();}catch(e){}
+  try{renderPoolBar();}catch(e){}
   $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
   renderViewToggle();
@@ -3277,17 +3280,25 @@ const JS_PARAMS={
 function holdTxt(min){if(min==null)return'—';if(min<120)return'約'+min+'分';const h=min/60;if(h<48)return'約'+(h>=10?Math.round(h):Math.round(h*10)/10)+'時間';return'約'+Math.round(h/24*10)/10+'日';}
 // リスク基準の数量計算（JPYペア: 1pip=0.01円/通貨）
 let RISK={cap:10000,risk:1,lev:25,riskCap:5};   // riskCap=合計リスクの上限(資金比%)
-function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk,lev:+(o.lev||25),riskCap:+(o.riskCap||5)};}catch(e){}}
+function loadRisk(){try{const o=JSON.parse(localStorage.getItem('fxnavi_risk'));if(o&&o.cap)RISK={cap:+o.cap,risk:+o.risk,lev:+(o.lev||25),riskCap:+(o.riskCap||5),eq_at:+(o.eq_at||0),eq_by:o.eq_by||'fx'};}catch(e){}}
 function setRisk(){const cap=Math.max(0,parseFloat(($('#r_cap')||{}).value)||0),risk=Math.max(0,parseFloat(($('#r_risk')||{}).value)||0),lev=Math.max(1,parseFloat(($('#r_lev')||{}).value)||25);
   // riskCap(合計リスクの上限)は画面に入力欄が無い。ここで作り直すと黙って消え、
   // 保存されるので次回以降も既定値に戻ったままになる。持ち越す。
-  RISK={cap,risk,lev,riskCap:(RISK&&RISK.riskCap!=null?RISK.riskCap:5)};try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}render();}
+  // 資金・レバはCarry Naviと共通（1つの財布）。変えた時だけ時刻を付けて data/account.json に公開する
+  const eqChanged=!RISK||cap!==RISK.cap||lev!==RISK.lev;
+  RISK={cap,risk,lev,riskCap:(RISK&&RISK.riskCap!=null?RISK.riskCap:5),
+    eq_at:eqChanged?Date.now():(RISK.eq_at||0),eq_by:eqChanged?'fx':(RISK.eq_by||'fx')};
+  try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}
+  if(eqChanged)publishAccount();
+  render();}
 // 必要証拠金(1,000通貨)=価格×1000÷レバ。推奨=リスク上限と証拠金上限の小さい方・1,000通貨刻み
 function recLot(slPips,price){if(!slPips||slPips<=0||!RISK.cap||!price)return null;
   const riskYen=RISK.cap*RISK.risk/100,riskUnits=riskYen/(slPips*PS_);
-  const marginPer1000=price*1000/(RISK.lev||25),maxLots=marginPer1000>0?Math.floor(RISK.cap/marginPer1000):Infinity,marginUnits=maxLots*1000;
+  // 証拠金はCarry Naviと共通。両アプリの保有が使っている分を差し引いた「空き」までしか持てない
+  const PL=pool(),marginPer1000=price*1000/(RISK.lev||25),maxLots=marginPer1000>0?Math.floor(Math.max(0,PL.free)/marginPer1000):Infinity,marginUnits=maxLots*1000;
   const units=Math.floor(Math.min(riskUnits,marginUnits)/1000)*1000,minRisk=1000*slPips*PS_;
-  return{units,riskUnits,marginUnits,marginPer1000,riskYen,minRisk,minPct:RISK.cap?minRisk/RISK.cap*100:0,bind:riskUnits<=marginUnits?'risk':'margin'};}
+  return{units,riskUnits,marginUnits,maxUnits:marginUnits,pool:PL,marginPer1000,riskYen,minRisk,minPct:RISK.cap?minRisk/RISK.cap*100:0,bind:riskUnits<=marginUnits?'risk':'margin',
+    maxRiskYen:marginUnits*slPips*PS_,maxRiskPct:RISK.cap?marginUnits*slPips*PS_/RISK.cap*100:0};}
 const cl=(x,lo=-1,hi=1)=>Math.max(lo,Math.min(hi,x)),r3=x=>x==null?null:Math.round(x*1000)/1000,r4=x=>x==null?null:Math.round(x*10000)/10000;
 function emaSeries(v,p){if(v.length<p)return Array(v.length).fill(null);const k=2/(p+1),o=Array(v.length).fill(null);let e=v.slice(0,p).reduce((a,b)=>a+b,0)/p;o[p-1]=e;for(let i=p;i<v.length;i++){e=v[i]*k+e*(1-k);o[i]=e;}return o;}
 function ema(v,p){const s=emaSeries(v,p);return s.length?s[s.length-1]:null;}
@@ -3897,6 +3908,66 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
 loadRisk();{const _c=$('#r_cap');if(_c)_c.value=RISK.cap;const _r=$('#r_risk');if(_r)_r.value=RISK.risk;const _m=$('#r_lev');if(_m)_m.value=RISK.lev;}
+/* ===== 共通資金（Carry Naviと1つの財布）=====
+   資金・レバは両アプリ共通。新しく入れた方を採用する（Carry: carry_positions.json / FX: data/account.json）。
+   空き＝資金＋含み損益(両アプリ)−必要証拠金(両アプリ)。推奨・最大数量はこの空きの範囲で出す。 */
+var CARRY_POS_SRC=['../Carry-Navi/carry_positions.json','https://raw.githubusercontent.com/kohei-omura/Carry-Navi/main/carry_positions.json'];
+var CARRYPOS=null;
+function loadCarryPos(){
+  var i=0;
+  (function next(){
+    if(i>=CARRY_POS_SRC.length)return;
+    var u=CARRY_POS_SRC[i++];
+    fetch(u+'?t='+Date.now(),{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();})
+      .then(function(j){if(!j||!Array.isArray(j.positions))return next();CARRYPOS=j;
+        // Carry側で入れた資金の方が新しければ採用
+        if(+j.equity>0&&(+j.equity_at||0)>(RISK.eq_at||0)){
+          RISK.cap=+j.equity;if(+j.lev>0)RISK.lev=+j.lev;RISK.eq_at=+j.equity_at;RISK.eq_by='carry';
+          try{localStorage.setItem('fxnavi_risk',JSON.stringify(RISK));}catch(e){}
+          var c=document.getElementById('r_cap'),m=document.getElementById('r_lev');
+          if(c&&document.activeElement!==c)c.value=RISK.cap;if(m&&document.activeElement!==m)m.value=RISK.lev;
+        }
+        try{if(S)render();}catch(e){}})
+      .catch(next);
+  })();
+}
+function publishAccount(){
+  try{var c=cfg();if(!c.token||!c.owner||!c.repo)return;
+    ghPutFile(c,'data/account.json',{equity:RISK.cap,lev:RISK.lev,equity_at:RISK.eq_at,equity_by:'fx',
+      updated_at:new Date(Date.now()+9*3600e3).toISOString().slice(0,16).replace('T',' ')+' JST'},'account: 共通資金を更新 [skip ci]')
+      .catch(function(e){toast('共通資金の保存に失敗: '+(e.message||e));});
+  }catch(e){}
+}
+function carryPx(sym){var p=CARRY&&(CARRY.pairs||[]).find(function(x){return x.symbol===sym;});if(!p)return null;
+  return{px:(p.bid!=null?p.bid:p.price),q:(p.qjpy||1)};}
+function pool(){
+  var eq=+RISK.cap||0,lev=+RISK.lev||25,mFx=0,mCa=0,plFx=0,plCa=0,nFx=0,nCa=0;
+  try{computeOpen().forEach(function(p){var px=p.current!=null?p.current:p.entry;if(!px||!p.lot)return;nFx++;
+    mFx+=p.lot*px/lev;if(p.yen!=null)plFx+=p.yen;});}catch(e){}
+  ((CARRYPOS&&CARRYPOS.positions)||[]).forEach(function(q){var u=(+q.lot||0)*10000,c=carryPx(q.sym),px=c?c.px:+q.entry,qq=c?c.q:1;
+    if(!u||!px)return;nCa++;mCa+=u*px*qq/lev;plCa+=(px-q.entry)*u*qq;});
+  var used=mFx+mCa;
+  return{eq:eq,lev:lev,mFx:mFx,mCa:mCa,plFx:plFx,plCa:plCa,used:used,free:eq+plFx+plCa-used,nFx:nFx,nCa:nCa,
+    rate:used>0?(eq+plFx+plCa)/used*100:null};
+}
+function renderPoolBar(){
+  var el=document.getElementById('poolbar');if(!el)return;
+  var P=pool();if(!P.eq){el.innerHTML='';return;}
+  var w=function(v){return Math.max(0,Math.min(100,v/P.eq*100));};
+  var by=RISK.eq_at?('（'+(RISK.eq_by==='carry'?'Carry Navi':'FX Navi')+'で '+new Date(RISK.eq_at+9*3600e3).toISOString().slice(5,16).replace('T',' ')+' に設定）'):'';
+  var mism=CARRYPOS&&+CARRYPOS.equity>0&&+CARRYPOS.equity!==+RISK.cap;
+  el.innerHTML='<div style="margin:0 0 10px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;font-size:12.5px">'
+    +'👛 共通資金（Carry Naviと1つの財布）¥'+Math.round(P.eq).toLocaleString()+' ／ 空き <b class="'+(P.free>0?'up':'down')+'">¥'+Math.round(Math.max(0,P.free)).toLocaleString()+'</b>'
+    +'<div style="margin-top:5px;height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden;position:relative">'
+    +'<div style="position:absolute;left:0;top:0;bottom:0;width:'+w(P.mFx)+'%;background:var(--up)"></div>'
+    +'<div style="position:absolute;left:'+w(P.mFx)+'%;top:0;bottom:0;width:'+w(P.mCa)+'%;background:var(--gold)"></div></div>'
+    +'<div style="margin-top:4px;font-size:11px;color:var(--mut)">FX使用 ¥'+Math.round(P.mFx).toLocaleString()+'（'+P.nFx+'件）・Carry使用 ¥'+Math.round(P.mCa).toLocaleString()+'（'+P.nCa+'件）'
+    +(P.rate!=null?'・維持率 '+Math.round(P.rate)+'%':'')+' '+by+'</div>'
+    +(mism?'<div style="margin-top:4px;font-size:11.5px" class="down">⚠ Carry Naviの資金は ¥'+Math.round(CARRYPOS.equity).toLocaleString()+' です。どちらかに揃えてください（新しく入れた方が反映されます）</div>':'')
+    +(CARRYPOS?'':'<div style="margin-top:4px;font-size:11px;color:var(--mut)">Carry Naviの保有はまだ読めていません（Carry側でGitHub保存を設定すると合算されます）</div>')
+    +'</div>';
+}
+
 /* ===== Carry Navi 連携（姉妹アプリ・金利差スイング）=====
    同じ GitHub Pages にある carry_status.json を読み、ランキング上位と円の強さを小さく表示するだけ。
    FXの判定・通知には一切影響しない。読めなければ何も出さない。 */
@@ -3936,7 +4007,7 @@ function renderCarryLink(){
       '<a class="hbtn" style="display:block;text-align:center;margin-top:10px;padding:9px;text-decoration:none" href="'+CARRY_APP+'" target="_blank" rel="noopener">Carry Navi を開く ↗</a></div>';
   }catch(e){el.innerHTML='';}
 }
-loadCarry();setInterval(loadCarry,300000);
+loadCarry();setInterval(loadCarry,300000);loadCarryPos();setInterval(loadCarryPos,120000);
 load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);setInterval(()=>refreshStats(),1800000);}
 if('serviceWorker'in navigator){
   let _refreshing=false;
