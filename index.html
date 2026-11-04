@@ -571,6 +571,7 @@ footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(-
   <div id="markevid"></div>
   <div id="subsig"></div>
   <div class="grid" id="pairs"><div class="empty">読み込み中…</div></div>
+  <div id="carrylink"></div>
 
   <h2>保有ポジション（利確ナビ）<span class="sp"></span>
     <button class="hbtn" onclick="togglePanel('addPanel')">＋ 追加</button>
@@ -3896,6 +3897,46 @@ async function applyLive(){if(!LIVE_PRICE_URL)return;try{
   $('#live').innerHTML='<span class="badge open">● LIVE '+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false})+'</span>';
   }catch(e){}}
 loadRisk();{const _c=$('#r_cap');if(_c)_c.value=RISK.cap;const _r=$('#r_risk');if(_r)_r.value=RISK.risk;const _m=$('#r_lev');if(_m)_m.value=RISK.lev;}
+/* ===== Carry Navi 連携（姉妹アプリ・金利差スイング）=====
+   同じ GitHub Pages にある carry_status.json を読み、ランキング上位と円の強さを小さく表示するだけ。
+   FXの判定・通知には一切影響しない。読めなければ何も出さない。 */
+var CARRY_APP='https://kohei-omura.github.io/Carry-Navi/';
+var CARRY_SRC=['../Carry-Navi/carry_status.json','https://raw.githubusercontent.com/kohei-omura/Carry-Navi/main/carry_status.json'];
+var CARRY=null;
+function loadCarry(){
+  var i=0;
+  (function next(){
+    if(i>=CARRY_SRC.length)return;
+    var u=CARRY_SRC[i++];
+    fetch(u+'?t='+Date.now(),{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json();})
+      .then(function(j){if(j&&Array.isArray(j.ranking)){CARRY=j;renderCarryLink();}else next();})
+      .catch(next);
+  })();
+}
+function renderCarryLink(){
+  var el=document.getElementById('carrylink');if(!el)return;
+  try{
+    if(!CARRY){el.innerHTML='';return;}
+    var vm={buy:['var(--up)','買い 順張り'],soft:['var(--gold)','買い寄り'],wait:['var(--mut)','様子見'],none:['var(--dim)','対象外']};
+    var top=(CARRY.ranking||[]).slice(0,3).map(function(r,i){var v=vm[r.vcls]||vm.none;
+      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:12.5px"><span>'+(i+1)+'. '+r.symbol.replace('_','/')+
+        ' <span style="color:var(--mut);font-size:11px">金利差'+(r.diff>=0?'+':'')+Number(r.diff).toFixed(2)+'% ・ C/R '+Number(r.ctr).toFixed(2)+'</span></span>'+
+        '<b style="color:'+v[0]+';font-size:11.5px;white-space:nowrap">'+v[1]+'</b></div>';}).join('');
+    var buys=(CARRY.pairs||[]).filter(function(p){return p.vcls==='buy';}).map(function(p){return p.symbol.replace('_JPY','').replace('_','/');});
+    var y=(CARRY.link&&CARRY.link.yen)||null;
+    var yc=!y||y.score==null?'var(--mut)':(y.level==='warn'||y.level==='soft')?'var(--down)':y.level==='tail'?'var(--up)':'var(--mut)';
+    var cpos=0;try{cpos=(JSON.parse(localStorage.getItem('carry_positions')||'[]')||[]).length;}catch(e){}
+    el.innerHTML='<div class="panel" style="margin-top:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:13.5px">💱 Carry Navi（金利差・スイング）</b>'+
+      '<span style="font-size:10.5px;color:var(--mut)">'+String(CARRY.generated_at||'').slice(5,16)+'</span></div>'+
+      (y&&y.score!=null?'<div style="margin-top:8px;font-size:12px">円の強さ <b style="color:'+yc+'">'+(y.score>=0?'+':'')+Number(y.score).toFixed(2)+' '+(y.label||'')+'</b>'+
+        '<span style="color:var(--mut);font-size:11px">（+＝円高。円クロスの買いは逆風）</span></div>':'')+
+      '<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">'+top+'</div>'+
+      '<div style="margin-top:6px;font-size:11.5px;color:var(--mut)">買い順張り: '+(buys.length?buys.join('・'):'なし')+(cpos?' ・ Carry保有 '+cpos+'件（この端末）':'')+'</div>'+
+      '<a class="hbtn" style="display:block;text-align:center;margin-top:10px;padding:9px;text-decoration:none" href="'+CARRY_APP+'" target="_blank" rel="noopener">Carry Navi を開く ↗</a></div>';
+  }catch(e){el.innerHTML='';}
+}
+loadCarry();setInterval(loadCarry,300000);
 load();setInterval(load,30000);if(LIVE_PRICE_URL){setInterval(applyLive,9000);setInterval(liveSignals,45000);setInterval(()=>refreshStats(),1800000);}
 if('serviceWorker'in navigator){
   let _refreshing=false;

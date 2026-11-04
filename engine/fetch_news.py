@@ -15,7 +15,9 @@ FEED = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 # 採用するインパクト。まずは High のみ（誤発動が少ない）。Medium も避けたいなら {"High","Medium"} に。
 IMPACTS = {"High"}
 # 監視する国/通貨。クロス円なので JPY は常に対象。AUD は最大輸出先の中国(CNY)指標も効く。
-WATCH = {"USD", "EUR", "GBP", "AUD", "JPY", "CNY"}
+# NZD/CAD は姉妹アプリ Carry-Navi（NZD/JPY・CAD/JPY・AUD/NZD）が同じファイルを読むために取得する。
+# FX側の指標回避は PAIR_COUNTRIES でペア別に絞っているので、ここに国を足してもFXの判定は変わらない。
+WATCH = {"USD", "EUR", "GBP", "AUD", "JPY", "CNY", "NZD", "CAD"}
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "data", "news_blackout.json")
 
