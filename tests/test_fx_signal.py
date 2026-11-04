@@ -6293,5 +6293,19 @@ class AppPolishTest(unittest.TestCase):
         self.assertEqual(self.src.count("data-sig=\"${p.signal"), 1)
 
 
+
+class ToolsPolishTest(unittest.TestCase):
+    """ツール画面にも、ダッシュボードと同じ仕上げ層があること。"""
+
+    def test_polish_layer_present(self):
+        with open(os.path.join(ROOT, "tools.html"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("仕上げ層")
+        css = src[i:src.index("</style>", i)]
+        for sel in ("a.back", ".sec::before", ".kpi", ".bgo", "body::before", "prefers-reduced-motion"):
+            self.assertIn(sel, css)
+        self.assertIn("--gold:#d4b077", css, "ダッシュボードと色がずれている")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

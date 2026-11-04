@@ -62,6 +62,55 @@ table.pft td.pfall{font-weight:700}
 .pfgood{color:var(--up);box-shadow:inset 0 0 0 1px rgba(74,222,155,.55);background:rgba(74,222,155,.08)}
 .pfkey{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:4px}
 .mtrack>.z{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)}
+
+/* ══════════ 仕上げ層（見た目だけ。ダッシュボードと同じ質感にそろえる）══════════ */
+:root{--bg:#080b11;--card:#10141d;--card2:#141925;--line:#222b3b;--line2:#2d384c;--ink:#eef1f7;--mut:#8691a6;--gold:#d4b077;--up:#4ee0a2;--down:#ff7b8c;
+  --shadow:0 1px 0 rgba(255,255,255,.045) inset,0 14px 34px -16px rgba(0,0,0,.75)}
+body{background:var(--bg);text-rendering:optimizeLegibility;-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(720px 420px at 88% -6%,rgba(212,176,119,.13),transparent 62%),
+             radial-gradient(620px 460px at -12% 8%,rgba(78,224,162,.075),transparent 58%),
+             linear-gradient(180deg,#0a0e16 0%,#080b11 42%,#07090e 100%)}
+::selection{background:rgba(212,176,119,.3)}
+.kpi .v,td,th,.mnet,.mbar>.v{font-variant-numeric:tabular-nums}
+a.back{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1px solid var(--line);border-radius:999px;
+  background:rgba(255,255,255,.035);color:var(--mut);transition:transform .12s ease,border-color .18s ease}
+a.back:active{transform:scale(.97)}
+h1{font-size:27px;letter-spacing:.05em;margin:14px 0 3px;background:linear-gradient(180deg,#fff,#d9dfec 55%,#aab4c8);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{margin-bottom:16px;letter-spacing:.34em}
+.sub::after{content:"";display:block;margin-top:12px;height:1px;background:linear-gradient(90deg,#a8864a,var(--line) 30%,transparent)}
+#todaybar,#syncbar{border-radius:14px!important;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015))!important;
+  border:1px solid var(--line)!important;box-shadow:var(--shadow)}
+#syncbar{border-color:rgba(212,176,119,.55)!important}
+.sec{margin:24px 2px 11px;font-size:15px;letter-spacing:.07em;padding:4px 0}
+.sec::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,#e2c28a,#a8864a)}
+.sec .secarrow{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:999px;
+  border:1px solid var(--line);background:rgba(255,255,255,.03);font-size:10px}
+.card{border-radius:16px;padding:16px;box-shadow:var(--shadow);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 46%),linear-gradient(180deg,var(--card),var(--card2))}
+label{letter-spacing:.04em}
+input,select,textarea{border-radius:11px;background:#0a0e15;transition:border-color .18s ease,box-shadow .18s ease}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,176,119,.16)}
+button{border-radius:11px;transition:transform .12s ease,opacity .18s ease,border-color .18s ease}
+button:active{transform:scale(.97)}
+.bgo{background:linear-gradient(180deg,#e2c28a,#c49f62);box-shadow:0 6px 16px -8px rgba(212,176,119,.6)}
+.bsub{background:rgba(255,255,255,.04);border:1px solid var(--line)}
+.kpi{border-radius:13px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.012));border:1px solid var(--line)}
+.kpi .v{font-size:clamp(15px,4.5vw,19px);white-space:nowrap}
+table{border-collapse:separate;border-spacing:0}
+th{font-size:10.5px;letter-spacing:.06em;text-transform:none;padding:8px 5px}
+td{padding:8px 5px}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+.note{line-height:1.8}
+svg.eq{border-radius:13px;background:linear-gradient(180deg,#0d121b,#0a0e15);border:1px solid var(--line)}
+.mrow{border-top-color:var(--line)}
+.mtrack{height:9px;border-radius:5px;background:#0a0e15}
+.mtrack>i{border-radius:3px}
+.tr{border-radius:10px}
+.good{text-shadow:0 0 18px rgba(78,224,162,.18)}
+.warn,.bad{text-shadow:0 0 18px rgba(255,123,140,.15)}
+@media (prefers-reduced-motion:reduce){button,a.back{transition:none}}
 </style></head>
 <body><div class="wrap">
 <a class="back" href="index.html">← ダッシュボードへ</a>
