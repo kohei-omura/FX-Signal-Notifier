@@ -45,6 +45,11 @@ tests/      オフラインのテスト一式（ネットワーク不要／GMO A
 | `worker.js` | （任意）リアルタイム価格用のCloudflare Worker |
 | `requirements.txt` | 依存（requests） |
 
+### 姉妹アプリ Carry Navi との連携
+- 画面の「ペア別シグナル」の下に **Carry Navi（金利差・スイング）** のカード（C/R上位3つ・円の強さ・行き来ボタン）を表示。FXの判定・通知には影響しません。
+- `engine/fetch_news.py` は NZD/CAD の指標も取得します（Carry Navi が読むため）。FXの指標回避はペア別（`PAIR_COUNTRIES`）なので判定は変わりません。
+- Carry Navi は `data/status.json`（上位足・保有）と `data/news_blackout.json` を読み、円の強さ・合計リスク・指標前後の通知保留に使います。ファイル名や項目（`pairs[].mtf`・`open_positions`）を変える時は Carry 側も確認してください。
+
 ---
 
 ## セットアップ
