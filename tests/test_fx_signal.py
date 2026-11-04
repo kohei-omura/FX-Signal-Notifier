@@ -90,7 +90,7 @@ class RunTestCase(unittest.TestCase):
         # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
         for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE", "NEAR_FILE",
-                   "QUOTE_FILE", "LINE_PENDING_FILE"):
+                   "QUOTE_FILE", "LINE_PENDING_FILE", "HOLD_FILE"):
             self.addCleanup(setattr, F, _n, getattr(F, _n))
         F.FWD_LOG_FILE = p("forward_log.json")
         F.FWD_CLOSE_FILE = p("forward_close.json")
@@ -98,6 +98,7 @@ class RunTestCase(unittest.TestCase):
         F.NEAR_FILE = p("near_miss.json")
         F.QUOTE_FILE = p("quote_hist.json")
         F.LINE_PENDING_FILE = p("line_pending.json")
+        F.HOLD_FILE = p("hold_stats.json")
         self.addCleanup(setattr, F, "_QUOTES", None)
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
@@ -6305,6 +6306,105 @@ class ToolsPolishTest(unittest.TestCase):
         for sel in ("a.back", ".sec::before", ".kpi", ".bgo", "body::before", "prefers-reduced-motion"):
             self.assertIn(sel, css)
         self.assertIn("--gold:#d4b077", css, "ダッシュボードと色がずれている")
+
+
+
+class OverstayTest(RunTestCase):
+    """想定保有時間(利確までの中央値)の2倍を超えた建玉は、メールだけに1回知らせる。"""
+
+    NOW = datetime.datetime(2026, 11, 4, 12, 0, tzinfo=F.JST)        # 水曜の昼（市場は開いている）
+
+    def setUp(self):
+        super().setUp()
+        for name in ("_now_jst", "expected_hold_min"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        F._now_jst = lambda: self.NOW
+        self.hold = 60
+        F.expected_hold_min = lambda mode, sym, stats=None, now_ts=None: self.hold
+
+    def _pos(self, hours_ago, mode="day", pid=None):
+        ms = int((self.NOW - datetime.timedelta(hours=hours_ago)).timestamp() * 1000)
+        return {"id": pid or f"p{ms}", "symbol": "USD_JPY", "side": "long", "entry": 100.0, "lot": 1000,
+                "tp_pips": 36.0, "sl_pips": 20.0, "status": "open", "mode": mode, "auto_set": True}
+
+    def _check(self, pos, prev=None, market_open=True):
+        for name in ("position_advice", "score_pair"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        F.score_pair = lambda sym, oh=None: {"score": 0.5, "atr": 0.1}
+        F.position_advice = lambda p, t, sc, mfe=None: {"level": "watch", "label": "\U0001F7E1 \u69d8\u5b50\u898b",
+                                                        "reason": "x", "mfe": None}
+        ticker = {"USD_JPY": {"bid": 100.05, "ask": 100.052}}
+        return F.check_positions({"positions": [pos]}, ticker, {pos["id"]: prev or {}}, market_open=market_open)
+
+    def test_trading_minutes_skip_the_weekend(self):
+        a = datetime.datetime(2026, 11, 6, 20, 0, tzinfo=F.JST)      # 金曜20時(JST)
+        b = datetime.datetime(2026, 11, 9, 8, 0, tzinfo=F.JST)       # 月曜8時(JST)
+        # 金20時→土7時(NY金17時で閉場)=11時間 + 月7時(NY日17時で開場)→8時=1時間
+        self.assertEqual(F.trading_minutes(a, b), 12 * 60)
+        self.assertTrue(F.fx_closed(datetime.datetime(2026, 11, 7, 12, 0, tzinfo=F.JST)))
+        self.assertFalse(F.fx_closed(datetime.datetime(2026, 11, 4, 12, 0, tzinfo=F.JST)))
+
+    def test_mail_only_after_twice_the_expected_hold(self):
+        mail, line, adv, ev = self._check(self._pos(3))               # 3時間 > 2x60分
+        self.assertTrue([m for m in mail if "想定の2倍を超えて保有中" in m])
+        self.assertIn(("overstay", "USD_JPY"), ev)
+        self.assertEqual([k for k, _ in line if k != "exit"], [], "LINEに出ている")
+        self.assertTrue(adv[list(adv)[0]]["overstay"])
+        msg = [m for m in mail if "想定の2倍" in m][0]
+        self.assertIn("約60分", msg); self.assertIn("約3時間", msg)
+
+    def test_not_before_and_not_twice(self):
+        mail, *_ = self._check(self._pos(1.5))                         # 1.5時間 < 2時間
+        self.assertFalse([m for m in mail if "想定の2倍" in m])
+        pos = self._pos(3)
+        mail, *_ = self._check(pos, prev={"overstay": True})           # もう知らせた
+        self.assertFalse([m for m in mail if "想定の2倍" in m])
+
+    def test_quiet_when_market_closed_or_no_estimate(self):
+        mail, *_ = self._check(self._pos(3), market_open=False)
+        self.assertFalse([m for m in mail if "想定の2倍" in m])
+        self.hold = None
+        mail, *_ = self._check(self._pos(3))
+        self.assertFalse([m for m in mail if "想定の2倍" in m])
+
+    def test_main_sends_once_and_retries_when_the_mail_fails(self):
+        pos = self._pos(5, mode="day")
+        self.write(F.POSITIONS_FILE, {"positions": [pos]})
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        results = []
+        def mail(subject, body):
+            self.sent["mail"].append((subject, body)); results.append(len(results) > 0); return results[-1]
+        F.notify_mail = mail
+        F.main()                                                         # 1回目: 送信失敗
+        self.assertIn("⏱保有2倍超", self.sent["mail"][0][0])
+        op = [x for x in self.status()["open_positions"] if x["id"] == pos["id"]][0]
+        self.assertFalse(op["overstay"], "送れなかったのに「知らせた」ことになっている")
+        self.reset_caches(); self.sent["mail"].clear()
+        F.main()                                                         # 2回目: 再送して成功
+        self.assertTrue([1 for _, b in self.sent["mail"] if "想定の2倍を超えて保有中" in b])
+        op = [x for x in self.status()["open_positions"] if x["id"] == pos["id"]][0]
+        self.assertTrue(op["overstay"])
+        self.reset_caches(); self.sent["mail"].clear()
+        F.main()                                                         # 3回目: もう送らない
+        self.assertFalse([1 for _, b in self.sent["mail"] if "想定の2倍を超えて保有中" in b])
+        self.assertFalse([t for t in self.sent["line"] if "想定の2倍" in t])
+
+
+class ExpectedHoldCacheTest(RunTestCase):
+    def test_other_mode_is_computed_once_then_cached(self):
+        self.addCleanup(setattr, F, "compute_signal_stats", F.compute_signal_stats)
+        calls = []
+        F.compute_signal_stats = lambda sym, **k: (calls.append(F.MODE) or {"hold_tp_min": 240, "n": 20})
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        self.assertEqual(F.expected_hold_min("swing", "USD_JPY", {}, now_ts=1000), 240)
+        self.assertEqual(F.expected_hold_min("swing", "USD_JPY", {}, now_ts=1000 + 3600), 240)
+        self.assertEqual(calls, ["swing"], "毎回その場で計算している（5分ごとの通知が重くなる）")
+        self.assertEqual(F.expected_hold_min("swing", "USD_JPY", {}, now_ts=1000 + F.HOLD_TTL_SEC + 5), 240)
+        self.assertEqual(len(calls), 2)
+
+    def test_operating_mode_uses_this_runs_stats(self):
+        F.MODE = "mtf"
+        self.assertEqual(F.expected_hold_min("mtf", "USD_JPY", {"USD_JPY": {"hold_tp_min": 75}}), 75)
 
 
 if __name__ == "__main__":

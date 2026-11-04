@@ -4,7 +4,7 @@
 FX Signal & Position Navigator  — スキャル/デイトレ用 加重スコア版
 """
 
-import os, sys, json, math, time, bisect, smtplib, datetime, threading, contextlib
+import os, re, sys, json, math, time, bisect, smtplib, datetime, threading, contextlib
 from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from email.utils import formatdate
@@ -2776,7 +2776,8 @@ def load_prev_state():
         for op in prev.get("open_positions", []):
             if op.get("id"):
                 out[op["id"]] = {"adv_level": op.get("adv_level"), "mfe": op.get("mfe"),
-                                 "basis": op.get("basis"), "lock_r": op.get("lock_r")}
+                                 "basis": op.get("basis"), "lock_r": op.get("lock_r"),
+                                 "overstay": op.get("overstay")}
     except Exception:
         pass
     return out
@@ -2833,6 +2834,116 @@ def basis_message(prev_level, cur, info, side, mode):
     return key, msg
 
 
+# ===== 想定保有時間の2倍を超えた建玉をメールで知らせる =====
+# 想定保有時間＝その通貨・そのモードで、利確(TP)に届くまでの中央値（アプリの「⏱想定保有」と同じ）。
+# 統計の前提から外れた建玉は、手仕舞いサインに特に注意が要る。LINEには送らない（メールだけ）。
+# 経過時間は市場が閉まっている時間(金曜NY17時〜日曜NY17時)を除いて数える。
+HOLD_MULT = 2.0
+HOLD_FILE = data_path("hold_stats.json")
+HOLD_TTL_SEC = 6 * 3600
+NOTIFY_OVERSTAY_TO_MAIL = True
+_NY = ZoneInfo("America/New_York")
+
+
+def _now_jst():
+    return datetime.datetime.now(JST)
+
+
+def fx_closed(dt):
+    """その時刻にFX市場が閉まっているか（ニューヨーク時間で判定。夏冬時間に追従）。"""
+    n = dt.astimezone(_NY)
+    wd = n.weekday()
+    return wd == 5 or (wd == 4 and n.hour >= 17) or (wd == 6 and n.hour < 17)
+
+
+def trading_minutes(a, b, step=5):
+    """a〜b のうち、市場が開いていた分数。"""
+    if b <= a:
+        return 0.0
+    total = 0.0; t = a
+    while t < b:
+        nxt = min(t + datetime.timedelta(minutes=step), b)
+        if not fx_closed(t):
+            total += (nxt - t).total_seconds() / 60
+        t = nxt
+    return total
+
+
+def position_opened_at(p):
+    """建玉を建てた時刻。idが p+エポックms ならそれ、無ければ opened_at から。"""
+    try:
+        ms = int(str(p.get("id", "")).lstrip("p"))
+        if ms > 10**11:
+            return datetime.datetime.fromtimestamp(ms / 1000, JST)
+    except (TypeError, ValueError):
+        pass
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})", str(p.get("opened_at") or ""))
+    if m:
+        return datetime.datetime(*[int(x) for x in m.groups()], tzinfo=JST)
+    return None
+
+
+def expected_hold_min(mode, sym, stats=None, now_ts=None):
+    """そのモード・通貨の、利確までの想定保有（分）。取れなければ None。
+       運用中のモードは今回の統計をそのまま使い、別モードの建玉は6時間キャッシュで持つ
+       （毎回その場で計算すると、5分ごとの通知が重くなる）。"""
+    now_ts = now_ts if now_ts is not None else int(_now_jst().timestamp())
+    if mode == MODE and stats and (stats.get(sym) or {}).get("hold_tp_min"):
+        return stats[sym]["hold_tp_min"]
+    cache = {}
+    try:
+        cache = read_json(HOLD_FILE) or {}
+    except Exception:
+        cache = {}
+    c = ((cache.get(mode) or {}).get(sym)) or {}
+    if c.get("hold_tp_min") and now_ts - int(c.get("ts") or 0) < HOLD_TTL_SEC:
+        return c["hold_tp_min"]
+    try:
+        with use_mode(mode):
+            st = compute_signal_stats(sym)
+    except Exception as e:
+        warn(f"想定保有時間の計算に失敗 {mode}/{sym}: {e}", tag=f"hold:{mode}:{sym}", surface=False)
+        return c.get("hold_tp_min")
+    val = (st or {}).get("hold_tp_min")
+    if val:
+        cache.setdefault(mode, {})[sym] = {"hold_tp_min": val, "n": st.get("n"), "ts": now_ts}
+        try:
+            write_json(HOLD_FILE, cache)
+        except Exception as e:
+            warn(f"想定保有時間のキャッシュ保存に失敗: {e}", tag="hold-cache", surface=False)
+    return val or c.get("hold_tp_min")
+
+
+def _fmt_dur(minutes):
+    m = int(round(minutes))
+    if m < 120:
+        return f"約{m}分"
+    h = m / 60
+    return f"約{h:.0f}時間" if h < 48 else f"約{h / 24:.1f}日"
+
+
+def overstay_message(p, info, side, mode, expected, elapsed, adv):
+    return (f"⏱ 想定の{HOLD_MULT:.0f}倍を超えて保有中 [{mode}] {info['symbol']} ({'買い' if side == 'long' else '売り'})\n"
+            f"  想定保有（利確まで中央値）: {_fmt_dur(expected)} ／ 経過（市場が開いていた時間）: {_fmt_dur(elapsed)}\n"
+            f"  建値:{info['entry']} → 現在:{info['current']} / {info['pips']:+}pips / {info['yen']:+,}円\n"
+            f"  現在の判定: {adv['label'] if adv else '—'}\n"
+            f"  ※統計の前提から外れた保有です。手仕舞いのサインとOCOの水準を確認してください")
+
+
+def revert_overstay(ids):
+    """メールに送れなかった「2倍超」の記録を取り消す（次の回に再度判定して送る）。"""
+    if not ids or not os.path.exists(STATUS_FILE):
+        return
+    try:
+        st = read_json(STATUS_FILE)
+        for op in (st or {}).get("open_positions", []):
+            if op.get("id") in ids:
+                op["overstay"] = False
+        write_json(STATUS_FILE, st)
+    except Exception as e:
+        print(f"[WARN] 2倍超の記録を戻せませんでした: {e}", file=sys.stderr)
+
+
 def lock_stop_r(rule, best_r):
     """そのルールで、今SLを置くべき位置（建値からのR）。まだ動かさない時は None。"""
     if rule == "be05":
@@ -2884,7 +2995,7 @@ def lock_message(rule, prev_lock, p, info, side, mode, mfe_price):
     return stop_r, msg
 
 
-def check_positions(data, ticker, prev_state=None):
+def check_positions(data, ticker, prev_state=None, stats=None, market_open=True):
     """保有ポジションを評価して通知メッセージと判定マップを返す。
        戻り値は (mail_msgs, line_msgs, advice_map, pos_events)。
        メール: 利確/損切り(take/cut) ＋『利確検討』(watch) を、判定が変わった時に送る（取りこぼし防止）。
@@ -2921,6 +3032,23 @@ def check_positions(data, ticker, prev_state=None):
                     mail_msgs.append(msg)
                     line_msgs.append(("basis", msg))
                     pos_events.append(("basis_" + key, info["symbol"]))
+        # 想定保有時間の2倍超（メールだけ・1建玉につき1回）
+        if adv:
+            adv["overstay"] = bool(prev.get("overstay"))
+            if not adv["overstay"] and market_open:
+                try:
+                    opened = position_opened_at(p)
+                    exp = expected_hold_min(adv.get("mode") or pos_mode(p), p["symbol"], stats) if opened else None
+                    if opened and exp:
+                        el = trading_minutes(opened, _now_jst())
+                        if el > HOLD_MULT * exp:
+                            adv["overstay"] = True
+                            if NOTIFY_OVERSTAY_TO_MAIL:
+                                mail_msgs.append(overstay_message(p, info, side, adv.get("mode") or pos_mode(p),
+                                                                  exp, el, adv))
+                                pos_events.append(("overstay", info["symbol"]))
+                except Exception as e:
+                    warn(f"保有時間の判定に失敗 {p.get('symbol')}: {e}", tag="overstay", surface=False)
         rule = EXIT_RULE.get(adv.get("mode")) if adv else None
         if adv and rule in ("be05", "trail10", "be05_trail"):
             new_lock, msg = lock_message(rule, prev.get("lock_r"), p, info, side,
@@ -3161,7 +3289,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                 op.update({"adv_level":adv["level"], "adv_label":adv["label"], "adv_reason":adv["reason"],
                            "mfe":adv.get("mfe"), "profit_atr":adv.get("profit_atr"),
                            "mode":adv.get("mode"), "basis":adv.get("basis"),
-                           "basis_label":adv.get("basis_label"), "lock_r":adv.get("lock_r")})
+                           "basis_label":adv.get("basis_label"), "lock_r":adv.get("lock_r"),
+                           "overstay":adv.get("overstay")})
             open_pos.append(op)
         elif p.get("status") == "closed":
             closed_pos.append({k:p.get(k) for k in
@@ -3248,6 +3377,8 @@ def mail_subject(sig_events, pos_events, level_count):
         got = [s for g, s in sig_events if g == sg]
         if got:
             bits.append(f"{mark} " + "・".join(f(x) for x in got))
+    if pick("overstay"):
+        bits.append("⏱保有2倍超 " + "・".join(f(x) for x in pick("overstay")))
     if pick("lock"):
         bits.append("🔒利益確保 " + "・".join(f(x) for x in pick("lock")))
     for lv, mark in (("basis_gone", "⛔根拠消失"), ("basis_weak", "⚠️根拠弱化"), ("basis_back", "✅根拠回復")):
@@ -3417,7 +3548,8 @@ def main():
         stamp_new_entries(data)   # 新規ポジションを記録簿へ追記（削除されても残る）
     except Exception as e:
         print(f"[WARN] エントリー記録簿の追記に失敗: {e}", file=sys.stderr)
-    m2_mail, m2_line, advice_map, pos_events = check_positions(data, ticker, prev_state)
+    m2_mail, m2_line, advice_map, pos_events = check_positions(data, ticker, prev_state, stats=stats,
+                                                              market_open=market_open)
     if c1:  # positions.jsonの書込はauto_set（新規autoのTP/SL設定）時のみ＝競合を最小化
         save_positions(data)
     if ticker:
@@ -3482,7 +3614,12 @@ def main():
                 keep.setdefault(t, {"text": t, "at": now_ts})
             save_line_pending(list(keep.values()))
     if mail_parts:
-        notify_mail(subject, head + "\n\n".join(mail_parts) + tail)
+        mail_ok = notify_mail(subject, head + "\n\n".join(mail_parts) + tail)
+        if not mail_ok:
+            # 送れなかった「2倍超」は、次の回にもう一度知らせる（状態を元に戻す）
+            fresh = [i for i, a in (advice_map or {}).items()
+                     if a.get("overstay") and not (prev_state.get(i) or {}).get("overstay")]
+            revert_overstay(fresh)
     # 送信で出た警告を画面へ回す（送れていないことに気づけるように）
     flush_warnings_to_status()
 
