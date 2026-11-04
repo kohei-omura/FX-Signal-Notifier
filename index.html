@@ -416,12 +416,124 @@
 .dcnt-c b small{font-size:11px;opacity:.85}
 .dcnt-c.dim b{color:#4a2420;text-shadow:none}
 @media (max-width:340px){.dcnt-c b{font-size:16px}}
+
+/* ══════════ 仕上げ層（見た目だけ。判定・計算・通知のロジックには触れない）══════════
+   濃紺×金の世界観を保ったまま、余白・階層・質感・押した時の反応をそろえる。
+   上の定義を上書きするため、必ずこのブロックを最後に置く。 */
+:root{
+  --bg:#080b11;--panel:#10141d;--panel2:#141925;--line:#222b3b;--line2:#2d384c;
+  --ink:#eef1f7;--mut:#8691a6;--dim:#5b667b;
+  --gold:#d4b077;--gold2:#a8864a;
+  --up:#4ee0a2;--down:#ff7b8c;
+  --r:16px;--shadow:0 1px 0 rgba(255,255,255,.045) inset,0 14px 34px -16px rgba(0,0,0,.75);
+}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);text-rendering:optimizeLegibility;background-image:none;
+  -webkit-tap-highlight-color:transparent}
+/* 背景の光は固定の別層に（スクロールしても動かず、描画も軽い） */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(720px 420px at 88% -6%,rgba(212,176,119,.13),transparent 62%),
+    radial-gradient(620px 460px at -12% 8%,rgba(78,224,162,.075),transparent 58%),
+    linear-gradient(180deg,#0a0e16 0%,#080b11 42%,#07090e 100%)}
+::selection{background:rgba(212,176,119,.3)}
+.sym,.price,.pnl,.chip,.tag,.clock,#clock,.meter .mscore,.dcnt-c b,.hrow .r,.pmeta,.entry .ev{font-variant-numeric:tabular-nums}
+button,.btn,.hbtn,.dettog,.qabtn,.vtb,.x{transition:transform .12s ease,background .18s ease,border-color .18s ease,opacity .18s ease}
+button:active,.btn:active,.hbtn:active,.dettog:active,.qabtn:active,.vtb:active{transform:scale(.97)}
+.inp:focus,select:focus,input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,176,119,.16)}
+
+/* ── ヘッダー：1行のブランドと、整理されたステータス ── */
+header{position:relative;display:block;padding-bottom:14px;border-bottom:0;margin-bottom:16px}
+header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+  background:linear-gradient(90deg,var(--gold2),var(--line) 28%,transparent)}
+.brand{display:flex;flex-wrap:wrap;align-items:center;gap:3px 10px;font-size:26px;letter-spacing:.05em;line-height:1.15;padding-right:92px}
+.brand .bt{flex:0 0 100%;white-space:nowrap;background:linear-gradient(180deg,#ffffff,#d9dfec 55%,#aab4c8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand small{flex:1 1 auto;order:2;margin:0;font-size:9.5px;letter-spacing:.36em;color:var(--gold)}
+.brand>span:last-child{order:3;margin-left:auto!important}
+#clock{position:absolute;right:0;top:3px;font-size:17px;color:var(--ink);letter-spacing:.06em;font-weight:500}
+.meta{margin-top:12px;display:flex;flex-wrap:wrap;align-items:center;gap:7px 8px;text-align:left;font-size:11px}
+.meta>div{margin:0!important}
+#updated{order:10;flex-basis:100%;font-size:10.5px;color:var(--dim)}
+#swr{order:11;flex-basis:100%}
+#fxzone{font-size:11px!important;color:var(--mut)}
+#modesw{order:12;flex-basis:100%;display:grid!important;grid-template-columns:repeat(4,1fr);gap:6px!important;
+  padding:4px;border-radius:13px;background:rgba(255,255,255,.035);border:1px solid var(--line)}
+#modesw .hbtn{border:0;border-radius:10px;padding:8px 4px;font-size:12px;color:var(--mut);background:transparent;text-align:center;white-space:nowrap}
+#modesw .hbtn[style*="background"]{background:linear-gradient(180deg,#e2c28a,#c49f62)!important;color:#1a1206!important;
+  box-shadow:0 4px 14px -4px rgba(212,176,119,.55);font-weight:700}
+.badge{padding:4px 10px;font-size:10px;letter-spacing:.1em;backdrop-filter:blur(4px)}
+.badge.open{background:rgba(78,224,162,.10);box-shadow:0 0 14px -4px rgba(78,224,162,.45)}
+.pachi-toggle{padding:4px 10px!important;border-radius:999px!important;font-size:11px!important;margin:0!important;
+  background:rgba(255,255,255,.035)!important}
+
+/* ── セクション見出し ── */
+h2{margin:22px 0 11px;font-size:15.5px;letter-spacing:.07em}
+h2::before{width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,#e2c28a,#a8864a)}
+h2:not(:has(.sp))::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+
+/* ── 上部のバー・リスク・カウンター ── */
+#verdictbar{position:relative;padding:12px 14px 12px 16px;border-radius:14px;font-size:13px;gap:8px 14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015));border:1px solid var(--line);box-shadow:var(--shadow)}
+#verdictbar::before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,#e2c28a,#a8864a)}
+#verdictbar.hot{background:linear-gradient(180deg,rgba(212,176,119,.16),rgba(212,176,119,.05))}
+#riskbar{padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.025)}
+.dcnt{border-radius:14px!important}
+
+/* ── カード ── */
+.grid{gap:14px}
+.card,.panel{border-radius:var(--r);border:1px solid var(--line);box-shadow:var(--shadow);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 46%),linear-gradient(180deg,var(--panel),var(--panel2))}
+.card{padding:16px 16px 15px}
+.card[data-sig]{position:relative}
+.card[data-sig]::before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:3px;border-radius:0 3px 3px 0;background:var(--accent,var(--line))}
+.card[data-sig=buy]{--accent:var(--up);border-color:rgba(78,224,162,.28);
+  background:linear-gradient(180deg,rgba(78,224,162,.075),rgba(78,224,162,0) 34%),linear-gradient(180deg,var(--panel),var(--panel2))}
+.card[data-sig=sell]{--accent:var(--down);border-color:rgba(255,123,140,.28);
+  background:linear-gradient(180deg,rgba(255,123,140,.075),rgba(255,123,140,0) 34%),linear-gradient(180deg,var(--panel),var(--panel2))}
+.card[data-sig=none]{--accent:var(--line2)}
+.sym{font-size:17px;letter-spacing:.03em;font-weight:600}
+.price{font-size:31px;font-weight:500;letter-spacing:-.01em;margin-top:8px;line-height:1.15;text-shadow:0 2px 18px rgba(255,255,255,.06)}
+.sig{font-size:12px;padding:5px 12px;border-radius:999px;letter-spacing:.04em}
+.sig.buy{background:rgba(78,224,162,.14);box-shadow:0 0 18px -6px rgba(78,224,162,.6)}
+.sig.sell{background:rgba(255,123,140,.14);box-shadow:0 0 18px -6px rgba(255,123,140,.6)}
+.sig.none{background:rgba(255,255,255,.02);color:var(--mut)}
+.tag{padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.02)}
+.chips{gap:6px;margin-top:11px}
+.chip{border-radius:9px;padding:4px 9px;font-size:10.5px;background:rgba(255,255,255,.04)}
+.meter{margin-top:10px;padding:11px 14px;border-radius:13px;font-size:15.5px}
+.meter.ok{background:linear-gradient(90deg,rgba(78,224,162,.17),rgba(78,224,162,.05))}
+.meter.hold{background:linear-gradient(90deg,rgba(232,201,106,.15),rgba(232,201,106,.04))}
+.meter.no{background:linear-gradient(90deg,rgba(255,123,140,.15),rgba(255,123,140,.04))}
+.meter .mscore{font-size:12.5px;color:var(--mut)}
+.entry{border-radius:13px;padding:10px 12px;background:rgba(255,255,255,.028)}
+.dettog{margin-top:11px;padding:9px;border-radius:11px;background:rgba(255,255,255,.035);letter-spacing:.04em}
+.reasons{margin-top:10px}
+.rsibar{height:7px;border-radius:7px}
+.pnl{font-size:25px;letter-spacing:-.01em}
+.btn{border-radius:11px;padding:9px 15px;background:linear-gradient(180deg,#e2c28a,#c49f62);color:#1a1206;box-shadow:0 6px 16px -8px rgba(212,176,119,.6)}
+.btn.ghost{background:transparent;color:var(--mut);box-shadow:none}
+.btn.up{background:linear-gradient(180deg,#68efb5,#3fcf91);box-shadow:0 6px 16px -8px rgba(78,224,162,.6)}
+.btn.down{background:linear-gradient(180deg,#ff95a2,#f06a7d);box-shadow:0 6px 16px -8px rgba(255,123,140,.6)}
+.hist{border-radius:var(--r);background:rgba(255,255,255,.02)}
+.empty{border-radius:var(--r)}
+.toast{border-radius:13px;background:rgba(24,31,45,.94);backdrop-filter:blur(10px);box-shadow:0 12px 30px -10px rgba(0,0,0,.7)}
+footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(--line),transparent) 1}
+
+/* ── 右下のツールボタン ── */
+.fab{position:fixed!important;right:calc(14px + env(safe-area-inset-right))!important;bottom:calc(18px + env(safe-area-inset-bottom))!important;
+  display:inline-flex;align-items:center;gap:6px;padding:11px 17px!important;border-radius:999px!important;font-size:13px!important;letter-spacing:.04em;
+  background:linear-gradient(180deg,#e6c78f,#c49f62)!important;color:#1a1206!important;
+  box-shadow:0 10px 26px -8px rgba(212,176,119,.6),0 0 0 1px rgba(255,255,255,.16) inset!important;transition:transform .12s ease}
+.fab:active{transform:scale(.96)}
+
+@media (min-width:620px){.brand{font-size:30px}.price{font-size:34px}}
+@media (prefers-reduced-motion:reduce){.card{animation:none;opacity:1;transform:none}button,.btn{transition:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FX ナビゲーター<small>signal · take-profit</small></div>
+    <div class="brand"><span class="bt">FX ナビゲーター</span><small>signal · take-profit</small></div>
     <div class="meta">
       <div id="clock">--:--:--</div>
       <div id="status" style="margin-top:4px"><span class="badge closed">— —</span></div>
@@ -2036,7 +2148,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
   var _open=_acc!=null?(_acc==='1'):(_view==='detail');
   // 機能4: 🟢/🟡カードにワンタップ登録ボタン（既存addPosフォームを事前入力して開くだけ）
   var _qa=(p.signal&&(conf.cls==='ok'||conf.cls==='hold'))?`<button class="qabtn" onclick="quickAdd('${p.symbol}')">📥 この条件で登録</button>`:'';
-  return`<div class="card ${_open?'':'simple'}" data-sym="${p.symbol}" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
+  return`<div class="card ${_open?'':'simple'}" data-sym="${p.symbol}" data-sig="${p.signal==='買い'?'buy':(p.signal==='売り'?'sell':'none')}" style="animation-delay:${i*60}ms"><div class="row"><span class="sym">${p.symbol.replace('_','/')}</span>${sg}</div>
     ${meter}
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
     <div class="chips"><span class="chip tp" title="ATRから毎回計算し直す推奨値。相場が動けばこの数字も動きます。登録した時点の値がその建玉に固定されます">TP目安 <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl" title="ATRから毎回計算し直す推奨値。相場が動けばこの数字も動きます。登録した時点の値がその建玉に固定されます">SL目安 <b>-${fmt(p.sl_pips)}p</b></span>${_costR!=null?`<span class="chip" title="この1往復で必ず払うスプレッド。1リスクに占める割合も併記">コスト <b>${_costYen!=null?Math.round(_costYen).toLocaleString()+'円':''}</b>${_costYen!=null?` <span style="opacity:.7">(${Math.round(_costR*100)}%)</span>`:`${Math.round(_costR*100)}%`}</span>`:''}</div>${_costBadge}
@@ -3791,7 +3903,7 @@ if('serviceWorker'in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').then(reg=>{try{reg.update();}catch(e){}}).catch(()=>{}));
 }
 </script>
-<a href="tools.html" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
+<a href="tools.html" class="fab" aria-label="ツール" style="position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:60;background:#cda86a;color:#1a1206;font-family:'Zen Kaku Gothic New',sans-serif;font-weight:700;font-size:13px;text-decoration:none;padding:11px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45)">🛠 ツール</a>
 <script>
 window.__MACHINE_HTML=`<!DOCTYPE html>
 <html lang="ja">

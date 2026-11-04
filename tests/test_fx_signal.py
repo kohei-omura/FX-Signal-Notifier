@@ -6269,5 +6269,29 @@ class LinePendingTest(RunTestCase):
         self.assertFalse([w for w in F._WARNINGS if w.get("tag") == "line-quota"])
 
 
+
+class AppPolishTest(unittest.TestCase):
+    """見た目の仕上げ層が、画面側の目印（クラス・属性）と対になっていること。"""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            self.src = f.read()
+
+    def test_hooks_exist_in_the_markup(self):
+        self.assertIn('<span class="bt">FX ナビゲーター</span>', self.src)
+        self.assertIn("data-sig=\"${p.signal==='買い'?'buy':(p.signal==='売り'?'sell':'none')}\"", self.src)
+        self.assertIn('class="fab" aria-label="ツール"', self.src)
+
+    def test_polish_css_uses_them(self):
+        css = self.src[self.src.index("仕上げ層"):self.src.index("</style>", self.src.index("仕上げ層"))]
+        for sel in (".card[data-sig=buy]", ".card[data-sig=sell]", ".brand .bt", ".fab{", "#modesw"):
+            self.assertIn(sel, css)
+        self.assertIn("prefers-reduced-motion", css, "動きを減らす設定に対応していない")
+
+    def test_pair_card_signal_attribute_matches_the_badge(self):
+        # 買い→buy / 売り→sell / それ以外→none。バッジ表示と同じ条件で決めている
+        self.assertEqual(self.src.count("data-sig=\"${p.signal"), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
