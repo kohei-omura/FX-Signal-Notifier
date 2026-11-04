@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-04T16:48:32.138Z",
+  "updated": "2026-11-04T17:36:10.765Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -4139,14 +4139,26 @@
       "sl": 213.189,
       "b": 1.8016359918200409,
       "ts": 1793788422326,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 29,
       "pct": 29,
       "edgeAdj": 0,
       "mark": "no",
       "src": "sub",
-      "subFilter": "all"
+      "subFilter": "all",
+      "result": "sl",
+      "R": -1.0184,
+      "closed": 1793813400000,
+      "bars": 24,
+      "heldMin": 1440,
+      "exit": 213.189,
+      "policies": {
+        "tp_sl": -1.0184,
+        "advice": -1.0184,
+        "advice_watch": 0.0511
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "AUD_JPY",
@@ -4243,14 +4255,26 @@
       "sl": 178.125,
       "b": 1.602272727272727,
       "ts": 1793789932692,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 85,
       "pct": 85,
       "edgeAdj": 0,
       "mark": "ok",
       "src": "sub",
-      "subFilter": "adx40"
+      "subFilter": "adx40",
+      "result": "sl",
+      "R": -1.0284,
+      "closed": 1793808000000,
+      "bars": 20,
+      "heldMin": 300,
+      "exit": 178.125,
+      "policies": {
+        "tp_sl": -1.0284,
+        "advice": -1.0284,
+        "advice_watch": -0.017
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "GBP_JPY",
@@ -4268,6 +4292,26 @@
       "rawPct": 33,
       "pct": 33,
       "edgeAdj": 0,
+      "mark": "no",
+      "src": "main",
+      "subFilter": null
+    },
+    {
+      "sym": "USD_JPY",
+      "mode": "mtf",
+      "side": "long",
+      "entry": 158.216,
+      "fill": 158.221,
+      "sp": 0.005,
+      "tp": 158.54500000000002,
+      "sl": 158.01000000000002,
+      "b": 1.5970873786407764,
+      "ts": 1793813760763,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 17,
+      "pct": 18,
+      "edgeAdj": 1,
       "mark": "no",
       "src": "main",
       "subFilter": null
