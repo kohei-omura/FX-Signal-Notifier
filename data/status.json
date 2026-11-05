@@ -1,6 +1,6 @@
 {
   "risk": {
-    "open_yen": 0,
+    "open_yen": 1969,
     "cap_yen": 0,
     "pct": null,
     "full": false
@@ -382,7 +382,7 @@
         "手法:レンジ逆張り",
         "EMA下(9vs21)",
         "MACDヒスト-",
-        "RSI41",
+        "RSI42",
         "ADX19(弱)"
       ],
       "closes": [
@@ -1392,6 +1392,29 @@
       }
     }
   ],
-  "open_positions": [],
+  "open_positions": [
+    {
+      "id": "p1793846123723",
+      "symbol": "EUR_JPY",
+      "side": "long",
+      "entry": 177.736,
+      "lot": 11000.0,
+      "current": 177.755,
+      "pips": 1.9,
+      "yen": 209,
+      "tp_price": 178.022,
+      "sl_price": 177.557,
+      "adv_level": "watch",
+      "adv_label": "🟡 利確検討",
+      "adv_reason": "ADX低下",
+      "mfe": 177.755,
+      "profit_atr": 0.21,
+      "mode": "mtf",
+      "basis": "full",
+      "basis_label": "1h↑上昇 / 4h↑上昇",
+      "lock_r": null,
+      "overstay": false
+    }
+  ],
   "closed_positions": []
 }
