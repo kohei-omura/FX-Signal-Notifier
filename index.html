@@ -528,6 +528,14 @@ footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(-
 
 @media (min-width:620px){.brand{font-size:30px}.price{font-size:34px}}
 @media (prefers-reduced-motion:reduce){.card{animation:none;opacity:1;transform:none}button,.btn{transition:none}}
+
+/* LINE残量チップ（ヘッダー） */
+.lq{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:999px;font-size:10.5px;
+  color:var(--mut);background:rgba(255,255,255,.035);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.lq b{color:var(--ink);font-weight:600}
+.lq.lq-mid{color:var(--gold);border-color:rgba(212,176,119,.45)}
+.lq.lq-low{color:var(--down);border-color:rgba(255,123,140,.5);background:rgba(255,123,140,.08)}
+.lq.lq-low b{color:var(--down)}
 </style>
 </head>
 <body>
@@ -541,6 +549,7 @@ footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(-
       <div id="swr" style="margin-top:2px;font-size:11px"></div>
       <div id="live" style="margin-top:4px"></div>
       <div id="fxzone" style="margin-top:4px;font-size:12px"></div>
+      <div id="lineq"></div>
       <div id="modesw" style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"></div>
     </div>
   </header>
@@ -1804,6 +1813,10 @@ const MTF_BY_SYM={};
 // LINEライブ通知の条件（LINE月間上限の節約）
 const LIVE_NOTIFY_MIN_PCT=50;      // 総合判定がこの%以上
 const LIVE_NOTIFY_NEED_MTF=true;   // かつ上位足(1h/4h)がシグナル方向と一致していること
+/* 同じ合図が「最後に見えてから」この分数以内に出直した時は、同じ場面とみなしてLINEへ送らない。
+   合図は境目で出たり消えたりを繰り返し、そのたびにLINEを1通使っていた（2026-11 に月200通の枠を半月で使い切りかけた）。
+   サーバー(engine/fx_signal.py の SIGNAL_REARM_MIN)と同じ値。足4本ぶん。 */
+const SIGNAL_REARM_MIN={scalp:4,day:60,swing:240,mtf:60};
 /* ===== 時間帯フィルタ（現在は無効） =====
    当初の集計が“決済時刻”ベースで（GMO CSVに建玉時刻が無いため）、実データの55%が別の時台に入っていた。
    エントリー時刻で取り直すと、遮断していた16時台(+333円)・21時台(+716円)はむしろプラス。
@@ -2473,6 +2486,16 @@ function copyFallback(t){try{const a=document.createElement('textarea');a.value=
   catch(e){toast('コピーできませんでした');}}
 function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 // 併用すると件数が増えるぶん、合計リスクが効いてくる。常に見えるようにする。
+/* LINEの今月の残り（サーバーが送った回に確かめた数）。枠切れに気づけず、
+   🔒の通知が届かなくなる所だった（2026-11-14 に 190/200）。残りが少ない時だけ色を付ける。 */
+function renderLineQuota(){
+  var el=document.getElementById('lineq'); if(!el) return;
+  var q=S&&S.line; if(!q||!q.limit){ el.innerHTML=''; return; }
+  var left=Math.max(0,q.limit-q.used), res=q.reserve||10;
+  var cls=left<=res?'lq-low':(q.used>=q.limit*0.8?'lq-mid':'');
+  el.innerHTML='<span class="lq '+cls+'" title="'+escHtml('LINE '+q.used+'/'+q.limit+'通（'+(q.at||'')+' 時点）')+'">'
+    +'LINE 残り<b>'+left+'</b>通'+(left<=res?'・🔒優先':'')+'</span>';
+}
 function renderRiskBar(){
   var el=document.getElementById('riskcap'); if(!el) return;
   var op=computeOpen();
@@ -2567,6 +2590,7 @@ function render(){
   renderStale();
   try{renderRiskBar();}catch(e){}
   try{renderPoolBar();}catch(e){}
+  try{ renderLineQuota(); }catch(e){}
   $('#updated').textContent='更新 '+(S.generated_at||'—')+(S.mode?' ・'+(MODE_LABEL[S.mode]||S.mode.toUpperCase()):'')+(S.blackout?' ・指標警戒中':'');
   $('#status').innerHTML=S.market_open?'<span class="badge open">● MARKET OPEN</span>':'<span class="badge closed">○ MARKET CLOSED</span>';
   renderViewToggle();
@@ -3687,7 +3711,12 @@ async function liveSignals(){
           if(cfNow)fwdRecord(pair,MODE0);
         }catch(e){}
       }
-      if(sig){
+      // 消えてすぐ出直した同じ向きの合図（出たり消えたり）。見えている扱いを続け、送らない。
+      const _flicker=!!(sig&&rec&&!rec.side&&rec.last===sig
+        &&now-(rec.seen||rec.ts)<(SIGNAL_REARM_MIN[MODE0]||60)*60000);
+      if(_flicker){notified[sym]={side:sig,ts:rec.ts,seen:now};}
+      else if(sig&&rec&&rec.side===sig){rec.seen=now;}
+      if(sig&&!_flicker){
         if((!rec||rec.side!==sig)&&(!rec||now-rec.ts>180000)){
           const sg=sig==='買い'?'🟢買い':'🔴売り',arrow=sig==='買い'?'上限':'下限';
           const st=STATS[MODE0+sym];
@@ -3720,9 +3749,9 @@ async function liveSignals(){
           else if((suppressOppNotify()&&longEnvAlign(pair)===false)||_lossStop||!_scoreOK||!_mtfOK){
             /* 抑制（LINE枠節約。画面表示とメール通知には影響しない） */
           }
-          else{notifyLive(txt2);notified[sym]={side:sig,ts:now};}
+          else{notifyLive(txt2);notified[sym]={side:sig,ts:now,seen:now};}
         }
-      }else if(rec&&rec.side){notified[sym]={side:null,ts:rec.ts};}
+      }else if(!sig&&rec&&rec.side){notified[sym]={side:null,ts:rec.ts,last:rec.side,seen:rec.seen||now};}
       const idx=S.pairs.findIndex(p=>p.symbol===sym);if(idx>=0)S.pairs[idx]=pair;else S.pairs.push(pair);
       LIVE_PAIRS[sym]=pair;LIVE_AT=Date.now();
     }

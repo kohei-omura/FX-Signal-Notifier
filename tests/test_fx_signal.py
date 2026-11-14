@@ -21,6 +21,9 @@ sys.modules["requests"] = mock_api                # fx_signal の import より�
 os.environ.pop("MODE", None)
 import fx_signal as F                             # noqa: E402
 F.requests = mock_api
+# 合図の再通知の記録（signal_seen.json）は、リポジトリの実データを読まないようにする。
+# 読むと、本番が直前に記録した合図のせいでテストの通知が抑えられて結果が揺れる。
+F.SEEN_FILE = os.path.join(tempfile.mkdtemp(), "signal_seen.json")
 
 
 def sample_ohlc(n=600, seed=1234):
@@ -90,7 +93,7 @@ class RunTestCase(unittest.TestCase):
         # リポジトリの data/ を読み書きしてしまう（テストが実データを壊す）。
         # 差し替える前に元を保存する（後だと差し替えた方を戻してしまう）。
         for _n in ("FWD_LOG_FILE", "FWD_CLOSE_FILE", "SUB_STATE_FILE", "NEAR_FILE",
-                   "QUOTE_FILE", "LINE_PENDING_FILE", "HOLD_FILE"):
+                   "QUOTE_FILE", "LINE_PENDING_FILE", "HOLD_FILE", "SEEN_FILE", "_SEEN", "LINE_QUOTA_FILE"):
             self.addCleanup(setattr, F, _n, getattr(F, _n))
         F.FWD_LOG_FILE = p("forward_log.json")
         F.FWD_CLOSE_FILE = p("forward_close.json")
@@ -99,6 +102,8 @@ class RunTestCase(unittest.TestCase):
         F.QUOTE_FILE = p("quote_hist.json")
         F.LINE_PENDING_FILE = p("line_pending.json")
         F.HOLD_FILE = p("hold_stats.json")
+        F.SEEN_FILE = p("signal_seen.json"); F._SEEN = None
+        F.LINE_QUOTA_FILE = p("line_quota.json")
         self.addCleanup(setattr, F, "_QUOTES", None)
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
@@ -6532,6 +6537,167 @@ class LongCheckPanelTest(unittest.TestCase):
         self.assertIn("出ない", html)                       # スイング: 平均マイナスで区間は0をまたぐ
         self.assertIn("一致待ち", html)                     # GBP: 区間は届く件数だが後半がマイナス
         self.assertIn("pfgood", html)
+
+
+
+class SignalRearmTest(RunTestCase):
+    """出たり消えたりする合図を、そのたびにLINEへ送らない。
+
+    2026-11-13 はスイングの参考通知「AUD/JPY 売り」が1日に約10回出直し、本体の上位足も
+    01:10〜01:55 に同じ組み合わせで出直して、そのたびにLINEを1通ずつ使っていた。
+    11/14 には今月200通のうち190通に達し、残り半月は🔒の通知も届かない状態だった。"""
+
+    T0 = datetime.datetime(2026, 11, 11, 10, 0, tzinfo=F.JST).timestamp()
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, F, "_now_ts", F.__dict__["_now_ts"])
+        self.t = self.T0
+        F._now_ts = lambda: self.t
+        self.addCleanup(setattr, F, "mtf_view", F.__dict__["mtf_view"])
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
+        self.addCleanup(setattr, F, "spread_blocks_entry", F.spread_blocks_entry)
+        F.spread_blocks_entry = lambda sp, sl_pips: None
+
+    def test_rearm_window(self):
+        F.mark_seen("mtf", "AUD_JPY", "売り", now_ts=self.T0)
+        self.assertFalse(F.signal_rearmed("mtf", "AUD_JPY", "売り", now_ts=self.T0 + 59 * 60))
+        self.assertTrue(F.signal_rearmed("mtf", "AUD_JPY", "売り", now_ts=self.T0 + 60 * 60))
+        self.assertTrue(F.signal_rearmed("mtf", "AUD_JPY", "買い", now_ts=self.T0 + 60), "逆向きは別の合図")
+        self.assertFalse(F.signal_rearmed("swing", "AUD_JPY", "売り", now_ts=self.T0)
+                         if F.mark_seen("swing", "AUD_JPY", "売り", now_ts=self.T0) is None else True)
+        self.assertFalse(F.signal_rearmed("swing", "AUD_JPY", "売り", now_ts=self.T0 + 3 * 3600))
+        F.save_seen(now_ts=self.T0)
+        F._SEEN = None
+        self.assertFalse(F.signal_rearmed("mtf", "AUD_JPY", "売り", now_ts=self.T0 + 60),
+                         "実行をまたぐと記録が消えている（5分ごとの実行で毎回送ってしまう）")
+
+    def _main_with(self, sig):
+        self.addCleanup(setattr, F, "entry_side", F.entry_side)
+        F.entry_side = lambda s_, t_, r_, th_, aligned=None, pullback=None: (sig if s_ == "USD_JPY" else None)
+        self.write(F.POSITIONS_FILE, {"positions": []})
+        self.reset_caches(); self.sent["line"].clear()
+        F._SEEN = None
+        F.main()
+        return [t for t in self.sent["line"] if "USD_JPY" in t and "買い" in t]
+
+    def test_main_signal_flicker_is_sent_once(self):
+        self.assertTrue(self._main_with("買い"), "最初の合図が送られていない")
+        self.t += 5 * 60
+        self._main_with(None)                                   # 消えた
+        self.t += 10 * 60
+        self.assertEqual(self._main_with("買い"), [], "15分前と同じ合図をまた送っている")
+        self.t += 2 * 3600
+        self._main_with(None)
+        self.t += 2 * 3600
+        self.assertTrue(self._main_with("買い"), "しばらく消えていた後の合図は新しい合図として送る")
+
+    def _fake_score(self, side="売り"):
+        return {"price": 108.0, "adx": 45.0, "rsi": 40.0, "score": -0.55,
+                "tp_pips": 24.0, "sl_pips": 15.0, "side": side, "tech": -0.5, "fund": 0.0}
+
+    def test_sub_signal_flicker_is_sent_once(self):
+        for name in ("score_pair", "in_blackout"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        F.in_blackout = lambda sym: False
+        F.MODE = "mtf"; F.P = F.PARAMS["mtf"]
+        subs = [{"mode": "day", "filter": "adx40"}]
+        F.score_pair = lambda sym, oh=None: self._fake_score()
+        parts, _ = F.sub_mode_signals({"positions": []}, subs=subs)
+        self.assertEqual(len(parts), len(F.SYMBOLS))
+        self.t += 5 * 60
+        F.score_pair = lambda sym, oh=None: dict(self._fake_score(), side=None)
+        self.assertEqual(F.sub_mode_signals({"positions": []}, subs=subs)[0], [])
+        self.t += 20 * 60
+        F.score_pair = lambda sym, oh=None: self._fake_score()
+        self.assertEqual(F.sub_mode_signals({"positions": []}, subs=subs)[0], [],
+                         "消えて20分で出直した参考通知をまた送っている")
+        self.t += 5 * 60
+        F.score_pair = lambda sym, oh=None: dict(self._fake_score(), side=None)
+        F.sub_mode_signals({"positions": []}, subs=subs)
+        self.t += 61 * 60
+        F.score_pair = lambda sym, oh=None: self._fake_score()
+        self.assertEqual(len(F.sub_mode_signals({"positions": []}, subs=subs)[0]), len(F.SYMBOLS))
+
+    def test_dashboard_uses_the_same_rearm_minutes(self):
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        m = re.search(r"SIGNAL_REARM_MIN=(\{[^}]*\})", src)
+        self.assertIsNotNone(m, "画面のライブ通知に再通知の間隔が無い")
+        js = json.loads(re.sub(r"(\w+):", r'"\1":', m.group(1)))
+        self.assertEqual(js, F.SIGNAL_REARM_MIN)
+
+
+
+class CostWarningTest(RunTestCase):
+    """「SL幅が狭すぎます」は、ふだんのスプレッドで判断する。
+
+    いまのスプレッドで見ていたため、早朝のロールオーバーや休場中に開いたスプレッドで
+    11/9〜11/15 の毎日「mtfモードはSL幅が狭すぎます（84%）」と出ていた（ふだんは3%前後）。"""
+
+    def _warns(self):
+        F.main()
+        return [w["msg"] for w in self.status().get("warnings") or [] if "1リスクの" in w["msg"]]
+
+    def test_a_temporarily_wide_spread_is_not_a_narrow_stop(self):
+        self.addCleanup(setattr, F, "spread_state", F.__dict__["spread_state"])
+        F.spread_state = lambda sym, ticker: {"pips": 40.0, "base": 0.5, "mult": 80.0, "wide": True}
+        self.addCleanup(setattr, F, "market_is_open", F.__dict__["market_is_open"])
+        F.market_is_open = lambda: True
+        self.assertEqual(self._warns(), [])
+
+    def test_a_structurally_narrow_stop_is_still_warned(self):
+        self.addCleanup(setattr, F, "SPREAD_PIPS", F.SPREAD_PIPS)
+        F.SPREAD_PIPS = {k: 30.0 for k in F.SPREAD_PIPS}
+        self.addCleanup(setattr, F, "market_is_open", F.__dict__["market_is_open"])
+        F.market_is_open = lambda: True
+        self.assertTrue(self._warns())
+
+
+
+class LineReserveTest(RunTestCase):
+    """LINEの残りが少なくなったら、🔒・根拠の変化のために枠を残す（エントリーはメールだけ）。"""
+
+    def test_filter_keeps_only_important_when_low(self):
+        parts = ["entry", "🔒lock", "（再送・前回はLINEに届きませんでした）\n🔒old"]
+        self.assertEqual(F.line_reserve_filter(parts, ["🔒lock"], (189, 200)), (parts, 0))
+        self.assertEqual(F.line_reserve_filter(parts, ["🔒lock"], (190, 200)), (parts[1:], 1))
+        self.assertEqual(F.line_reserve_filter(parts, ["🔒lock"], None), (parts, 0), "数が分からない時は止めない")
+
+    def _run(self, quota):
+        os.environ["LINE_CHANNEL_ACCESS_TOKEN"] = "x"
+        self.addCleanup(os.environ.pop, "LINE_CHANNEL_ACCESS_TOKEN", None)
+        self.addCleanup(setattr, F, "check_line_quota", F.check_line_quota)
+        F.check_line_quota = lambda token=None: quota
+        for name in ("entry_side", "mtf_view", "spread_blocks_entry"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        F.entry_side = lambda s_, t_, r_, th_, aligned=None, pullback=None: ("買い" if s_ == "USD_JPY" else None)
+        F.mtf_view = lambda symbol: {"aligned": 0, "label": "1h→レンジ / 4h→レンジ"}
+        F.spread_blocks_entry = lambda sp, sl_pips: None
+        self.addCleanup(setattr, F, "market_is_open", F.__dict__["market_is_open"])
+        F.market_is_open = lambda: True
+        self.write(F.POSITIONS_FILE, {"positions": []})
+        F.main()
+
+    def test_entries_go_to_mail_only_when_line_is_nearly_full(self):
+        self._run((195, 200))
+        self.assertFalse([t for t in self.sent["line"] if "USD_JPY" in t], "残り5通なのにエントリーをLINEへ送った")
+        self.assertTrue([b for _, b in self.sent["mail"] if "USD_JPY" in b], "メールにも届いていない")
+        self.assertTrue([w for w in self.status().get("warnings") or [] if w["tag"] == "line-reserve"])
+
+    def test_normal_when_plenty_left(self):
+        self._run((100, 200))
+        self.assertTrue([t for t in self.sent["line"] if "USD_JPY" in t])
+
+    def test_quota_is_remembered_for_the_dashboard(self):
+        F.save_line_quota(185, 200)
+        q = F.load_line_quota()
+        self.assertEqual((q["used"], q["limit"]), (185, 200))
+        F.main()
+        st = self.status()
+        self.assertEqual(st["line"]["used"], 185)
+        self.assertTrue([w for w in st.get("warnings") or [] if w["tag"] == "line-quota"],
+                        "送らない回に残りの警告が消える")
 
 
 if __name__ == "__main__":

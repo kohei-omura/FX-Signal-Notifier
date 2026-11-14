@@ -1638,6 +1638,53 @@ SUB_DEFAULT_FILTER = {"day": "adx40", "scalp": "adx40", "swing": "all", "mtf": "
 # これが無いと、条件が続いているあいだ5分ごとに同じ通知が飛び続ける。
 SUB_STATE_FILE = data_path("sub_signals.json")
 
+# ===== 同じ合図の再通知を止める（LINE枠の節約） =====
+# 合図は条件の境目で「出る→消える→また出る」を5〜20分おきに繰り返すことがある。
+# 2026-11-13 はスイングの参考通知「AUD/JPY 売り」が1日に約10回出直し、そのたびにLINEを1通使った
+# （本体の上位足も 11/13 01:10〜01:55 に同じ組み合わせで出直していた）。
+# 11/14 には今月の200通のうち190通を使い切りかけ、残り半月は🔒利益を守る通知も届かなくなる状態だった。
+# 同じモード・通貨・向きの合図が「最後に見えてから」この時間内にまた出た時は、同じ場面とみなして送らない。
+# 目安は足4本ぶん（画面のライブ通知 index.html の SIGNAL_REARM_MIN と同じ値）。
+SIGNAL_REARM_MIN = {"scalp": 4, "day": 60, "swing": 240, "mtf": 60}
+SEEN_FILE = data_path("signal_seen.json")
+SEEN_KEEP_SEC = 3 * 86400
+_SEEN = None
+
+
+def _now_ts():
+    return datetime.datetime.now(JST).timestamp()
+
+
+def _seen():
+    global _SEEN
+    if _SEEN is None:
+        d = read_json(SEEN_FILE) if os.path.exists(SEEN_FILE) else None
+        _SEEN = dict((d or {}).get("seen") or {})
+    return _SEEN
+
+
+def signal_rearmed(mode, sym, sig, now_ts=None):
+    """この合図を新しい合図として送ってよいか（最後に見えてから再通知の間隔があいたか）。"""
+    now_ts = _now_ts() if now_ts is None else now_ts
+    last = _seen().get(f"{mode}|{sym}|{sig}")
+    return last is None or now_ts - float(last) >= SIGNAL_REARM_MIN.get(mode, 60) * 60
+
+
+def mark_seen(mode, sym, sig, now_ts=None):
+    _seen()[f"{mode}|{sym}|{sig}"] = int(_now_ts() if now_ts is None else now_ts)
+
+
+def save_seen(now_ts=None):
+    if _SEEN is None:
+        return
+    now_ts = _now_ts() if now_ts is None else now_ts
+    keep = {k: v for k, v in _SEEN.items() if now_ts - float(v) < SEEN_KEEP_SEC}
+    try:
+        write_json(SEEN_FILE, {"updated": datetime.datetime.now(JST).isoformat(timespec="seconds"),
+                               "seen": keep})
+    except Exception as e:
+        warn(f"合図の記録を保存できませんでした: {e}", tag="seen", surface=False)
+
 
 def sub_modes():
     """mode.json の sub 指定を読む。[{"mode":"day","filter":"adx40"}] の形。
@@ -1716,6 +1763,12 @@ def sub_mode_signals(data, subs=None):
                 # 本体と同じく「合図が変わった時だけ」送る。条件が続いている
                 # あいだ5分ごとに同じ通知が飛ぶのを防ぐ。
                 if prev.get(f"{m}|{sym}") == sig:
+                    mark_seen(m, sym, sig)
+                    continue
+                # 消えてすぐ出直した合図は同じ場面（出たり消えたりでLINEを使い切っていた）
+                rearmed = signal_rearmed(m, sym, sig)
+                mark_seen(m, sym, sig)
+                if not rearmed:
                     continue
                 d = 1 if sig == "買い" else -1
                 tp = sc["price"] + d * sc["tp_pips"] * PIP_SIZE
@@ -3225,7 +3278,12 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                     pair[k] = st[k]                    # 決済ポリシー比較・スコア帯別（画面が読む）
         pairs.append(pair)
 
-        if market_open and sig and entry and sig != (prev_signals or {}).get(sym):
+        # 消えてすぐ出直した合図は同じ場面として送らない（画面の表示はそのまま）
+        rearmed = True
+        if market_open and sig:
+            rearmed = sig == (prev_signals or {}).get(sym) or signal_rearmed(MODE, sym, sig)
+            mark_seen(MODE, sym, sig)
+        if market_open and sig and entry and sig != (prev_signals or {}).get(sym) and rearmed:
             rtxt = " / ".join(sc["reasons"])
             arrow = "以下" if sig == "買い" else "以上"
             # mtfは「上位足の方向へ、短期の逆行が一定まで進んだところ」で入る設計。
@@ -3305,10 +3363,19 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         nb = ((near or {}).get("pairs") or {}).get(p["symbol"])
         p["near"] = dict(nb, gap_now=(gaps.get(p["symbol"]) or {}).get("gap")) if nb else None
 
-    costs = [p["cost_r"] for p in pairs if p.get("cost_r") is not None]
+    # 「SL幅が狭すぎる」はモードの作りの問題なので、ふだんのスプレッド(cost_r_base)で判断する。
+    # いまのスプレッド(cost_r)で見ると、早朝のロールオーバー(6〜8時)や休場中に開いた
+    # スプレッドで毎日「mtfはSL幅が狭すぎます」と出ていた（11/9〜11/15、実際は3%前後）。
+    # 一時的に開いている方は、通貨カードのスプレッド表示とエントリーの見送りで扱っている。
+    costs = [p["cost_r_base"] for p in pairs if p.get("cost_r_base") is not None] if market_open else []
     if costs and sum(costs)/len(costs) >= COST_R_WARN:
         warn(f"スプレッドが1リスクの{sum(costs)/len(costs)*100:.0f}%を占めています"
              f"（{MODE}モードはSL幅が狭すぎます）", tag="cost")
+    # LINEの残り（送った回にAPIで確かめた最新の数）。送らない回も画面に出し続ける。
+    lq = load_line_quota()
+    if lq and lq["used"] >= lq["limit"] * LINE_QUOTA_WARN:
+        warn(f"LINEの今月の送信数が上限に近づいています（{lq['used']}/{lq['limit']}通）。"
+             f"残り{LINE_RESERVE}通からは🔒利益を守る通知と根拠の変化だけをLINEへ送ります", tag="line-quota")
     status = {
         "risk": {"open_yen": round(risk_now), "cap_yen": round(risk_cap),
                  "pct": round(risk_now/risk_cap*100) if risk_cap else None,
@@ -3316,6 +3383,8 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         "generated_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "market_open": market_open, "mode": MODE, "blackout": any_blackout,
         "weights": {"tech": TECH_W, "fund": FUND_W},
+        **({"line": {"used": lq["used"], "limit": lq["limit"], "at": lq.get("at"),
+                     "reserve": LINE_RESERVE}} if lq else {}),
         "pairs": pairs, "open_positions": open_pos, "closed_positions": closed_pos[-20:],
     }
     # 異常があった回だけ載せる（正常時にキーを増やして毎回コミットを起こさない）。
@@ -3406,6 +3475,11 @@ def mail_subject(sig_events, pos_events, level_count):
 LINE_PENDING_FILE = data_path("line_pending.json")
 LINE_PENDING_TTL_MIN = 180
 LINE_QUOTA_WARN = 0.8        # 月の上限の何割を超えたら画面に警告するか
+# LINEの残りがこの通数以下になったら、エントリーと参考の合図はメールだけにして、
+# 残りを🔒利益を守る通知・根拠の変化（OCOでは拾えないもの）のために取っておく。
+# 2026-11-14 は月の半分で190/200通に達し、そのままだと残り半月は🔒も届かなかった。
+LINE_RESERVE = 10
+LINE_QUOTA_FILE = data_path("line_quota.json")
 
 
 def load_line_pending(now_ts=None):
@@ -3441,13 +3515,48 @@ def check_line_quota(token=None):
         limit, used = q.get("value"), u.get("totalUsage")
         if q.get("type") != "limited" or not limit or used is None:
             return None
+        save_line_quota(used, limit)
         if used >= limit * LINE_QUOTA_WARN:
             warn(f"LINEの今月の送信数が上限に近づいています（{used}/{limit}通）。"
-                 f"上限に達すると、エントリーも利益を守る通知も届かなくなります",
+                 f"残り{LINE_RESERVE}通からは🔒利益を守る通知と根拠の変化だけをLINEへ送ります",
                  tag="line-quota")
         return used, limit
     except Exception:
         return None
+
+
+def save_line_quota(used, limit):
+    """最後に分かったLINEの送信数。画面の表示と、送らない回の警告に使う（APIは送る回だけ叩く）。"""
+    now = datetime.datetime.now(JST)
+    try:
+        write_json(LINE_QUOTA_FILE, {"month": now.strftime("%Y-%m"), "used": int(used), "limit": int(limit),
+                                     "at": now.strftime("%Y-%m-%d %H:%M JST")})
+    except Exception as e:
+        warn(f"LINEの送信数を保存できませんでした: {e}", tag="line-quota-save", surface=False)
+
+
+def load_line_quota():
+    """今月ぶんの記録だけ返す（月が変わったら枠も戻るので古い数字は使わない）。"""
+    d = read_json(LINE_QUOTA_FILE) if os.path.exists(LINE_QUOTA_FILE) else None
+    if not isinstance(d, dict) or d.get("month") != datetime.datetime.now(JST).strftime("%Y-%m"):
+        return None
+    if not d.get("limit") or d.get("used") is None:
+        return None
+    return d
+
+
+def line_reserve_filter(line_parts, important, quota):
+    """残りが LINE_RESERVE 通以下なら、大事な通知（🔒・根拠の変化・その再送）だけを残す。
+       戻り値: (LINEに送るもの, メールだけにしたものの数)"""
+    if not quota or not line_parts:
+        return line_parts, 0
+    used, limit = quota
+    if limit - used > LINE_RESERVE:
+        return line_parts, 0
+    keep_set = set(important or [])
+    # 再送の控え(line_pending)には大事な通知しか入らないので、再送はそのまま残す
+    keep = [t for t in line_parts if t in keep_set or t.startswith("（再送")]
+    return keep, len(line_parts) - len(keep)
 
 
 def notify_line(text):
@@ -3568,6 +3677,8 @@ def main():
         sub_parts, sub_events = sub_mode_signals(data)
     except Exception as e:
         warn(f"副通知の作成に失敗: {e}", tag="sub", surface=False)
+    if market_open:
+        save_seen()                # 合図が最後に見えた時刻（再通知の判定に使う）
     # 前向き検証の決着判定。通知の可否とは無関係なので、通知が無い回でも必ず通す。
     try:
         resolve_forward()
@@ -3603,6 +3714,12 @@ def main():
     # 1行目に要約を置く。LINEの通知プレビューとメール件名の両方が中身で分かるようになる。
     head = f"{subject[len(f'【FX/{MODE}】'):]}\n📊 FX通知 [{MODE}] {now_str}\n\n"
     tail = "\n\n※スコアは目安です。最適値の保証ではなく自己責任で。"
+    if line_parts and LINE_ENABLED and os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"):
+        q = check_line_quota()
+        line_parts, held_back = line_reserve_filter(line_parts, important, q)
+        if held_back:
+            warn(f"LINEの今月の残りが{q[1] - q[0]}通のため、エントリーと参考の合図はメールだけにしています"
+                 f"（🔒利益を守る通知と根拠の変化は引き続きLINEへ）", tag="line-reserve")
     if line_parts:
         print("[LINE]\n" + "\n\n".join(line_parts))
         sent = notify_line(head + "\n\n".join(line_parts) + tail)
