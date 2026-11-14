@@ -1,0 +1,54 @@
+name: Long Backtest (3 years)
+
+# 「どこで戦うか」を確定させるための3年検証（上位足のみ・週1回）。
+# 1年では上位足の平均+0.06R前後を95%区間で0と区別できない（約2.4年ぶん要る）。
+# 3年ぶんの足を取るのは重いので、毎日の1年検証とは分けて週末（市場が閉まっている間）に回す。
+# 結果は backtest.json の "long" に入り、毎日の1年検証はこれを消さずに引き継ぐ。
+
+on:
+  schedule:
+    - cron: '17 22 * * 6'   # 毎週日曜 07:17 JST（土曜 22:17 UTC）。FX市場の休場中
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backtest           # 毎日の1年検証と同時に backtest.json を書かない
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180    # 15分足・1時間足を約3年×4通貨（1日1リクエスト）取るため長め
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Run 3-year backtest
+        env:
+          BACKTEST_MODES: long
+          API_WORKERS: "2"
+        run: python engine/backtest.py
+      - name: Commit results
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/backtest.json
+          if git diff --staged --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "auto: update 3-year backtest [skip ci]"
+          for i in 1 2 3; do
+            git fetch origin "${GITHUB_REF_NAME}"
+            if git rebase "origin/${GITHUB_REF_NAME}"; then
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then echo "pushed"; exit 0; fi
+            else
+              git rebase --abort 2>/dev/null || true
+              git reset --hard "origin/${GITHUB_REF_NAME}"
+              echo "conflict: skip this cycle"; exit 0
+            fi
+            echo "push retry $i"; sleep 4
+          done
+          echo "push contended; skip"; exit 0

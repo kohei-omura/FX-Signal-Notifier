@@ -728,7 +728,9 @@ def _htf_window_closes(symbol, interval, days):
     """バックテスト期間ぶんの上位足終値。klines_day のキャッシュを共有する。"""
     today = datetime.datetime.now(JST).date()
     if interval in ("4hour", "8hour", "12hour", "1day"):
-        keys = [{"date": str(today.year)}, {"date": str(today.year - 1)}]
+        # 年単位で返る足。検証期間の最初の年まで遡る（1年なら今年と去年、3年なら4年ぶん）
+        first = (today - datetime.timedelta(days=days + 2)).year
+        keys = [{"date": str(y)} for y in range(today.year, first - 1, -1)]
     else:
         keys = [{"date": (today - datetime.timedelta(days=b)).strftime("%Y%m%d")}
                 for b in range(0, days + 2)]

@@ -300,6 +300,74 @@ def session_holdout(mode):
 EXIT_MODES = ("mtf", "day", "swing")
 
 
+# ===== 3年検証（週1回・上位足だけ） =====
+# 1年では平均+0.06R前後の差を95%区間で0と区別できない（必要件数 ≒ (1.96×0.2/0.06)²...
+# 実際は (1.96×SD/平均)² 件。上位足は約2.4年ぶん要る）。GMOの足が取れる限り3年で集計する。
+# 重い検証（しきい値の振り直し等）は付けず、「どこで戦うか」の判定に要るものだけを出す。
+LONG_WINDOWS = {"mtf": (1095, 110000)}
+TRADING_DAYS_PER_YEAR = 261          # days_covered（足が取れた日数＝平日）を年に直す
+# 判定ルール（先に決めておく。数字を見てから変えない）:
+#   確定的に勝ち … 全期間の95%区間が0より上 かつ 前半・後半の平均がどちらもプラス
+#   確定的に負け … 全期間の95%区間が0より下 かつ 前半・後半の平均がどちらもマイナス
+#   それ以外     … まだ分からない
+LONG_RULE = "全期間の95%区間が0の片側に収まり、前半・後半の平均も同じ向きの時だけ確定"
+
+
+def long_verdict(all_, h1, h2):
+    try:
+        if all_["ci_lo"] > 0 and h1["avg_r"] > 0 and h2["avg_r"] > 0:
+            return "good"
+        if all_["ci_hi"] < 0 and h1["avg_r"] < 0 and h2["avg_r"] < 0:
+            return "bad"
+    except (KeyError, TypeError):
+        return None
+    return "und"
+
+
+def _advice(st):
+    return ((st or {}).get("policies") or {}).get("advice")
+
+
+def run_long(mode):
+    """mode を3年ぶんで集計する（推奨決済=advice のみ。全期間・前半・後半）。"""
+    days, cap = LONG_WINDOWS[mode]
+    F.MODE = mode
+    F.P = F.PARAMS[mode]
+    F.TECH_W, F.FUND_W = (0.45, 0.55) if mode == "swing" else (0.85, 0.15)
+    F.STATS_DAYS = {m: days for m in F.PARAMS}
+    F.STATS_MAX_BARS = {m: cap for m in F.PARAMS}
+    for c in (F._OHLC_CACHE, F._MTF_CACHE, F._SCORE_CACHE, F._SERIES_CACHE):
+        c.clear()
+    syms, parts = {}, {"all": [], "first_half": [], "second_half": []}
+    for sym in F.SYMBOLS:
+        try:
+            row = {"all": _advice(F.compute_signal_stats(sym)),
+                   "first_half": _advice(F.compute_signal_stats(sym, entry_range=(0.0, 0.5))),
+                   "second_half": _advice(F.compute_signal_stats(sym, entry_range=(0.5, 1.0)))}
+        except Exception as e:
+            print(f"[WARN] 3年検証 {mode}/{sym} 失敗: {e}", file=sys.stderr)
+            continue
+        if not row["all"] or not row["all"].get("n"):
+            continue
+        row["verdict"] = long_verdict(row["all"], row["first_half"], row["second_half"])
+        syms[sym] = row
+        for k in parts:
+            if row.get(k):
+                parts[k].append(row[k])
+    if not syms:
+        return None
+    pooled = {k: pool_summary(v) for k, v in parts.items() if v}
+    covered = len({k[2] for k in F._KLINE_DAY_CACHE
+                   if k[1] == F.P["interval"] and F._KLINE_DAY_CACHE[k]})
+    return {"generated_at": datetime.datetime.now(F.JST).strftime("%Y-%m-%d %H:%M JST"),
+            "days": days, "days_covered": covered,
+            "years_covered": round(covered / TRADING_DAYS_PER_YEAR, 2),
+            "policy": "advice", "rule": LONG_RULE,
+            **pooled,
+            "verdict": long_verdict(pooled.get("all"), pooled.get("first_half"), pooled.get("second_half")),
+            "symbols": syms}
+
+
 def merge_previous(out, path):
     """今回回さなかったモードは、前回の結果をそのまま引き継ぐ（いつの結果かも残す）。"""
     try:
@@ -316,6 +384,9 @@ def merge_previous(out, path):
             kept[m] = v["generated_at"]
     if kept:
         out["kept_from_previous"] = kept
+    # 3年検証は週1回なので、毎日の実行では前回の結果をそのまま引き継ぐ
+    for m, v in (prev.get("long") or {}).items():
+        out.setdefault("long", {}).setdefault(m, v)
     return out
 
 
@@ -478,6 +549,23 @@ def main():
     for mode in MODES:
         if mode == "review":          # 取引の答え合わせだけ回す時の指定（モードではない）
             continue
+        if mode == "long":            # 3年検証（週1回の別ジョブから）
+            for lm in LONG_WINDOWS:
+                r = run_long(lm)
+                if not r:
+                    print(f"[WARN] 3年検証 {lm}: 集計できず（前回の結果を残します）", file=sys.stderr)
+                    continue
+                out.setdefault("long", {})[lm] = r
+                a = r.get("all") or {}
+                print(f"[OK] 3年検証 {lm}: 実データ{r['days_covered']}日(約{r['years_covered']}年) "
+                      f"n={a.get('n')} 平均{a.get('avg_r', 0):+.3f}R "
+                      f"[{a.get('ci_lo', 0):+.3f}〜{a.get('ci_hi', 0):+.3f}] "
+                      f"前半{(r.get('first_half') or {}).get('avg_r', 0):+.3f} "
+                      f"後半{(r.get('second_half') or {}).get('avg_r', 0):+.3f} 判定:{r['verdict']}")
+                for sym, row in r["symbols"].items():
+                    b = row["all"]
+                    print(f"      {sym} n={b['n']} 平均{b['avg_r']:+.3f}R [{b['ci_lo']:+.3f}〜{b['ci_hi']:+.3f}] 判定:{row['verdict']}")
+            continue
         if mode not in F.PARAMS:
             print(f"[WARN] 未知のモード: {mode}", file=sys.stderr); continue
         r = run_mode(mode)
@@ -586,7 +674,7 @@ def main():
                 best = h.get("best_th") if key == "holdout" else "/".join(map(str, h.get("best") or []))
                 print(f"      前半で最良の{lab} {best}: "
                       f"前半{f_['avg_r']:+.3f}(n={f_['n']}) → 後半{s_['avg_r']:+.3f}(n={s_['n']})")
-    if not out["modes"] and MODES != ["review"]:
+    if not out["modes"] and not out.get("long") and MODES != ["review"]:
         print("[ERROR] どのモードも集計できませんでした（既存の backtest.json は残します）",
               file=sys.stderr)
         sys.exit(1)

@@ -6407,5 +6407,132 @@ class ExpectedHoldCacheTest(RunTestCase):
         self.assertEqual(F.expected_hold_min("mtf", "USD_JPY", {"USD_JPY": {"hold_tp_min": 75}}), 75)
 
 
+
+class ThreeYearBacktestTest(unittest.TestCase):
+    """3年検証（上位足・週1回）。1年では平均+0.06R前後を95%区間で0と区別できないため。"""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "engine"))
+        import backtest as B
+        self.B = B
+        self._saved = (F.MODE, F.P, F.TECH_W, F.FUND_W, dict(F.STATS_DAYS), dict(F.STATS_MAX_BARS),
+                       F.compute_signal_stats)
+
+    def tearDown(self):
+        (F.MODE, F.P, F.TECH_W, F.FUND_W, sd, sm, F.compute_signal_stats) = self._saved
+        F.STATS_DAYS.clear(); F.STATS_DAYS.update(sd)
+        F.STATS_MAX_BARS.clear(); F.STATS_MAX_BARS.update(sm)
+
+    @staticmethod
+    def _a(avg, lo, hi, n=300):
+        return {"n": n, "avg_r": avg, "ci_lo": lo, "ci_hi": hi, "sd": 1.2, "winrate": 47}
+
+    def test_verdict_needs_both_halves_in_the_same_direction(self):
+        v = self.B.long_verdict
+        self.assertEqual(v(self._a(.08, .01, .15), self._a(.05, -.1, .2), self._a(.1, -.1, .3)), "good")
+        self.assertEqual(v(self._a(.08, .01, .15), self._a(-.01, -.2, .2), self._a(.17, 0, .3)), "und",
+                         "前半がマイナスなのに確定にしている")
+        self.assertEqual(v(self._a(-.2, -.3, -.1), self._a(-.1, -.3, 0), self._a(-.3, -.5, -.1)), "bad")
+        self.assertEqual(v(self._a(.05, -.03, .13), self._a(.05, 0, 0), self._a(.05, 0, 0)), "und")
+        self.assertIsNone(v(None, None, None))
+
+    def test_run_long_uses_three_years_and_reports_halves(self):
+        calls = []
+        def stats(sym, entry_range=None, **k):
+            calls.append((F.MODE, F.STATS_DAYS["mtf"], entry_range))
+            avg = {None: .08, (0.0, 0.5): .06, (0.5, 1.0): .1}[entry_range]
+            return {"n": 500, "policies": {"advice": self._a(avg, avg - .1 if entry_range else .01, avg + .1)}}
+        F.compute_signal_stats = stats
+        r = self.B.run_long("mtf")
+        self.assertEqual(r["days"], 1095)
+        self.assertTrue(all(m == "mtf" and d == 1095 for m, d, _ in calls))
+        self.assertEqual(len(calls), 3 * len(F.SYMBOLS))
+        self.assertEqual(r["verdict"], "good")
+        self.assertEqual(r["all"]["n"], 300 * len(F.SYMBOLS))
+        self.assertIn("first_half", r); self.assertIn("second_half", r)
+        self.assertEqual(r["symbols"]["USD_JPY"]["verdict"], "good")
+        self.assertIn("前半・後半", r["rule"])
+
+    def test_daily_run_keeps_the_weekly_result(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump({"modes": {}, "long": {"mtf": {"all": {"n": 1}}}}, f); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = self.B.merge_previous({"modes": {"day": {}}}, path)
+        self.assertEqual(out["long"]["mtf"]["all"]["n"], 1, "毎日の1年検証で3年検証が消える")
+        out = self.B.merge_previous({"modes": {}, "long": {"mtf": {"all": {"n": 2}}}}, path)
+        self.assertEqual(out["long"]["mtf"]["all"]["n"], 2, "新しい3年検証が古いもので上書きされた")
+
+    def test_higher_timeframes_cover_every_year_of_the_window(self):
+        seen = []
+        orig = F._htf_closes
+        self.addCleanup(setattr, F, "_htf_closes", orig)
+        F._htf_closes = lambda sym, iv, keys: seen.append(keys) or {}
+        F._htf_window_closes("USD_JPY", "4hour", 1095)
+        years = sorted(int(k["date"]) for k in seen[-1])
+        this = datetime.datetime.now(F.JST).year
+        self.assertEqual(years[-1], this)
+        self.assertLessEqual(years[0], this - 3, "3年前の上位足が取れていない（上位足フィルタが効かなくなる）")
+        F._htf_window_closes("USD_JPY", "4hour", 365)
+        self.assertEqual(len(seen[-1]), 2, "1年検証の取得量が変わった")
+
+    def test_weekly_workflow(self):
+        with open(os.path.join(ROOT, ".github/workflows/backtest-long.yml"), encoding="utf-8") as f:
+            y = f.read()
+        self.assertIn("BACKTEST_MODES: long", y)
+        self.assertIn("group: backtest", y, "毎日の検証と同時に backtest.json を書いてしまう")
+        self.assertIn("git add data/backtest.json", y)
+
+
+class LongCheckPanelTest(unittest.TestCase):
+    """ツール⓪「どこで戦うか」の、確定までの目安・3年検証・実取引の照合。"""
+
+    def _run(self, tail):
+        node = shutil.which("node") or shutil.which("nodejs")
+        if not node:
+            self.skipTest("node が無いので画面側を実行できない")
+        with open(os.path.join(ROOT, "profit.js"), encoding="utf-8") as f:
+            src = f.read()
+        head = ("var escHtml=function(s){return String(s);};var MODE_LABEL_T={mtf:'上位足フォロー',swing:'スイング',"
+                "day:'デイ',scalp:'スキャル'};var BT_CACHE=null;function loadTrades(){return [];}\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+            f.write(head + src + "\n" + tail); path = f.name
+        self.addCleanup(os.unlink, path)
+        out = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout
+
+    def test_years_formula(self):
+        out = json.loads(self._run(
+            "console.log(JSON.stringify([pfYearsToConfirm({n:706,avg_r:0.056,sd:1.1859},1),"
+            "pfYearsToConfirm({n:4101,avg_r:-0.07,sd:1.24},1)]));"))
+        self.assertAlmostEqual(out[0]["total"], 2.4, delta=0.1)
+        self.assertAlmostEqual(out[0]["more"], 1.4, delta=0.1)
+        self.assertIsNone(out[1], "平均がマイナスなのに年数を出している")
+
+    def test_panel_uses_three_year_data_and_real_trades(self):
+        bt = {"modes": {
+                "mtf": {"days_covered": 261, "policies": {"advice": {"n": 706, "avg_r": .056, "sd": 1.19, "ci_lo": -.03, "ci_hi": .14}},
+                        "symbols": {"GBP_JPY": {"policies": {"advice": {"n": 168, "avg_r": .118, "sd": 1.19, "ci_lo": -.06, "ci_hi": .3}}}}},
+                "day": {"days_covered": 261, "policies": {"advice": {"n": 4101, "avg_r": -.07, "sd": 1.24, "ci_lo": -.11, "ci_hi": -.03}},
+                        "symbols": {}},
+                "swing": {"days_covered": 261, "policies": {"advice": {"n": 707, "avg_r": -.01, "sd": 1.23, "ci_lo": -.1, "ci_hi": .08}},
+                        "symbols": {}}},
+              "long": {"mtf": {"years_covered": 2.9, "days_covered": 757, "rule": "R", "verdict": "good",
+                               "all": {"n": 2100, "avg_r": .06, "sd": 1.19, "ci_lo": .01, "ci_hi": .11},
+                               "first_half": {"avg_r": .05}, "second_half": {"avg_r": .07},
+                               "symbols": {"GBP_JPY": {"verdict": "und", "all": {"n": 500, "avg_r": .15, "sd": 1.2, "ci_lo": -.01, "ci_hi": .2},
+                                                       "first_half": {"avg_r": .12}, "second_half": {"avg_r": -.01}}}}},
+              "trade_review": {"by": {"mode": {"mtf": {"n": 35, "avg_r": -.034}, "day": {"n": 10, "avg_r": -.1}}}}}
+        html = self._run("console.log(renderLongCheck(" + json.dumps(bt) + "));")
+        self.assertIn("3年検証", html)
+        self.assertIn("勝ち確定", html)                     # 3年の全体
+        self.assertIn("向き逆", html)                       # 上位足: 検証+ / 実取引-（35件）
+        self.assertIn("参考", html)                         # デイ: 10件
+        self.assertIn("負け確定", html)                     # デイ
+        self.assertIn("出ない", html)                       # スイング: 平均マイナスで区間は0をまたぐ
+        self.assertIn("一致待ち", html)                     # GBP: 区間は届く件数だが後半がマイナス
+        self.assertIn("pfgood", html)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

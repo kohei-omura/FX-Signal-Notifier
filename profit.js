@@ -88,7 +88,103 @@ function renderWhereToFight(bt){
     +'<div style="margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;line-height:1.85">'
     +lines.join('<br>')+'</div>'
     +'<div class="note">1回あたりの期待R（🎯推奨で決済・スプレッド控除後・'+escHtml(bt.generated_at||'')+' 時点の1年ぶん）。'
-    +'通貨ごとの差の多くは偶然の範囲です。<b>良かった通貨だけを選ぶのは過去に合わせるだけ</b>なので、避ける根拠になるのは赤枠だけです。</div>';
+    +'通貨ごとの差の多くは偶然の範囲です。<b>良かった通貨だけを選ぶのは過去に合わせるだけ</b>なので、避ける根拠になるのは赤枠だけです。</div>'
+    +renderLongCheck(bt);
+}
+
+/* ===== 確定までの目安・3年検証・実取引との照合 =====
+   1年では平均+0.06R前後の差を95%区間で0と区別できない。
+   区間の幅は件数の平方根でしか縮まないので、確定に要る件数は (1.96×SD÷平均)²。
+   1年あたりの件数で割れば「何年ぶんの検証が要るか」になる（平均とSDが今のまま続く前提の目安）。 */
+var PF_TRADING_DAYS=261;      // 足が取れた日数(平日)を年に直す
+var PF_REAL_MIN_N=30;         // 実取引の件数がこれ未満なら「参考」扱い
+var PF_YEARS_CAP=30;          // これより長くかかる欄は「実質出ない」（相場の性質が変わる方が先）
+function pfYearsToConfirm(a,years){
+  if(!a||!a.n||!a.sd||!(years>0)||!(a.avg_r>0)) return null;
+  var need=Math.pow(1.96*a.sd/a.avg_r,2), perYear=a.n/years;
+  var total=need/perYear;
+  return {total:total, more:Math.max(0,total-years), need:Math.ceil(need)};
+}
+function _pfYears(v){ return v<10?(Math.round(v*10)/10).toFixed(1):String(Math.round(v)); }
+function _pfLong(bt,m){ try{ var l=bt.long&&bt.long[m]; return (l&&l.all&&l.all.n)?l:null; }catch(e){ return null; } }
+/* 3年検証があればそれを、無ければ1年検証を使う。 */
+function pfBestEvidence(bt,m,sym){
+  var l=_pfLong(bt,m);
+  if(l){
+    var row=sym?(l.symbols||{})[sym]:{all:l.all,first_half:l.first_half,second_half:l.second_half,verdict:l.verdict};
+    if(row&&row.all&&row.all.n) return {a:row.all,years:(l.years_covered||((l.days_covered||0)/PF_TRADING_DAYS)),
+      verdict:row.verdict,h1:row.first_half,h2:row.second_half,src:'3年'};
+  }
+  var a=_pfAdvice(bt,m,sym); if(!a) return null;
+  var v=bt.modes[m]; var yrs=(v&&v.days_covered)?v.days_covered/PF_TRADING_DAYS:1;
+  return {a:a,years:yrs,verdict:pfVerdict(a),src:'1年'};
+}
+function _pfConfirmText(e){
+  if(!e) return '—';
+  if(e.verdict==='good') return '<b class="good">勝ち確定</b>';
+  if(e.verdict==='bad') return '<b class="bad">負け確定</b>';
+  if(!(e.a.avg_r>0)) return '<span style="opacity:.8">出ない</span>';
+  var y=pfYearsToConfirm(e.a,e.years); if(!y) return '—';
+  /* 3年検証で区間は0より上なのに前半・後半の片方がマイナス → 年数ではなく向きの一貫性待ち */
+  if(y.more<=0) return '前半後半の<br>一致待ち';
+  if(y.total>PF_YEARS_CAP) return '<span style="opacity:.8">実質出ない</span><small>'+PF_YEARS_CAP+'年超</small>';
+  return 'あと約<b>'+_pfYears(y.more)+'</b>年';
+}
+function renderLongCheck(bt){
+  if(!bt||!bt.modes) return '';
+  var rv=bt.trade_review&&bt.trade_review.by&&bt.trade_review.by.mode||{};
+  var rows=PF_MODES.map(function(m){
+    var e=pfBestEvidence(bt,m,null); if(!e) return '';
+    var r=rv[m], real='—';
+    if(r&&r.n){
+      /* 向きを比べるのは検証側が確定している時だけ（未確定の±0付近と比べても意味がない） */
+      var agree=(r.avg_r>0)===(e.verdict==='good');
+      var cmp=(e.verdict==='good'||e.verdict==='bad')?(agree?'・向き一致':'・<b class="bad">向き逆</b>'):'';
+      real='<span class="'+(r.avg_r>0?'good':'bad')+'">'+_pf(r.avg_r,2)+'</span><small>'+r.n+'件'
+        +(r.n<PF_REAL_MIN_N?'・参考':cmp)+'</small>';
+    }
+    return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'
+      +'<td class="pfc">'+_pf(e.a.avg_r,2)+'<small>'+e.src+'・'+e.a.n+'件</small></td>'
+      +'<td class="pfc pfy">'+_pfConfirmText(e)+'</td><td class="pfc">'+real+'</td></tr>';
+  }).join('');
+  // 通貨ごとの「あと何年」（平均がプラスの欄だけ）
+  var per=[];
+  PF_MODES.forEach(function(m){
+    PF_SYMS.forEach(function(s){
+      var e=pfBestEvidence(bt,m,s); if(!e||!(e.a.avg_r>0)||e.verdict==='good') return;
+      var y=pfYearsToConfirm(e.a,e.years); if(!y||y.total>PF_YEARS_CAP) return;
+      per.push({t:y.more,txt:(PF_SHORT[m]||m)+' '+s.replace('_JPY','')+(y.more>0?' あと約'+_pfYears(y.more)+'年'
+        :' 件数は足りている（前半・後半の向きの一致待ち）')});
+    });
+  });
+  per.sort(function(a,b){return a.t-b.t;});
+  // 3年検証（上位足など LONG_WINDOWS のモード）
+  var longHtml='';
+  Object.keys(bt.long||{}).forEach(function(m){
+    var l=_pfLong(bt,m); if(!l) return;
+    var cell=function(row,bold){
+      if(!row||!row.all||!row.all.n) return '<td style="opacity:.5">—</td>';
+      var v=row.verdict;
+      return '<td class="pfc'+(v==='bad'?' pfbad':(v==='good'?' pfgood':''))+(bold?' pfall':'')+'">'
+        +_pf(row.all.avg_r,2)+'<small>前'+_pf((row.first_half||{}).avg_r||0,2)+'</small><small>後'+_pf((row.second_half||{}).avg_r||0,2)+'</small></td>';
+    };
+    longHtml+='<div class="sec" style="font-size:12px;margin:14px 2px 6px">1b. 3年検証（'+escHtml(PF_SHORT[m]||m)+'・週1回更新）</div>'
+      +'<table class="pft pfl"><thead><tr><th></th>'+PF_SYMS.map(function(s){return '<th>'+s.replace('_JPY','')+'</th>';}).join('')
+      +'<th>全体</th></tr></thead><tbody><tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'
+      +PF_SYMS.map(function(s){return cell((l.symbols||{})[s]);}).join('')
+      +cell({all:l.all,first_half:l.first_half,second_half:l.second_half,verdict:l.verdict},true)+'</tr></tbody></table>'
+      +'<div class="note">実データ約'+_pfYears(l.years_covered||0)+'年（'+(l.days_covered||0)+'日・'+escHtml(l.generated_at||'')+'）。'
+      +'判定ルール（先に固定）: '+escHtml(l.rule||'')+'。小さい数字は前半／後半の平均R。</div>';
+  });
+  if(!longHtml) longHtml='<div class="note">3年検証はまだありません（毎週日曜の朝に更新されます）。</div>';
+  return longHtml
+    +'<div class="sec" style="font-size:12px;margin:14px 2px 6px">1c. 確定までの目安と、実際の取引との照合</div>'
+    +'<table class="pft pfx"><thead><tr><th></th><th>検証の平均R</th><th>確定まで</th><th>実取引(9月〜)</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +(per.length?'<div style="margin-top:8px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font-size:12px;line-height:1.8">⏳ '
+      +per.slice(0,6).map(function(x){return escHtml(x.txt);}).join('<br>⏳ ')+'</div>':'')
+    +'<div class="note">「確定まで」＝95%区間が0を上回るのに要る件数 (1.96×SD÷平均)² を、1年あたりの件数で割った目安。'
+    +'平均とばらつきが今のまま続く前提で、届く確率は五分五分です。建玉の重なりで実際はもう少し長くかかります。'
+    +'平均が0以下の欄、'+PF_YEARS_CAP+'年を超える欄は、検証を延ばしても「勝ち確定」は出ません。実取引は記録簿のTP/SLでOCOを再現した値で、'+PF_REAL_MIN_N+'件未満は参考です。</div>';
 }
 
 /* ===== 何をやめるか（あなたの実績で、ルールを守っていたらどうだったか） =====
