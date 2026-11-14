@@ -5,7 +5,7 @@
     "pct": null,
     "full": false
   },
-  "generated_at": "2026-11-14 08:55 JST",
+  "generated_at": "2026-11-14 11:01 JST",
   "market_open": false,
   "mode": "mtf",
   "blackout": false,
@@ -233,8 +233,8 @@
       },
       "mtf": {
         "1hour": 0,
-        "4hour": 1,
-        "label": "1h→レンジ / 4h↑上昇",
+        "4hour": 0,
+        "label": "1h→レンジ / 4h→レンジ",
         "aligned": 0
       },
       "fast": {
@@ -275,7 +275,7 @@
       "hold_sl_min": 158,
       "tp_winrate": 30,
       "stats_n": 23,
-      "stats_ts": 1794613565,
+      "stats_ts": 1794621670,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -614,7 +614,7 @@
       "hold_sl_min": 375,
       "tp_winrate": 38,
       "stats_n": 21,
-      "stats_ts": 1794613565,
+      "stats_ts": 1794621670,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -954,7 +954,7 @@
       "hold_sl_min": 300,
       "tp_winrate": 38,
       "stats_n": 24,
-      "stats_ts": 1794613565,
+      "stats_ts": 1794621670,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1294,7 +1294,7 @@
       "hold_sl_min": 105,
       "tp_winrate": 38,
       "stats_n": 21,
-      "stats_ts": 1794613566,
+      "stats_ts": 1794621670,
       "stats_mode": "mtf",
       "policies": {
         "tp_sl": {
@@ -1385,46 +1385,12 @@
   "closed_positions": [],
   "warnings": [
     {
-      "tag": "api:/ticker",
-      "msg": "API失敗 /ticker : status=5 [{'message_code': 'ERR-5201', 'message_string': 'MAINTENANCE. Please wait for a while'}]"
+      "tag": "cost",
+      "msg": "スプレッドが1リスクの84%を占めています（mtfモードはSL幅が狭すぎます）"
     },
     {
-      "tag": "ticker",
-      "msg": "現在値(ticker)を取得できませんでした"
-    },
-    {
-      "tag": "breaker",
-      "msg": "API連続失敗5回。以降は再試行を打ち切って早く抜ける"
-    },
-    {
-      "tag": "ohlc:EUR_JPY",
-      "msg": "EUR_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:GBP_JPY",
-      "msg": "GBP_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:USD_JPY",
-      "msg": "USD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "ohlc:AUD_JPY",
-      "msg": "AUD_JPY のローソク足が取得できませんでした"
-    },
-    {
-      "tag": "mtf:1hour",
-      "msg": "USD_JPY の1hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "mtf:4hour",
-      "msg": "USD_JPY の4hour足が0本しか取れず、上位足の判定ができません"
-    },
-    {
-      "tag": "skip-status",
-      "msg": "価格取得に失敗。status.jsonは更新せず前回の表示を維持する（次回再生成）"
+      "tag": "line-quota",
+      "msg": "LINEの今月の送信数が上限に近づいています（190/200通）。上限に達すると、エントリーも利益を守る通知も届かなくなります"
     }
-  ],
-  "degraded": true,
-  "degraded_at": "2026-11-14 10:51 JST"
+  ]
 }
