@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-15 09:08 JST",
+  "generated_at": "2026-11-15 10:55 JST",
   "note": "1日1回の長期検証。status.json の統計（直近8日）より母数が多い。",
   "modes": {
     "scalp": {
@@ -2797,7 +2797,8 @@
           },
           "mtf_blocked": 1191
         }
-      }
+      },
+      "generated_at": "2026-11-15 09:08 JST"
     },
     "day": {
       "days": 365,
@@ -7697,7 +7698,8 @@
           },
           "mtf_blocked": 85
         }
-      }
+      },
+      "generated_at": "2026-11-15 09:08 JST"
     },
     "swing": {
       "days": 365,
@@ -12556,7 +12558,8 @@
           },
           "mtf_blocked": null
         }
-      }
+      },
+      "generated_at": "2026-11-15 09:08 JST"
     },
     "mtf": {
       "days": 365,
@@ -17277,11 +17280,211 @@
           },
           "mtf_blocked": null
         }
+      },
+      "generated_at": "2026-11-15 09:08 JST"
+    }
+  },
+  "long": {
+    "mtf": {
+      "generated_at": "2026-11-15 11:23 JST",
+      "days": 1095,
+      "days_covered": 777,
+      "years_covered": 2.98,
+      "policy": "advice",
+      "rule": "全期間の95%区間が0の片側に収まり、前半・後半の平均も同じ向きの時だけ確定",
+      "all": {
+        "n": 2085,
+        "winrate": 45,
+        "avg_r": -0.001,
+        "avg_r_gross": 0.024,
+        "cost_r": 0.025,
+        "sd": 1.1746,
+        "ci_lo": -0.051,
+        "ci_hi": 0.05
+      },
+      "first_half": {
+        "n": 1016,
+        "winrate": 43,
+        "avg_r": -0.06,
+        "avg_r_gross": -0.039,
+        "cost_r": 0.022,
+        "sd": 1.1554,
+        "ci_lo": -0.131,
+        "ci_hi": 0.011
+      },
+      "second_half": {
+        "n": 1069,
+        "winrate": 47,
+        "avg_r": 0.056,
+        "avg_r_gross": 0.083,
+        "cost_r": 0.028,
+        "sd": 1.1904,
+        "ci_lo": -0.016,
+        "ci_hi": 0.127
+      },
+      "verdict": "und",
+      "symbols": {
+        "USD_JPY": {
+          "all": {
+            "n": 538,
+            "winrate": 45,
+            "avg_r": 0.007,
+            "avg_r_gross": 0.018,
+            "cost_r": 0.011,
+            "sd": 1.1762,
+            "ci_lo": -0.093,
+            "ci_hi": 0.106,
+            "payoff": 1.28,
+            "pf": 1.03
+          },
+          "first_half": {
+            "n": 258,
+            "winrate": 41,
+            "avg_r": -0.083,
+            "avg_r_gross": -0.073,
+            "cost_r": 0.01,
+            "sd": 1.146,
+            "ci_lo": -0.223,
+            "ci_hi": 0.057,
+            "payoff": 1.24,
+            "pf": 0.88
+          },
+          "second_half": {
+            "n": 280,
+            "winrate": 48,
+            "avg_r": 0.09,
+            "avg_r_gross": 0.102,
+            "cost_r": 0.012,
+            "sd": 1.1994,
+            "ci_lo": -0.051,
+            "ci_hi": 0.23,
+            "payoff": 1.32,
+            "pf": 1.2
+          },
+          "verdict": "und"
+        },
+        "EUR_JPY": {
+          "all": {
+            "n": 504,
+            "winrate": 45,
+            "avg_r": 0.0,
+            "avg_r_gross": 0.021,
+            "cost_r": 0.02,
+            "sd": 1.1785,
+            "ci_lo": -0.102,
+            "ci_hi": 0.103,
+            "payoff": 1.28,
+            "pf": 1.04
+          },
+          "first_half": {
+            "n": 250,
+            "winrate": 44,
+            "avg_r": -0.008,
+            "avg_r_gross": 0.009,
+            "cost_r": 0.018,
+            "sd": 1.1836,
+            "ci_lo": -0.155,
+            "ci_hi": 0.138,
+            "payoff": 1.29,
+            "pf": 1.02
+          },
+          "second_half": {
+            "n": 254,
+            "winrate": 46,
+            "avg_r": 0.009,
+            "avg_r_gross": 0.032,
+            "cost_r": 0.023,
+            "sd": 1.1759,
+            "ci_lo": -0.136,
+            "ci_hi": 0.154,
+            "payoff": 1.26,
+            "pf": 1.06
+          },
+          "verdict": "und"
+        },
+        "GBP_JPY": {
+          "all": {
+            "n": 500,
+            "winrate": 47,
+            "avg_r": 0.048,
+            "avg_r_gross": 0.083,
+            "cost_r": 0.036,
+            "sd": 1.1834,
+            "ci_lo": -0.056,
+            "ci_hi": 0.151,
+            "payoff": 1.29,
+            "pf": 1.16
+          },
+          "first_half": {
+            "n": 250,
+            "winrate": 45,
+            "avg_r": -0.011,
+            "avg_r_gross": 0.02,
+            "cost_r": 0.03,
+            "sd": 1.1771,
+            "ci_lo": -0.157,
+            "ci_hi": 0.135,
+            "payoff": 1.28,
+            "pf": 1.04
+          },
+          "second_half": {
+            "n": 250,
+            "winrate": 50,
+            "avg_r": 0.106,
+            "avg_r_gross": 0.147,
+            "cost_r": 0.041,
+            "sd": 1.1891,
+            "ci_lo": -0.041,
+            "ci_hi": 0.254,
+            "payoff": 1.3,
+            "pf": 1.3
+          },
+          "verdict": "und"
+        },
+        "AUD_JPY": {
+          "all": {
+            "n": 543,
+            "winrate": 43,
+            "avg_r": -0.054,
+            "avg_r_gross": -0.022,
+            "cost_r": 0.032,
+            "sd": 1.1622,
+            "ci_lo": -0.152,
+            "ci_hi": 0.043,
+            "payoff": 1.27,
+            "pf": 0.96
+          },
+          "first_half": {
+            "n": 258,
+            "winrate": 41,
+            "avg_r": -0.136,
+            "avg_r_gross": -0.108,
+            "cost_r": 0.029,
+            "sd": 1.117,
+            "ci_lo": -0.273,
+            "ci_hi": -0.0,
+            "payoff": 1.19,
+            "pf": 0.82
+          },
+          "second_half": {
+            "n": 285,
+            "winrate": 45,
+            "avg_r": 0.02,
+            "avg_r_gross": 0.055,
+            "cost_r": 0.035,
+            "sd": 1.1988,
+            "ci_lo": -0.119,
+            "ci_hi": 0.159,
+            "payoff": 1.33,
+            "pf": 1.1
+          },
+          "verdict": "und"
+        }
       }
     }
   },
   "trade_review": {
-    "generated_at": "2026-11-15 09:16 JST",
+    "generated_at": "2026-11-15 11:26 JST",
     "assumption": "記録簿の建値・TP幅・SL幅でOCOを置いたとして1分足で再現（手動決済は区別できない）",
     "all": {
       "n": 172,
@@ -22805,203 +23008,10 @@
       }
     }
   },
-  "long": {
-    "mtf": {
-      "generated_at": "2026-11-15 01:46 JST",
-      "days": 1095,
-      "days_covered": 777,
-      "years_covered": 2.98,
-      "policy": "advice",
-      "rule": "全期間の95%区間が0の片側に収まり、前半・後半の平均も同じ向きの時だけ確定",
-      "all": {
-        "n": 2085,
-        "winrate": 45,
-        "avg_r": -0.001,
-        "avg_r_gross": 0.024,
-        "cost_r": 0.025,
-        "sd": 1.1746,
-        "ci_lo": -0.051,
-        "ci_hi": 0.05
-      },
-      "first_half": {
-        "n": 1016,
-        "winrate": 43,
-        "avg_r": -0.06,
-        "avg_r_gross": -0.039,
-        "cost_r": 0.022,
-        "sd": 1.1554,
-        "ci_lo": -0.131,
-        "ci_hi": 0.011
-      },
-      "second_half": {
-        "n": 1069,
-        "winrate": 47,
-        "avg_r": 0.056,
-        "avg_r_gross": 0.083,
-        "cost_r": 0.028,
-        "sd": 1.1904,
-        "ci_lo": -0.016,
-        "ci_hi": 0.127
-      },
-      "verdict": "und",
-      "symbols": {
-        "USD_JPY": {
-          "all": {
-            "n": 538,
-            "winrate": 45,
-            "avg_r": 0.007,
-            "avg_r_gross": 0.018,
-            "cost_r": 0.011,
-            "sd": 1.1762,
-            "ci_lo": -0.093,
-            "ci_hi": 0.106,
-            "payoff": 1.28,
-            "pf": 1.03
-          },
-          "first_half": {
-            "n": 258,
-            "winrate": 41,
-            "avg_r": -0.083,
-            "avg_r_gross": -0.073,
-            "cost_r": 0.01,
-            "sd": 1.146,
-            "ci_lo": -0.223,
-            "ci_hi": 0.057,
-            "payoff": 1.24,
-            "pf": 0.88
-          },
-          "second_half": {
-            "n": 280,
-            "winrate": 48,
-            "avg_r": 0.09,
-            "avg_r_gross": 0.102,
-            "cost_r": 0.012,
-            "sd": 1.1994,
-            "ci_lo": -0.051,
-            "ci_hi": 0.23,
-            "payoff": 1.32,
-            "pf": 1.2
-          },
-          "verdict": "und"
-        },
-        "EUR_JPY": {
-          "all": {
-            "n": 504,
-            "winrate": 45,
-            "avg_r": 0.0,
-            "avg_r_gross": 0.021,
-            "cost_r": 0.02,
-            "sd": 1.1785,
-            "ci_lo": -0.102,
-            "ci_hi": 0.103,
-            "payoff": 1.28,
-            "pf": 1.04
-          },
-          "first_half": {
-            "n": 250,
-            "winrate": 44,
-            "avg_r": -0.008,
-            "avg_r_gross": 0.009,
-            "cost_r": 0.018,
-            "sd": 1.1836,
-            "ci_lo": -0.155,
-            "ci_hi": 0.138,
-            "payoff": 1.29,
-            "pf": 1.02
-          },
-          "second_half": {
-            "n": 254,
-            "winrate": 46,
-            "avg_r": 0.009,
-            "avg_r_gross": 0.032,
-            "cost_r": 0.023,
-            "sd": 1.1759,
-            "ci_lo": -0.136,
-            "ci_hi": 0.154,
-            "payoff": 1.26,
-            "pf": 1.06
-          },
-          "verdict": "und"
-        },
-        "GBP_JPY": {
-          "all": {
-            "n": 500,
-            "winrate": 47,
-            "avg_r": 0.048,
-            "avg_r_gross": 0.083,
-            "cost_r": 0.036,
-            "sd": 1.1834,
-            "ci_lo": -0.056,
-            "ci_hi": 0.151,
-            "payoff": 1.29,
-            "pf": 1.16
-          },
-          "first_half": {
-            "n": 250,
-            "winrate": 45,
-            "avg_r": -0.011,
-            "avg_r_gross": 0.02,
-            "cost_r": 0.03,
-            "sd": 1.1771,
-            "ci_lo": -0.157,
-            "ci_hi": 0.135,
-            "payoff": 1.28,
-            "pf": 1.04
-          },
-          "second_half": {
-            "n": 250,
-            "winrate": 50,
-            "avg_r": 0.106,
-            "avg_r_gross": 0.147,
-            "cost_r": 0.041,
-            "sd": 1.1891,
-            "ci_lo": -0.041,
-            "ci_hi": 0.254,
-            "payoff": 1.3,
-            "pf": 1.3
-          },
-          "verdict": "und"
-        },
-        "AUD_JPY": {
-          "all": {
-            "n": 543,
-            "winrate": 43,
-            "avg_r": -0.054,
-            "avg_r_gross": -0.022,
-            "cost_r": 0.032,
-            "sd": 1.1622,
-            "ci_lo": -0.152,
-            "ci_hi": 0.043,
-            "payoff": 1.27,
-            "pf": 0.96
-          },
-          "first_half": {
-            "n": 258,
-            "winrate": 41,
-            "avg_r": -0.136,
-            "avg_r_gross": -0.108,
-            "cost_r": 0.029,
-            "sd": 1.117,
-            "ci_lo": -0.273,
-            "ci_hi": -0.0,
-            "payoff": 1.19,
-            "pf": 0.82
-          },
-          "second_half": {
-            "n": 285,
-            "winrate": 45,
-            "avg_r": 0.02,
-            "avg_r_gross": 0.055,
-            "cost_r": 0.035,
-            "sd": 1.1988,
-            "ci_lo": -0.119,
-            "ci_hi": 0.159,
-            "payoff": 1.33,
-            "pf": 1.1
-          },
-          "verdict": "und"
-        }
-      }
-    }
+  "kept_from_previous": {
+    "scalp": "2026-11-15 09:08 JST",
+    "day": "2026-11-15 09:08 JST",
+    "swing": "2026-11-15 09:08 JST",
+    "mtf": "2026-11-15 09:08 JST"
   }
 }
