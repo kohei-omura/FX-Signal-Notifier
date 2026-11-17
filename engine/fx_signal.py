@@ -3615,6 +3615,23 @@ def notify_mail(subject, body):
 
 
 MODE_FILE = data_path("mode.json")
+def xmarket_note():
+    """通知に足す「株×FX地合い」の2行。姉妹アプリ（株オラクル・GLOBE ORACLE・Carry Navi）の
+    公開ファイルを読むだけの補助情報で、FXの判定・通知の可否には一切使わない。
+    読めない・判定できない時は空文字（通知は従来どおり送る）。"""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "xmarket", os.path.join(os.path.dirname(os.path.abspath(__file__)), "xmarket.py"))
+        xm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(xm)
+        own = read_json(data_path("status.json"))     # 自分の分は、いま書き出した最新を使う
+        return xm.notify_line("fx", own={"fx": own} if isinstance(own, dict) else None)
+    except Exception as e:
+        print(f"[WARN] 株×FX連動の注記を作れませんでした: {e}", file=sys.stderr)
+        return ""
+
+
 def get_selected_mode():
     """モードの唯一の指示元は mode.json（ダッシュボードのスタイルボタンが書き込む）。
        mode.json が無い/壊れている時だけ env MODE、それも無ければ既定 scalp。
@@ -3726,6 +3743,9 @@ def main():
     # 1行目に要約を置く。LINEの通知プレビューとメール件名の両方が中身で分かるようになる。
     head = f"{subject[len(f'【FX/{MODE}】'):]}\n📊 FX通知 [{MODE}] {now_str}\n\n"
     tail = "\n\n※スコアは目安です。最適値の保証ではなく自己責任で。"
+    # エントリーの合図がある回だけ、株の地合い（株オラクル・GLOBE ORACLE）を2行添える。判定には使わない。
+    if market_open and (notify or sub_parts):
+        tail = xmarket_note() + tail
     if line_parts and LINE_ENABLED and os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"):
         q = check_line_quota()
         line_parts, held_back = line_reserve_filter(line_parts, important, q)
