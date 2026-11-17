@@ -1601,7 +1601,12 @@ function holdAligned(p,ps,dir){
     const al=(MTF_BY_SYM[p.symbol]||{}).aligned;
     return (al||0)*dir;
   }
-  return (ps.score!=null?ps.score:0)*dir;
+  // スイングは tech で入る（judge:'tech'）。保有中も同じ物差しで見る（サーバーの _hold_score と同じ）
+  return holdScore(PP,ps)*dir;
+}
+function holdScore(PP,ps){
+  if(PP&&PP.judge==='tech'&&ps.tech!=null&&ps.tech!=='') return +ps.tech;
+  return (ps.score!=null?ps.score:0);
 }
 function holdBasis(p,ps){
   const md=(p.mode||p.entry_mode||(S&&S.mode)||'scalp');
@@ -1612,8 +1617,8 @@ function holdBasis(p,ps){
     if(al===-1)return '上位足は下降のまま';
     return '上位足が揃わなくなった＝レンジ化';
   }
-  const sc=(ps.score!=null?ps.score:0);
-  return 'スコア'+(sc>=0?'+':'')+sc.toFixed(2);
+  const sc=holdScore(PP,ps);
+  return (PP.judge==='tech'?'テクニカル':'スコア')+(sc>=0?'+':'')+sc.toFixed(2);
 }
 function posAdvice(p){
   /* 画面のモードと建玉のモードが違うとき、pairSig() が返すのは【別の足】の指標。

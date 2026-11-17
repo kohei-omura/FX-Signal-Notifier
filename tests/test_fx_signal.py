@@ -6641,6 +6641,9 @@ class CostWarningTest(RunTestCase):
 
     def test_a_temporarily_wide_spread_is_not_a_narrow_stop(self):
         self.addCleanup(setattr, F, "spread_state", F.__dict__["spread_state"])
+        # ふだんのスプレッドは固定する（モックのATRが実行時刻で変わるため、実際の比率だと揺れる）
+        self.addCleanup(setattr, F, "SPREAD_PIPS", F.SPREAD_PIPS)
+        F.SPREAD_PIPS = {k: 0.01 for k in F.SPREAD_PIPS}
         F.spread_state = lambda sym, ticker: {"pips": 40.0, "base": 0.5, "mult": 80.0, "wide": True}
         self.addCleanup(setattr, F, "market_is_open", F.__dict__["market_is_open"])
         F.market_is_open = lambda: True
@@ -6698,6 +6701,35 @@ class LineReserveTest(RunTestCase):
         self.assertEqual(st["line"]["used"], 185)
         self.assertTrue([w for w in st.get("warnings") or [] if w["tag"] == "line-quota"],
                         "送らない回に残りの警告が消える")
+
+
+
+class SwingHoldJudgeTest(RunTestCase):
+    """スイングの保有判定も、エントリーと同じ tech で見る。
+
+    total で見ていたため、テク-0.54で売った直後でもファンダの固定加点で total=+0.03 になり、
+    入った瞬間に「様子見／シグナル弱化」が出ていた（2026-11-17 GBP/JPY）。"""
+
+    def _adv(self, mode, tech, total):
+        F.MODE = mode; F.P = F.PARAMS[mode]
+        sc = {"score": total, "tech": tech, "rsi": 45.0, "adx": 30.0, "atr": 0.2, "price": 210.1}
+        return F.hold_alignment("GBP_JPY", sc, -1), F._hold_score(sc)
+
+    def test_swing_uses_tech(self):
+        al, v = self._adv("swing", -0.54, 0.03)
+        self.assertAlmostEqual(v, -0.54)
+        self.assertGreaterEqual(al, F.ADV_SUPP, "売り建てでテクが売り方向なのに根拠が弱い扱いになっている")
+
+    def test_other_modes_still_use_total(self):
+        al, v = self._adv("day", -0.54, 0.03)
+        self.assertAlmostEqual(v, 0.03)
+
+    def test_wording_and_dashboard_match(self):
+        F.MODE = "swing"; F.P = F.PARAMS["swing"]
+        self.assertIn("テクニカル", F._hold_basis(-0.54, None))
+        with open(os.path.join(ROOT, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("function holdScore(PP,ps)", src)
 
 
 if __name__ == "__main__":

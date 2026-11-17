@@ -1932,6 +1932,8 @@ def _hold_basis(score, aligned_raw):
         if aligned_raw == -1:
             return "上位足は下降のまま"
         return "上位足が揃わなくなった＝レンジ化"
+    if P.get("judge") == "tech":
+        return f"テクニカル{score:+.2f}"
     return f"スコア{score:+.2f}"
 
 
@@ -2652,7 +2654,17 @@ def hold_alignment(symbol, sc, d, aligned=None):
     if P.get("rule") == "mtf_pullback":
         al = aligned if aligned is not None else (mtf_view(symbol) or {}).get("aligned")
         return (al or 0) * d
-    return sc.get("score", 0.0) * d
+    # スイングは向きを tech（テクニカルだけ）で決めて入る（judge="tech"）。保有中も同じ物差しで見る。
+    # total で見ると、ファンダの固定加点(+0.275)に打ち消されて、テク-0.54で売った直後から
+    # 「スコア+0.03＝根拠が弱い」となり、入った瞬間に🟡様子見／利確検討が出ていた（2026-11-17 GBP/JPY）。
+    return _hold_score(sc) * d
+
+
+def _hold_score(sc):
+    """保有中の判定に使う点数。エントリーと同じ物差し（judge="tech" なら tech）。"""
+    if P.get("judge") == "tech" and sc.get("tech") is not None:
+        return sc["tech"]
+    return sc.get("score", 0.0)
 
 
 def position_advice(p, ticker, sc, prev_mfe=None):
@@ -2666,7 +2678,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     cur = bid if side == "long" else ask
     d = 1 if side == "long" else -1
     a = sc.get("atr") or 0.0
-    score = sc.get("score", 0.0); rsi_v = sc.get("rsi", 50); adx_v = sc.get("adx", 0)
+    score = _hold_score(sc); rsi_v = sc.get("rsi", 50); adx_v = sc.get("adx", 0)
     th = P.get("th", 0.40)   # 新規エントリー閾値。保有中スコアがこれを割る=シグナル弱化
     profit = (cur - entry) * d
     profit_atr = (profit / a) if a else 0.0
@@ -2792,7 +2804,7 @@ def position_advice(p, ticker, sc, prev_mfe=None):
     elif profit > 0 and (aligned < th or rsi_against or adx_v < ADX_WEAK):
         rs = []
         if aligned < th: rs.append(f"根拠が弱まった（{basis}）" if P.get("rule") == "mtf_pullback"
-                                else f"シグナル弱化(スコア{score:+.2f}/新規基準{th}未満)")
+                                else f"シグナル弱化({'テクニカル' if P.get('judge') == 'tech' else 'スコア'}{score:+.2f}/新規基準{th}未満)")
         if rsi_against: rs.append("RSI過熱")
         if adx_v < ADX_WEAK: rs.append("ADX低下")
         level, label, reason = "watch", "🟡 利確検討", "・".join(rs)
