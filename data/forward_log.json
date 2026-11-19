@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-19T09:31:17.397Z",
+  "updated": "2026-11-19T10:21:37.677Z",
   "entries": [
     {
       "sym": "GBP_JPY",
@@ -5971,14 +5971,26 @@
       "sl": 159.674,
       "b": 1.5903614457831323,
       "ts": 1795078593514,
-      "open": true,
+      "open": false,
       "edgeOn": true,
       "rawPct": 54,
       "pct": 55,
       "edgeAdj": 1,
       "mark": "hold",
       "src": "sub",
-      "subFilter": "adx40"
+      "subFilter": "adx40",
+      "result": "tp",
+      "R": 1.5301,
+      "closed": 1795082400000,
+      "bars": 4,
+      "heldMin": 60,
+      "exit": 159.889,
+      "policies": {
+        "tp_sl": 1.5398,
+        "advice": 1.5398,
+        "advice_watch": 0.9157
+      },
+      "resolvedBy": "server"
     },
     {
       "sym": "USD_JPY",
@@ -5999,6 +6011,46 @@
       "mark": "hold",
       "src": "sub",
       "subFilter": "all"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "swing",
+      "side": "long",
+      "entry": 210.31,
+      "fill": 210.319,
+      "sp": 0.009,
+      "tp": 211.048,
+      "sl": 209.9,
+      "b": 1.7999999999999998,
+      "ts": 1795083608784,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 46,
+      "pct": 46,
+      "edgeAdj": 0,
+      "mark": "no",
+      "src": "sub",
+      "subFilter": "all"
+    },
+    {
+      "sym": "GBP_JPY",
+      "mode": "day",
+      "side": "long",
+      "entry": 210.31,
+      "fill": 210.319,
+      "sp": 0.009,
+      "tp": 210.55,
+      "sl": 210.16,
+      "b": 1.6,
+      "ts": 1795083610035,
+      "open": true,
+      "edgeOn": true,
+      "rawPct": 85,
+      "pct": 85,
+      "edgeAdj": 0,
+      "mark": "ok",
+      "src": "sub",
+      "subFilter": "adx40"
     }
   ]
 }
