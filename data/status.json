@@ -1,6 +1,6 @@
 {
   "risk": {
-    "open_yen": 0,
+    "open_yen": 3608,
     "cap_yen": 0,
     "pct": null,
     "full": false
@@ -883,12 +883,12 @@
         209.779
       ],
       "blackout": false,
-      "cost_r": 0.043,
+      "cost_r": 0.053,
       "cost_r_base": 0.043,
       "spread": {
-        "pips": 0.9,
+        "pips": 1.1,
         "base": 0.9,
-        "mult": 1.0,
+        "mult": 1.2,
         "wide": false
       },
       "mtf": {
@@ -1327,7 +1327,30 @@
       }
     }
   ],
-  "open_positions": [],
+  "open_positions": [
+    {
+      "id": "p1795076140366",
+      "symbol": "EUR_JPY",
+      "side": "long",
+      "entry": 175.516,
+      "lot": 11000.0,
+      "current": 175.521,
+      "pips": 0.5,
+      "yen": 55,
+      "tp_price": 176.106,
+      "sl_price": 175.188,
+      "adv_level": "watch",
+      "adv_label": "🟡 利確検討",
+      "adv_reason": "RSI過熱",
+      "mfe": 175.521,
+      "profit_atr": 0.03,
+      "mode": "swing",
+      "basis": null,
+      "basis_label": null,
+      "lock_r": null,
+      "overstay": false
+    }
+  ],
   "closed_positions": [],
   "warnings": [
     {
