@@ -10,7 +10,7 @@
   - 価格が取れない回に画面の表示内容を消さないこと
   - API障害でクラッシュしたり通知が二重に飛んだりしないこと
 """
-import datetime, json, os, random, re, shutil, subprocess, sys, tempfile, time, types, unittest
+import collections, datetime, json, os, random, re, shutil, subprocess, sys, tempfile, time, types, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
@@ -6788,6 +6788,49 @@ class DukascopyTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.D.decode(bad, "USD_JPY", day)
         self.assertEqual(self.D.decode(b"", "USD_JPY", day), [])
+
+    class _Resp:
+        def __init__(self, code, body=b"", headers=None):
+            self.status_code, self.content, self.headers = code, body, headers or {}
+
+    def _fetch_env(self):
+        d = tempfile.mkdtemp(); old = self.D.CACHE_DIR; self.D.CACHE_DIR = d
+        self.addCleanup(setattr, self.D, "CACHE_DIR", old)
+        return d
+
+    def test_fetch_waits_on_429_instead_of_failing(self):
+        """取りすぎ(429)は失敗に数えず、待ってから取り直す（前回は429で全部失敗扱いになった）"""
+        self._fetch_env()
+        body = self._bi5([(0, 141000, 141050, 140990, 141060, 3.0)])
+        calls = collections.Counter()
+
+        class S:
+            def get(s2, url, timeout=None):
+                calls[url] += 1
+                return self._Resp(429, headers={"Retry-After": "0"}) if calls[url] <= 2 else self._Resp(200, body)
+        end = datetime.date(2024, 1, 10)
+        jobs = self.D.missing_jobs(0.02, ["USD_JPY"], end)[0]
+        ok, fail, left = self.D.fetch(years=0.02, workers=2, symbols=["USD_JPY"], end=end, session=S(),
+                                      sleep=lambda x: None, gate=self.D._Gate(gap=0, min_pause=0))
+        self.assertEqual(fail, 0); self.assertEqual(left, 0)
+        self.assertEqual(ok, len(jobs))
+        self.assertTrue(all(v == 3 for v in calls.values()))
+
+    def test_fetch_stops_at_budget_and_reports_rest(self):
+        self._fetch_env()
+
+        class S:
+            def get(s2, url, timeout=None):
+                raise AssertionError("時間切れの後に取りに行っている")
+        ok, fail, left = self.D.fetch(years=0.02, symbols=["USD_JPY"], end=datetime.date(2024, 1, 10),
+                                      session=S(), budget_min=-1, gate=self.D._Gate(gap=0, min_pause=0))
+        self.assertEqual((ok, fail), (0, 0)); self.assertGreater(left, 0)
+
+    def test_gate_backoff_grows_and_honours_retry_after(self):
+        g = self.D._Gate(gap=0.25, min_pause=20)
+        self.assertEqual(g.throttled(), 20); self.assertEqual(g.throttled(), 40)
+        self.assertEqual(g.throttled(7.0), 7.0)
+        self.assertLessEqual(g.throttled(), 300)
 
     def _write_days(self, root, days=110, seed=3):
         rnd = random.Random(seed)

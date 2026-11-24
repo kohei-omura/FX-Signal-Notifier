@@ -4,6 +4,8 @@ name: Backtest 5 years (Dukascopy)
 # GMOのAPIは約3年しか遡れないので、足はデューカスコピーの公開データ（BID 1分足）から作る。
 # 判定ロジック・コスト（GMOの公表スプレッド）は毎日の1年検証と同じ。
 #   1) fetch   : 足りない日の1分足だけ取り、Actionsのキャッシュに貯める（2回目以降は差分だけ）
+#                デューカスコピーは取りすぎると 429 で止めてくるので、ゆっくり取る。
+#                1回で取り切れなければキャッシュを残して自分をもう一度起動し、続きから取る（最大12回）
 #   2) compute : モードごとに並列で検証（1分足のスキャルは重いので別ジョブにする）
 #   3) merge   : backtest.json の "hist5" にまとめてコミット（取れなかったモードは前回を残す）
 
@@ -16,9 +18,14 @@ on:
         description: '検証するモード（例: mtf,swing,day,scalp）'
         type: string
         default: 'mtf,swing,day,scalp'
+      chain:
+        description: '続きを取る回数（自動で増える。手で触らない）'
+        type: string
+        default: '0'
 
 permissions:
   contents: write
+  actions: write      # 取り切れなかった時に、自分をもう一度起動する
 
 concurrency:
   group: backtest-5y
@@ -30,9 +37,10 @@ env:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 350
     outputs:
       modes: ${{ steps.m.outputs.modes }}
+      remaining: ${{ steps.get.outputs.remaining }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,15 +54,29 @@ jobs:
           key: dukas-v1-${{ github.run_id }}
           restore-keys: dukas-v1-
       - name: Fetch Dukascopy 1-minute candles (missing days only)
+        id: get
         env:
           DUKAS_YEARS: "5"
-          DUKAS_WORKERS: "8"
+          DUKAS_WORKERS: "2"
+          DUKAS_BUDGET_MIN: "310"
         run: python engine/dukascopy.py
-      - run: du -sh .dukas && find .dukas -name '*.bi5' | wc -l
-      - uses: actions/cache/save@v4
+      - if: always()
+        run: mkdir -p .dukas && du -sh .dukas && find .dukas -name '*.bi5' | wc -l
+      - if: always()
+        uses: actions/cache/save@v4
         with:
           path: .dukas
-          key: dukas-v1-${{ github.run_id }}
+          key: dukas-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Not finished → start the next run to continue
+        if: always() && steps.get.outputs.remaining != '' && fromJson(steps.get.outputs.remaining) > 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHAIN: ${{ inputs.chain || '0' }}
+          MODES: ${{ inputs.modes || 'mtf,swing,day,scalp' }}
+        run: |
+          if [ "$CHAIN" -ge 12 ]; then echo "続きの起動は12回まで。止めます"; exit 0; fi
+          gh workflow run backtest-5y.yml --ref "${GITHUB_REF_NAME}" -f modes="$MODES" -f chain="$((CHAIN + 1))"
+          echo "残り ${{ steps.get.outputs.remaining }} 日ぶん → 続きを起動しました（${CHAIN}→$((CHAIN + 1))）"
       - id: m
         run: |
           M="${{ inputs.modes || 'mtf,swing,day,scalp' }}"
@@ -62,6 +84,8 @@ jobs:
 
   compute:
     needs: fetch
+    # 取り残しが少ない時だけ検証する（多い時は続きの回に任せる）
+    if: needs.fetch.outputs.remaining != '' && fromJson(needs.fetch.outputs.remaining) <= 30
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -78,7 +102,8 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: .dukas
-          key: dukas-v1-${{ github.run_id }}
+          key: dukas-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dukas-v1-
           fail-on-cache-miss: true
       - name: Run 5-year backtest (${{ matrix.mode }})
         env:

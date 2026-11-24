@@ -58,10 +58,43 @@ def decode(raw, sym, day):
 
 
 # ---------------- 取得（GitHub Actions で実行） ----------------
-def fetch(years=5, workers=8, symbols=None, end=None, session=None):
-    """足りない日だけ取る。戻り値: (取った数, 失敗した数)"""
-    import requests
-    s = session or requests.Session()
+class _Gate:
+    """429（取りすぎ）が来たら全スレッドを一緒に待たせる。待ち時間は Retry-After か倍々。"""
+
+    def __init__(self, gap=0.25, min_pause=20.0):
+        self.lock = threading.Lock(); self.next_at = 0.0; self.gap = gap; self.backoff = 0.0
+        self.base_gap = gap; self.min_pause = min_pause
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic()
+            at = max(now, self.next_at)
+            self.next_at = at + self.gap          # 1本ずつ間をあける
+        if at > now:
+            time.sleep(at - now)
+
+    def throttled(self, retry_after=None):
+        with self.lock:
+            self.backoff = min(300.0, max(self.min_pause, self.backoff * 2))
+            pause = retry_after if retry_after is not None else self.backoff
+            self.next_at = max(self.next_at, time.monotonic() + pause)
+            self.gap = min(5.0, max(self.gap, 0.05) * 1.5) if self.base_gap else 0.0   # しばらく間隔を広げる
+        return pause
+
+    def ok(self):
+        with self.lock:
+            self.backoff = max(0.0, self.backoff / 2)
+            self.gap = max(self.base_gap, self.gap * 0.97)
+
+
+def _retry_after(r):
+    try:
+        return min(600.0, float(r.headers.get("Retry-After", "")))
+    except (TypeError, ValueError):
+        return None
+
+
+def missing_jobs(years=5, symbols=None, end=None):
     end = end or (datetime.datetime.now(datetime.timezone.utc).date() - datetime.timedelta(days=1))
     start = end - datetime.timedelta(days=int(365.25 * years) + 7)
     recent = end - datetime.timedelta(days=REFETCH_DAYS)
@@ -73,14 +106,37 @@ def fetch(years=5, workers=8, symbols=None, end=None, session=None):
             if d.weekday() != 5 and (not os.path.exists(p) or d >= recent):   # 土曜(UTC)は丸ごと休場
                 jobs.append((sym, d))
             d += datetime.timedelta(days=1)
+    return jobs, start, end
+
+
+def fetch(years=5, workers=2, symbols=None, end=None, session=None, budget_min=None, sleep=time.sleep, gate=None):
+    """足りない日だけ取る。戻り値: (取った数, 失敗した数, 残り数)
+    budget_min を過ぎたら新しく取り始めず、取れたぶんで終える（次の回で続きから取る）。"""
+    import requests
+    s = session or requests.Session()
+    jobs, start, end = missing_jobs(years, symbols, end)
     print(f"[dukascopy] 取得 {len(jobs)} 日ぶん（{start}〜{end}）", flush=True)
-    lock = threading.Lock(); stat = collections.Counter()
+    lock = threading.Lock(); stat = collections.Counter(); gate = gate or _Gate()
+    deadline = time.monotonic() + budget_min * 60 if budget_min else None
 
     def one(job):
         sym, d = job
-        for k in range(5):
+        err, tries = None, 0
+        while tries < 6:
+            if deadline and time.monotonic() > deadline:
+                with lock:
+                    stat["left"] += 1
+                return
+            gate.wait()
             try:
                 r = s.get(_url(sym, d), timeout=30)
+                if r.status_code == 429 or r.status_code == 503:
+                    pause = gate.throttled(_retry_after(r))
+                    with lock:
+                        stat["throttled"] += 1
+                        if stat["throttled"] % 50 == 1:
+                            print(f"[dukascopy] 取りすぎ(HTTP {r.status_code}) → {pause:.0f}秒待つ", flush=True)
+                    continue                       # 取りすぎは失敗に数えない（待ってから取り直す）
                 if r.status_code == 404:
                     body = b""
                 elif r.status_code == 200:
@@ -93,22 +149,24 @@ def fetch(years=5, workers=8, symbols=None, end=None, session=None):
                 with open(p + ".tmp", "wb") as f:
                     f.write(body)
                 os.replace(p + ".tmp", p)
+                gate.ok()
                 with lock:
                     stat["ok"] += 1
                 return
             except Exception as e:
-                err = e
-                time.sleep(1.5 * (k + 1))
+                err = e; tries += 1
+                sleep(2.0 * tries)
         with lock:
             stat["fail"] += 1
         print(f"[dukascopy] 失敗 {sym} {d}: {err}", file=sys.stderr, flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for i, _ in enumerate(ex.map(one, jobs), 1):
-            if i % 500 == 0:
-                print(f"[dukascopy]  {i}/{len(jobs)}", flush=True)
-    print(f"[dukascopy] 完了 ok={stat['ok']} fail={stat['fail']}", flush=True)
-    return stat["ok"], stat["fail"]
+            if i % 250 == 0:
+                print(f"[dukascopy]  {i}/{len(jobs)} ok={stat['ok']} 待ち={stat['throttled']}", flush=True)
+    print(f"[dukascopy] 完了 ok={stat['ok']} fail={stat['fail']} 残り={stat['left']} 取りすぎ待ち={stat['throttled']}",
+          flush=True)
+    return stat["ok"], stat["fail"], stat["left"]
 
 
 # ---------------- 読み込み（fx_signal.klines_day の差し替え） ----------------
@@ -187,6 +245,13 @@ def install(F, source=None):
 
 if __name__ == "__main__":
     yrs = float(os.environ.get("DUKAS_YEARS", "5"))
-    ok, fail = fetch(years=yrs, workers=int(os.environ.get("DUKAS_WORKERS", "8")))
-    # 一部の日が取れないのは許容する（休日など）。大半が失敗したら止める。
-    sys.exit(1 if fail > max(50, ok * 0.05) else 0)
+    budget = float(os.environ.get("DUKAS_BUDGET_MIN", "0")) or None
+    ok, fail, left = fetch(years=yrs, workers=int(os.environ.get("DUKAS_WORKERS", "2")), budget_min=budget)
+    # 次の回で取り直す数（時間切れ＋失敗）。Actions はこれを見て「続きを取る」か「検証へ進む」かを決める
+    rest = left + fail
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write(f"remaining={rest}\n")
+    print(f"[dukascopy] 残り {rest} 日ぶん", flush=True)
+    sys.exit(0)
