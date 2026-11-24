@@ -21,6 +21,24 @@ function _pfAdvice(bt,mode,sym){
   try{ var v=bt.modes[mode]; var p=sym?v.symbols[sym].policies:v.policies; return (p&&p.advice&&p.advice.n)?p.advice:null; }
   catch(e){ return null; }
 }
+/* 5年検証（backtest.json の hist5。デューカスコピーの1分足で週1回）。
+   判定はサーバーで固定したルール（全期間の95%区間が0の片側＋前半・後半とも同じ向き）。 */
+function _pfH5Has(bt){ return !!(bt&&bt.hist5&&Object.keys(bt.hist5).length); }
+function _pfH5(bt,mode,sym){
+  try{
+    var m=bt.hist5[mode]; if(!m) return null;
+    var adv=sym?((m.symbols||{})[sym]||{}).advice:m.advice;
+    if(!adv||!adv.all||!adv.all.n) return null;
+    return {a:adv.all,verdict:adv.verdict,h1:adv.first_half,h2:adv.second_half,by_year:adv.by_year,
+            by_session:adv.by_session,from:adv.from,to:adv.to,
+            years:(m.years_covered||((m.days_covered&&sym?m.days_covered[sym]:0)/PF_TRADING_DAYS)||5)};
+  }catch(e){ return null; }
+}
+/* 「どこで戦うか」の1マス。5年検証があればそれ、無ければ1年検証。 */
+function pfCell(bt,mode,sym){
+  if(_pfH5Has(bt)) return _pfH5(bt,mode,sym);
+  var a=_pfAdvice(bt,mode,sym); return a?{a:a,verdict:pfVerdict(a)}:null;
+}
 /* 取引のモード。出所が確かなもの（建玉ごとの保存・TP/SL幅からの割り出し）だけを信じる。 */
 function _pfMode(x){ return (x&&x.mode&&MODE_SRC_OK[x.modeSrc])?x.mode:''; }
 
@@ -49,30 +67,37 @@ function renderWhereToFight(bt){
   /* スマホ幅（320px〜）に6列を収める。⛔の絵文字と小数3桁を並べると1列が広がり、
      右端の「全体」が枠の外へはみ出していた。判定は絵文字ではなく枠の色で示し、
      数字は小数2桁にする（詳しい値は下の文章に3桁で出している）。 */
-  var cell=function(a,bold){
-    if(!a) return '<td style="opacity:.5">—</td>';
-    var v=pfVerdict(a);
+  var h5=_pfH5Has(bt), span='1年';
+  try{ var _ttl=document.getElementById('wfsrc'); if(_ttl) _ttl.textContent=h5?'5年検証':'1年検証'; }catch(e){}
+  if(h5) span='5年';
+  var cell=function(c,bold){
+    if(!c) return '<td style="opacity:.5">—</td>';
+    var v=c.verdict, a=c.a;
     return '<td class="pfc'+(v==='bad'?' pfbad':(v==='good'?' pfgood':''))+(bold?' pfall':'')+'">'
       +_pf(a.avg_r,2)+'<small>'+a.n+'</small></td>';
   };
   var rows=PF_MODES.map(function(m){
-    if(!bt.modes[m]) return '';
-    return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'+PF_SYMS.map(function(s){return cell(_pfAdvice(bt,m,s));}).join('')
-      +cell(_pfAdvice(bt,m,null),true)+'</tr>';
+    if(!pfCell(bt,m,null)) return '';
+    return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'+PF_SYMS.map(function(s){return cell(pfCell(bt,m,s));}).join('')
+      +cell(pfCell(bt,m,null),true)+'</tr>';
   }).join('');
   // あなたの取引がどのモードに寄っているか
   var t=loadTrades(), cnt={}, known=0;
   t.forEach(function(x){ var m=_pfMode(x); if(m){ cnt[m]=(cnt[m]||0)+1; known++; } });
   var lines=[];
   PF_MODES.forEach(function(m){
-    var a=_pfAdvice(bt,m,null); if(!a) return;
-    var v=pfVerdict(a), share=known?Math.round((cnt[m]||0)/known*100):null;
+    var c=pfCell(bt,m,null); if(!c) return;
+    var a=c.a, v=c.verdict, share=known?Math.round((cnt[m]||0)/known*100):null;
     var you=(share!=null&&cnt[m])?'（あなたの取引の<b>'+share+'%</b>）':'';
-    if(v==='bad') lines.push('⛔ <b>'+MODE_LABEL_T[m]+'</b>は1年通して1回あたり<b>'+_pf(a.avg_r)+'R</b>。'
-      +'95%区間('+_pf(a.ci_lo)+'〜'+_pf(a.ci_hi)+')が0未満で、負けは偶然ではありません。続けるほど減ります'+you+'。');
-    else if(v==='good') lines.push('✅ <b>'+MODE_LABEL_T[m]+'</b>は'+_pf(a.avg_r)+'Rで、95%区間も0より上です'+you+'。');
-    else lines.push('△ <b>'+MODE_LABEL_T[m]+'</b>は'+_pf(a.avg_r)+'R。区間('+_pf(a.ci_lo)+'〜'+_pf(a.ci_hi)
-      +')が0をまたぐので、プラスともマイナスともまだ言えません'+you+'。');
+    var halves=(c.h1&&c.h2&&c.h1.avg_r!=null&&c.h2.avg_r!=null)?'前半 '+_pf(c.h1.avg_r)+'R／後半 '+_pf(c.h2.avg_r)+'R':'';
+    if(v==='bad') lines.push('⛔ <b>'+MODE_LABEL_T[m]+'</b>は'+span+'通して1回あたり<b>'+_pf(a.avg_r)+'R</b>（'+a.n+'件）。'
+      +'95%区間('+_pf(a.ci_lo)+'〜'+_pf(a.ci_hi)+')が0未満'+(halves?'で、'+halves+'とも負け':'')+'。負けは偶然ではありません。続けるほど減ります'+you+'。');
+    else if(v==='good') lines.push('✅ <b>'+MODE_LABEL_T[m]+'</b>は'+span+'通して'+_pf(a.avg_r)+'R（'+a.n+'件）。95%区間も0より上'
+      +(halves?'で、'+halves+'とも勝ち':'')+'です'+you+'。');
+    else if(a.ci_lo>0||a.ci_hi<0) lines.push('△ <b>'+MODE_LABEL_T[m]+'</b>は'+span+'で'+_pf(a.avg_r)+'R。区間は0の片側ですが、'
+      +halves+'と時期で向きが割れるので、確定とは言えません'+you+'。');
+    else lines.push('△ <b>'+MODE_LABEL_T[m]+'</b>は'+span+'で'+_pf(a.avg_r)+'R（'+a.n+'件）。区間('+_pf(a.ci_lo)+'〜'+_pf(a.ci_hi)
+      +')が0をまたぐので、プラスともマイナスとも'+(h5?'':'まだ')+'言えません'+(halves?'（'+halves+'）':'')+you+'。');
   });
   PF_MODES.forEach(function(m){
     pfFilterEvidence(bt,m).forEach(function(f){
@@ -87,9 +112,40 @@ function renderWhereToFight(bt){
     +'<span class="pfkey pfgood"></span>勝ちが確定的　枠なし＝まだ分からない。小さい数字は件数。</div>'
     +'<div style="margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;line-height:1.85">'
     +lines.join('<br>')+'</div>'
-    +'<div class="note">1回あたりの期待R（🎯推奨で決済・スプレッド控除後・'+escHtml(bt.generated_at||'')+' 時点の1年ぶん）。'
+    +'<div class="note">1回あたりの期待R（🎯推奨で決済・スプレッド控除後）。'
+    +(h5?'5年検証＝デューカスコピー公開データ（BID 1分足）で、判定ロジックとコストは本番と同じ。'+escHtml(_pfH5Period(bt))+'。'
+         +'確定の条件（先に固定）: 95%区間が0の片側にあり、前半・後半の平均も同じ向き。'
+        :escHtml(bt.generated_at||'')+' 時点の1年ぶん。')
     +'通貨ごとの差の多くは偶然の範囲です。<b>良かった通貨だけを選ぶのは過去に合わせるだけ</b>なので、避ける根拠になるのは赤枠だけです。</div>'
     +renderLongCheck(bt);
+}
+
+function _pfH5Period(bt){
+  var a=null,b=null;
+  try{ Object.keys(bt.hist5).forEach(function(m){ var x=bt.hist5[m].advice||{};
+    if(x.from&&(!a||x.from<a))a=x.from; if(x.to&&(!b||x.to>b))b=x.to; }); }catch(e){}
+  var g=null; try{ g=bt.hist5[Object.keys(bt.hist5)[0]].generated_at; }catch(e){}
+  return (a?a+'〜'+b:'')+(g?'（'+g+' 集計）':'');
+}
+/* 年ごとの平均R（5年検証）。どの年も同じ向きか、ある年だけで稼いでいるかを見る。 */
+function renderYearTable(bt){
+  if(!_pfH5Has(bt)) return '';
+  var years={};
+  PF_MODES.forEach(function(m){ var c=_pfH5(bt,m,null); if(c&&c.by_year) Object.keys(c.by_year).forEach(function(y){years[y]=1;}); });
+  var ys=Object.keys(years).sort(); if(!ys.length) return '';
+  var rows=PF_MODES.map(function(m){
+    var c=_pfH5(bt,m,null); if(!c||!c.by_year) return '';
+    var plus=0, cnt=0;
+    var tds=ys.map(function(y){ var v=c.by_year[y];
+      if(!v||!v.n) return '<td style="opacity:.5">—</td>';
+      cnt++; if(v.avg_r>0) plus++;
+      return '<td class="pfc '+(v.avg_r>0?'pfyup':'pfydn')+'">'+_pf(v.avg_r,2)+'<small>'+v.n+'</small></td>'; }).join('');
+    return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'<small style="display:block;font-weight:400;opacity:.65">'+plus+'/'+cnt+'年プラス</small></td>'+tds+'</tr>';
+  }).join('');
+  return '<div class="sec" style="font-size:12px;margin:14px 2px 6px">1b. 年ごとの平均R（5年検証）</div>'
+    +'<table class="pft pfyr"><thead><tr><th></th>'+ys.map(function(y){return '<th>'+y.slice(2)+'年</th>';}).join('')
+    +'</tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="note">毎年プラスなら手法の性質、1〜2年だけ大きくプラスならその年の相場に乗っただけの可能性が高い、と読みます。年の始めと終わりは件数が少なめです。</div>';
 }
 
 /* ===== 確定までの目安・3年検証・実取引との照合 =====
@@ -109,6 +165,8 @@ function _pfYears(v){ return v<10?(Math.round(v*10)/10).toFixed(1):String(Math.r
 function _pfLong(bt,m){ try{ var l=bt.long&&bt.long[m]; return (l&&l.all&&l.all.n)?l:null; }catch(e){ return null; } }
 /* 3年検証があればそれを、無ければ1年検証を使う。 */
 function pfBestEvidence(bt,m,sym){
+  var h=_pfH5(bt,m,sym);
+  if(h) return {a:h.a,years:h.years,verdict:h.verdict,h1:h.h1,h2:h.h2,src:'5年'};
   var l=_pfLong(bt,m);
   if(l){
     var row=sym?(l.symbols||{})[sym]:{all:l.all,first_half:l.first_half,second_half:l.second_half,verdict:l.verdict};
@@ -176,7 +234,8 @@ function renderLongCheck(bt){
       +'<div class="note">実データ約'+_pfYears(l.years_covered||0)+'年（'+(l.days_covered||0)+'日・'+escHtml(l.generated_at||'')+'）。'
       +'判定ルール（先に固定）: '+escHtml(l.rule||'')+'。小さい数字は前半／後半の平均R。</div>';
   });
-  if(!longHtml) longHtml='<div class="note">3年検証はまだありません（毎週日曜の朝に更新されます）。</div>';
+  if(_pfH5Has(bt)) longHtml=renderYearTable(bt);
+  else if(!longHtml) longHtml='<div class="note">3年検証はまだありません（毎週日曜の朝に更新されます）。</div>';
   return longHtml
     +'<div class="sec" style="font-size:12px;margin:14px 2px 6px">1c. 確定までの目安と、実際の取引との照合</div>'
     +'<table class="pft pfx"><thead><tr><th></th><th>検証の平均R</th><th>確定まで</th><th>実取引(9月〜)</th></tr></thead><tbody>'+rows+'</tbody></table>'

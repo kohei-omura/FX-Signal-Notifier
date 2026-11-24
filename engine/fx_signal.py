@@ -1194,6 +1194,62 @@ def early_tp_r(oh, i, side, entry, sl, risk):
 # 別物だと毎回見えるようにするのが、この数字の正しい使い道。
 BT_FILE = data_path("backtest.json")
 _FAST_PROFILE = {}
+_HIST5 = None
+
+
+def load_hist5():
+    """5年検証（backtest.json の hist5）。週1回、デューカスコピーの1分足で全モードを検証したもの。"""
+    global _HIST5
+    if _HIST5 is None:
+        try:
+            with open(BT_FILE, encoding="utf-8") as f:
+                _HIST5 = json.load(f).get("hist5") or {}
+        except FileNotFoundError:
+            _HIST5 = {}
+        except Exception as e:
+            warn(f"backtest.json(5年検証) を読めませんでした: {e}", tag="bt-read", surface=False)
+            _HIST5 = {}
+    return _HIST5
+
+
+def hist5_cell(mode, sym=None):
+    """そのモード×通貨（sym=None なら全通貨）の5年成績を、画面と通知に出す形で返す。"""
+    m = load_hist5().get(mode) or {}
+    adv = (((m.get("symbols") or {}).get(sym) or {}).get("advice") if sym else m.get("advice")) or {}
+    a = adv.get("all") or {}
+    if not a.get("n"):
+        return None
+    h1, h2 = adv.get("first_half") or {}, adv.get("second_half") or {}
+    return {"n": a["n"], "avg_r": a.get("avg_r"), "ci_lo": a.get("ci_lo"), "ci_hi": a.get("ci_hi"),
+            "winrate": a.get("winrate"), "h1": h1.get("avg_r"), "h2": h2.get("avg_r"),
+            "verdict": adv.get("verdict"), "from": adv.get("from"), "to": adv.get("to")}
+
+
+HIST5_WORD = {"good": "✅勝ち確定", "bad": "⛔負け確定", "und": "未確定"}
+
+
+def hist5_line(mode, sym):
+    """通知に入れる1行。「5年で見るとこの組み合わせはどうだったか」。"""
+    c = hist5_cell(mode, sym)
+    if not c:
+        return ""
+    w = HIST5_WORD.get(c["verdict"], "未確定")
+    tail = ("　95%区間が0未満＝続けるほど減る組み合わせです" if c["verdict"] == "bad" else
+            "" if c["verdict"] == "good" else "　プラスともマイナスとも言えません")
+    return (f"\n  📚5年検証({MODE_LABEL.get(mode, mode)}×{sym}): 1回平均{c['avg_r']:+.3f}R"
+            f"［{c['ci_lo']:+.3f}〜{c['ci_hi']:+.3f}］{c['n']}件 {w}{tail}")
+
+
+def hist5_table():
+    """status.json に載せる小さな表（画面が読む）。全モード×(4通貨＋全体)。"""
+    out = {}
+    for mode in load_hist5():
+        row = {sym: hist5_cell(mode, sym) for sym in SYMBOLS}
+        row["ALL"] = hist5_cell(mode)
+        row = {k: v for k, v in row.items() if v}
+        if row:
+            out[mode] = row
+    return out
 
 
 def load_fast_profile(mode=None):
@@ -1791,7 +1847,8 @@ def sub_mode_signals(data, subs=None):
                     f"  推奨 TP:+{sc['tp_pips']}pips / SL:-{sc['sl_pips']}pips\n"
                     f"  📍{sc['price']:.3f}で建てた場合のOCO → TP {tp:.3f} / SL {sl:.3f}\n"
                     f"  ▶登録するときは必ずモードを「{MODE_LABEL.get(m, m)}」にしてください"
-                    f"（別モードの物差しで監視すると利確/損切りの判断がずれます）")
+                    f"（別モードの物差しで監視すると利確/損切りの判断がずれます）"
+                    + hist5_line(m, sym))
                 events.append((sig, sym))
     # 合図が消えた組み合わせも「消えた」と記録する（次に出た時は新規扱いになる）
     try:
@@ -3356,7 +3413,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                           f"   ・{valid_min}分以内（{entry['valid_until']}まで）\n"
                           f"   ・現在値が {entry['entry_limit']} {arrow}なら可"
                           f"（+{entry['maxchase_pips']}pipsまで追い、超過は見送り）"
-                          + mtf_txt + stat_txt)
+                          + mtf_txt + stat_txt + hist5_line(MODE, sym))
             sig_events.append((sig, sym))
 
     open_pos, closed_pos = [], []
@@ -3402,6 +3459,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         "generated_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST"),
         "market_open": market_open, "mode": MODE, "blackout": any_blackout,
         "weights": {"tech": TECH_W, "fund": FUND_W},
+        **({"hist5": hist5_table()} if hist5_table() else {}),
         **({"line": {"used": lq["used"], "limit": lq["limit"], "at": lq.get("at"),
                      "reserve": LINE_RESERVE}} if lq else {}),
         "pairs": pairs, "open_positions": open_pos, "closed_positions": closed_pos[-20:],

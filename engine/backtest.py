@@ -442,11 +442,18 @@ def run_hist(mode, source=None):
     covered = {s: len((source.days_with_data if source else {}).get(s, ())) for s in F.SYMBOLS}
     res = {"generated_at": datetime.datetime.now(F.JST).strftime("%Y-%m-%d %H:%M JST"),
            "source": "Dukascopy 公開データ（BID 1分足を集約）", "days": HIST_DAYS,
-           "days_covered": covered, "years_covered": round(max(covered.values() or [0]) / TRADING_DAYS_PER_YEAR, 2),
+           "days_covered": covered,
            "rule": LONG_RULE, "cost": "GMOの公表スプレッドを往復ぶん控除",
            "symbols": {s: v for s, v in per_sym.items()}}
     for p in HIST_POLICIES:
         res[p] = summarize_trades(every, p)
+    # 年数は最初と最後の取引の間隔で出す（足のある日数で割ると、日曜の短い足まで1日に数えて長く見える）
+    adv = res.get("advice") or {}
+    try:
+        d0 = datetime.date.fromisoformat(adv["from"]); d1 = datetime.date.fromisoformat(adv["to"])
+        res["years_covered"] = round((d1 - d0).days / 365.25, 2)
+    except (KeyError, TypeError, ValueError):
+        res["years_covered"] = None
     return res
 
 

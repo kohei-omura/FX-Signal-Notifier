@@ -104,6 +104,8 @@ class RunTestCase(unittest.TestCase):
         F.HOLD_FILE = p("hold_stats.json")
         F.SEEN_FILE = p("signal_seen.json"); F._SEEN = None
         F.LINE_QUOTA_FILE = p("line_quota.json")
+        # 5年検証は実データ(backtest.json)に依存させない。使うテストだけが入れる。
+        self.addCleanup(setattr, F, "_HIST5", F._HIST5); F._HIST5 = {}
         self.addCleanup(setattr, F, "_QUOTES", None)
         self.write(F.MODE_FILE, {"mode": "day"})
         self.write(F.POSITIONS_FILE, {"positions": [
@@ -5721,6 +5723,33 @@ class ProfitWhereToFightTest(ToolsHarness, unittest.TestCase):
         self.assertIn("pfbad", table)
 
 
+class ProfitWhereToFightHist5Test(ToolsHarness, unittest.TestCase):
+    """5年検証があれば「どこで戦うか」はそれで判定する（判定はサーバーが固定ルールで付けた verdict）。"""
+    H5 = {"mtf": {"years_covered": 5.0, "advice": {
+              "all": {"n": 3500, "avg_r": 0.03, "ci_lo": 0.001, "ci_hi": 0.06, "sd": 1.2},
+              "first_half": {"avg_r": -0.01}, "second_half": {"avg_r": 0.07}, "verdict": "und",
+              "by_year": {"2022": {"n": 700, "avg_r": -0.02}, "2023": {"n": 700, "avg_r": 0.08}},
+              "from": "2021-11-25", "to": "2026-11-20"}, "symbols": {}},
+          "day": {"years_covered": 5.0, "advice": {
+              "all": {"n": 20000, "avg_r": -0.06, "ci_lo": -0.08, "ci_hi": -0.04, "sd": 1.2},
+              "first_half": {"avg_r": -0.05}, "second_half": {"avg_r": -0.07}, "verdict": "bad",
+              "by_year": {"2022": {"n": 4000, "avg_r": -0.05}, "2023": {"n": 4000, "avg_r": -0.07}}}, "symbols": {}}}
+
+    def test_five_year_table_and_years(self):
+        bt = dict(ProfitWhereToFightTest.BT, hist5=self.H5)
+        got = self._node("", "BT_CACHE=" + json.dumps(bt, ensure_ascii=False) + ";"
+                         "renderWhereToFight(BT_CACHE); return {html:document.querySelector('#wherefight').innerHTML};")
+        html = got["html"]
+        table = html[:html.index("</table>")]
+        self.assertIn("pfbad", table)
+        self.assertNotIn("pfgood", table, "前半がマイナスなのに勝ち確定の枠を付けている")
+        self.assertIn("5年通して", html)
+        self.assertIn("時期で向きが割れる", html, "区間は0より上でも前後半が割れる場合の説明が無い")
+        self.assertIn("1b. 年ごとの平均R", html)
+        self.assertIn("1/2年プラス", html)
+        self.assertIn("5年・", html)
+
+
 class ProfitRuleWhatIfTest(ToolsHarness, unittest.TestCase):
     def test_off_pairs_are_adopted_and_saving_is_counted(self):
         tr = ([self.trade(i, 100) for i in range(10)]
@@ -6827,6 +6856,44 @@ class DukascopyTest(unittest.TestCase):
         self.assertEqual(sorted(bt["hist5"]), ["day", "mtf"])
         out = self.B.merge_previous({"modes": {"day": {}}}, tgt)
         self.assertEqual(sorted(out["hist5"]), ["day", "mtf"], "毎日の1年検証で5年検証が消える")
+
+
+
+class Hist5ReflectTest(RunTestCase):
+    """5年検証の結果を、通知・status.json（FXナビゲーターの画面）に正確に出す。"""
+
+    H = {"mtf": {"advice": {"all": {"n": 2000, "avg_r": 0.004, "ci_lo": -0.046, "ci_hi": 0.054, "winrate": 46},
+                            "first_half": {"avg_r": -0.03}, "second_half": {"avg_r": 0.04}, "verdict": "und",
+                            "from": "2021-11-25", "to": "2026-11-20"},
+                 "symbols": {"USD_JPY": {"advice": {"all": {"n": 500, "avg_r": -0.09, "ci_lo": -0.17, "ci_hi": -0.01},
+                                                    "first_half": {"avg_r": -0.1}, "second_half": {"avg_r": -0.08},
+                                                    "verdict": "bad"}}}}}
+
+    def test_cells_and_lines(self):
+        F._HIST5 = self.H
+        c = F.hist5_cell("mtf", "USD_JPY")
+        self.assertEqual((c["n"], c["verdict"], c["h1"], c["h2"]), (500, "bad", -0.1, -0.08))
+        self.assertIn("⛔負け確定", F.hist5_line("mtf", "USD_JPY"))
+        self.assertEqual(F.hist5_cell("mtf")["n"], 2000, "全通貨の行が読めていない")
+        self.assertEqual(F.hist5_line("swing", "USD_JPY"), "", "検証の無い組み合わせに数字を作っている")
+        t = F.hist5_table()
+        self.assertEqual(sorted(t["mtf"]), ["ALL", "USD_JPY"])
+
+    def test_signal_text_carries_the_five_year_result(self):
+        F._HIST5 = self.H
+        self.write(F.MODE_FILE, {"mode": "mtf"})
+        self.write(F.POSITIONS_FILE, {"positions": []})
+        for name in ("entry_side", "mtf_view", "spread_blocks_entry", "market_is_open"):
+            self.addCleanup(setattr, F, name, F.__dict__[name])
+        F.entry_side = lambda s_, t_, r_, th_, aligned=None, pullback=None: ("買い" if s_ == "USD_JPY" else None)
+        F.mtf_view = lambda symbol: {"aligned": 1, "label": "1h↑ / 4h↑"}
+        F.spread_blocks_entry = lambda sp, sl_pips: None
+        F.market_is_open = lambda: True
+        F.main()
+        txt = "\n".join(b for _, b in self.sent["mail"])
+        self.assertIn("📚5年検証(上位足フォロー×USD_JPY)", txt)
+        self.assertIn("⛔負け確定", txt)
+        self.assertEqual(self.status()["hist5"]["mtf"]["USD_JPY"]["verdict"], "bad")
 
 
 if __name__ == "__main__":

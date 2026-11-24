@@ -62,6 +62,8 @@ table.pfx th:first-child,table.pfx td:first-child{width:17%}
 table.pfx td.pfc{white-space:normal;line-height:1.35}
 table.pfx td.pfy{font-size:10.5px}
 table.pfl td.pfc small{font-size:8.5px;letter-spacing:-.02em}
+table.pfyr td.pfc{font-size:10.5px}
+.pfyup{color:var(--up)}.pfydn{color:var(--down)}
 .pfbad{color:var(--down);box-shadow:inset 0 0 0 1px rgba(255,122,138,.55);background:rgba(255,122,138,.08)}
 .pfgood{color:var(--up);box-shadow:inset 0 0 0 1px rgba(74,222,155,.55);background:rgba(74,222,155,.08)}
 .pfkey{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:4px}
@@ -130,7 +132,7 @@ function notifyKey(){ try{ return String((JSON.parse(localStorage.getItem("fxnav
 <div class="card">
   <div class="sec" style="font-size:12px;margin:2px 2px 6px">0. 実際の取引の答え合わせ（月別・時間帯別）</div>
   <div id="tradereview"></div>
-  <div class="sec" style="font-size:12px;margin:14px 2px 6px">1. どこで戦うか（1年検証・モード×通貨）</div>
+  <div class="sec" style="font-size:12px;margin:14px 2px 6px">1. どこで戦うか（<span id="wfsrc">1年検証</span>・モード×通貨）</div>
   <div id="wherefight"></div>
   <div class="sec" style="font-size:12px;margin:14px 2px 6px">2. 何をやめるか（あなたの実績で、守っていたら）</div>
   <div id="whatif"></div>

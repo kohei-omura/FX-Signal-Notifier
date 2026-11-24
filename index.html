@@ -536,6 +536,19 @@ footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(-
 .lq.lq-mid{color:var(--gold);border-color:rgba(212,176,119,.45)}
 .lq.lq-low{color:var(--down);border-color:rgba(255,123,140,.5);background:rgba(255,123,140,.08)}
 .lq.lq-low b{color:var(--down)}
+
+/* 5年検証ボックス（通貨カード） */
+.h5box{margin-top:10px;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.025);font-size:11.5px;line-height:1.6}
+.h5box .h5h{display:flex;align-items:center;gap:6px;color:var(--mut);letter-spacing:.03em}
+.h5box .h5h span{color:var(--ink);font-weight:600}
+.h5box .h5v{margin-left:auto;font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--line2);color:var(--mut);font-weight:600}
+.h5box .h5n{margin-top:3px;color:var(--ink);font-variant-numeric:tabular-nums}
+.h5box .h5ci{color:var(--mut);font-size:10.5px}
+.h5box .h5s{color:var(--dim);font-size:10.5px}
+.h5box.h5-bad{border-color:rgba(255,123,140,.45);background:rgba(255,123,140,.06)}
+.h5box.h5-bad .h5v{color:var(--down);border-color:rgba(255,123,140,.55)}
+.h5box.h5-good{border-color:rgba(78,224,162,.45);background:rgba(78,224,162,.06)}
+.h5box.h5-good .h5v{color:var(--up);border-color:rgba(78,224,162,.55)}
 </style>
 </head>
 <body>
@@ -2013,6 +2026,23 @@ function nearBox(p){
     +(now?'<br><span style="opacity:.7">'+now+'</span>':'')
     +'</div></div>';
 }
+/* 5年検証（デューカスコピーの1分足・週1回）で、このモード×通貨がどうだったか。
+   サーバーが status.json の hist5 に載せた値をそのまま出す（判定ルールはサーバーと同じ:
+   全期間の95%区間が0の片側＋前半・後半とも同じ向きの時だけ「確定」）。 */
+var HIST5_WORD={good:'勝ち確定',bad:'負け確定',und:'未確定'};
+function hist5Cell(mode,sym){ try{ return ((S.hist5||{})[mode]||{})[sym]||null; }catch(e){ return null; } }
+function hist5Box(sym){
+  var m=S&&S.mode, c=hist5Cell(m,sym); if(!c) return '';
+  var f=function(v){ return v==null?'—':(v>=0?'+':'')+(+v).toFixed(3); };
+  var cls=c.verdict==='good'?'h5-good':(c.verdict==='bad'?'h5-bad':'');
+  var note=c.verdict==='bad'?'続けるほど減る組み合わせです'
+    :(c.verdict==='good'?'5年・前半後半とも勝っています':'プラスともマイナスとも言えません');
+  return '<div class="h5box '+cls+'"><div class="h5h">📚 5年検証 <span>'+(MODE_LABEL[m]||m)+'×'+sym.replace('_JPY','')
+    +'</span><b class="h5v">'+(c.verdict==='bad'?'⛔ ':(c.verdict==='good'?'✅ ':''))+(HIST5_WORD[c.verdict]||'未確定')+'</b></div>'
+    +'<div class="h5n">1回平均 <b>'+f(c.avg_r)+'R</b> <span class="h5ci">［'+f(c.ci_lo)+'〜'+f(c.ci_hi)+'］</span>'
+    +' · 前半 '+f(c.h1)+' / 後半 '+f(c.h2)+' · '+c.n+'件</div>'
+    +'<div class="h5s">'+note+(c.from?'（'+escHtml(c.from)+'〜'+escHtml(c.to||'')+'）':'')+'</div></div>';
+}
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';
   const sc=p.score,scC=sc==null?'':(sc>=0?'up':'down'),scT=sc==null?'—':(sc>=0?'+':'')+sc.toFixed(2);
@@ -2177,6 +2207,7 @@ function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ �
     ${meter}
     <div class="row" style="margin-top:8px"><span class="price">${fmt(p.bid)}</span>${_qa}</div>
     <div class="chips"><span class="chip tp" title="ATRから毎回計算し直す推奨値。相場が動けばこの数字も動きます。登録した時点の値がその建玉に固定されます">TP目安 <b>+${fmt(p.tp_pips)}p</b></span><span class="chip sl" title="ATRから毎回計算し直す推奨値。相場が動けばこの数字も動きます。登録した時点の値がその建玉に固定されます">SL目安 <b>-${fmt(p.sl_pips)}p</b></span>${_costR!=null?`<span class="chip" title="この1往復で必ず払うスプレッド。1リスクに占める割合も併記">コスト <b>${_costYen!=null?Math.round(_costYen).toLocaleString()+'円':''}</b>${_costYen!=null?` <span style="opacity:.7">(${Math.round(_costR*100)}%)</span>`:`${Math.round(_costR*100)}%`}</span>`:''}</div>${_costBadge}
+    ${hist5Box(p.symbol)}
     <div class="reasons" style="opacity:.75;font-size:11px">📌 TP/SLは<b>変動する目安</b>（ATR連動・更新のたび再計算）。実際に発注する価格は登録後の保有カード「発注レベル」を見てください</div>
     ${lotBox}
     <button class="dettog" onclick="toggleDetail('${p.symbol}',this)">${_open?'▲ 詳細を閉じる':'▼ 詳細'}</button>
