@@ -801,6 +801,11 @@ def _mark_context(symbol, times, oh, days):
                           P["atr"], ts4, [rows4[t] for t in ts4], table)
 
 
+# 長期検証用。リストを入れておくと compute_signal_stats が取引ごとに
+# (エントリー時刻ms, 売買, {決済ポリシー: R}, 往復コストR) を足していく。通常は None。
+TRADE_SINK = None
+
+
 def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
                          pullback_override=None, marks=False):
     """過去バーを歩いて『シグナル→TP/SLのどちらに先に当たったか』を数える。
@@ -909,6 +914,8 @@ def compute_signal_stats(symbol, th_override=None, entry_range=None, rule=None,
         cost = SPREAD_PIPS.get(symbol, DEFAULT_SPREAD_PIPS) / sl_pips if sl_pips else 0.0
         for name, r in sim.items():
             policy_r.setdefault(name, []).append((r, cost))
+        if TRADE_SINK is not None:     # 長期検証で、1回の計算から年別・前後半・時間帯別を出すため
+            TRADE_SINK.append((times[i], side, {k: sim[k] for k in ("advice", "tp_sl") if k in sim}, cost))
         for name, r in _simulate_exit_candidates(oh, i, side, entry, tp, sl, sl_pips,
                                                  aligned_s=aligned_s).items():
             cand_r.setdefault(name, []).append((r, cost))

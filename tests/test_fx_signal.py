@@ -6732,5 +6732,102 @@ class SwingHoldJudgeTest(RunTestCase):
         self.assertIn("function holdScore(PP,ps)", src)
 
 
+
+class DukascopyTest(unittest.TestCase):
+    """5年検証の足（デューカスコピーの公開1分足）。中身の並び・集約・検証の通し。"""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(ROOT, "engine"))
+        import dukascopy as D, backtest as B, lzma, struct
+        cls.D, cls.B, cls.lzma, cls.struct = D, B, lzma, struct
+
+    def _bi5(self, rows):
+        raw = b"".join(self.struct.pack(">5if", *r) for r in rows)
+        return self.lzma.compress(raw, format=self.lzma.FORMAT_ALONE)
+
+    def test_decode_order_and_flat_bars(self):
+        day = datetime.date(2024, 1, 3)
+        raw = self._bi5([(0, 141000, 141050, 140990, 141060, 3.0),      # open, close, low, high
+                         (60, 141050, 141050, 141050, 141050, 0.0)])    # 出来高0＝休場の横ばい足
+        rows = self.D.decode(raw, "USD_JPY", day)
+        self.assertEqual(len(rows), 1, "出来高0の足を残している")
+        t, o, h, l, c, v = rows[0]
+        self.assertEqual((o, h, l, c), (141.0, 141.06, 140.99, 141.05))
+        self.assertEqual(t, int(datetime.datetime(2024, 1, 3, tzinfo=datetime.timezone.utc).timestamp()) * 1000)
+        bad = self._bi5([(0, 141000, 141050, 141100, 140900, 3.0)])     # low > high
+        with self.assertRaises(ValueError):
+            self.D.decode(bad, "USD_JPY", day)
+        self.assertEqual(self.D.decode(b"", "USD_JPY", day), [])
+
+    def _write_days(self, root, days=110, seed=3):
+        rnd = random.Random(seed)
+        end = datetime.datetime.now(datetime.timezone.utc).date() - datetime.timedelta(days=1)
+        for sym in self.D.SYMBOLS:
+            px = {"USD_JPY": 150.0, "EUR_JPY": 160.0, "GBP_JPY": 190.0, "AUD_JPY": 100.0}[sym]
+            for k in range(days, -1, -1):
+                d = end - datetime.timedelta(days=k)
+                rows = []
+                if d.weekday() != 5:
+                    for m in range(0, 1440):
+                        o = px; px += rnd.gauss(0.0003, 0.012)
+                        c = px; hi = max(o, c) + abs(rnd.gauss(0, 0.004)); lo = min(o, c) - abs(rnd.gauss(0, 0.004))
+                        rows.append((m * 60, round(o * 1000), round(c * 1000), round(lo * 1000), round(hi * 1000), 1.0))
+                p = os.path.join(root, self.D.SYMBOLS[sym], f"{d:%Y}", f"{d:%m}", f"{d:%d}.bi5")
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with open(p, "wb") as f:
+                    f.write(self._bi5(rows) if rows else b"")
+
+    def test_aggregation_matches_jst_days(self):
+        root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)
+        self._write_days(root, days=3)
+        src = self.D.Source(root)
+        d = (datetime.datetime.now(F.JST) - datetime.timedelta(days=2)).strftime("%Y%m%d")
+        q = src.klines("USD_JPY", d, "15min")
+        ts = sorted(q)
+        self.assertTrue(ts)
+        self.assertTrue(all(t % (15 * 60000) == 0 for t in ts))
+        a = datetime.datetime.strptime(d, "%Y%m%d").replace(tzinfo=F.JST).timestamp() * 1000
+        self.assertTrue(all(a <= t < a + 86400000 for t in ts), "JSTの1日の外の足が混ざっている")
+        h, l, c = q[ts[0]]
+        self.assertGreaterEqual(h, l)
+
+    def test_five_year_runner_end_to_end(self):
+        """検証の通し（合成データ110日・上位足）。年別・前後半・時間帯別と判定が出ること。"""
+        root = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, root, True)
+        self._write_days(root, days=110)
+        saved = (F.klines_day, F.MODE, F.P, F.TECH_W, F.FUND_W, dict(F.STATS_DAYS), dict(F.STATS_MAX_BARS),
+                 self.B.HIST_DAYS)
+        def restore():
+            (F.klines_day, F.MODE, F.P, F.TECH_W, F.FUND_W, sd, sm, self.B.HIST_DAYS) = saved
+            F.STATS_DAYS.clear(); F.STATS_DAYS.update(sd); F.STATS_MAX_BARS.clear(); F.STATS_MAX_BARS.update(sm)
+            F._KLINE_DAY_CACHE.clear()
+            for c in (F._OHLC_CACHE, F._MTF_CACHE, F._SCORE_CACHE, F._SERIES_CACHE):
+                c.clear()
+        self.addCleanup(restore)
+        self.B.HIST_DAYS = 100
+        src = self.D.install(F, self.D.Source(root))
+        r = self.B.run_hist("mtf", src)
+        self.assertIsNotNone(r, "合成データで1件も集計できない")
+        adv = r["advice"]
+        for k in ("all", "first_half", "second_half", "by_year", "by_session", "by_side", "verdict"):
+            self.assertIn(k, adv)
+        self.assertEqual(adv["all"]["n"], adv["first_half"]["n"] + adv["second_half"]["n"])
+        self.assertEqual(adv["all"]["n"], sum(v["n"] for v in adv["by_year"].values()))
+        self.assertIsNone(F.TRADE_SINK, "検証後に取引の記録口が開きっぱなし")
+        self.assertGreater(r["days_covered"]["USD_JPY"], 80)
+
+    def test_merge_keeps_other_modes_and_daily_run_keeps_hist5(self):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        tgt = os.path.join(d, "backtest.json"); part = os.path.join(d, "p.json")
+        for path, body in ((tgt, {"modes": {}, "hist5": {"day": {"x": 1}}}), (part, {"mtf": {"y": 2}})):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(body, f)
+        bt = self.B.merge_hist([part], tgt)
+        self.assertEqual(sorted(bt["hist5"]), ["day", "mtf"])
+        out = self.B.merge_previous({"modes": {"day": {}}}, tgt)
+        self.assertEqual(sorted(out["hist5"]), ["day", "mtf"], "毎日の1年検証で5年検証が消える")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

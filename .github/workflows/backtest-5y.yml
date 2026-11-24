@@ -1,0 +1,127 @@
+name: Backtest 5 years (Dukascopy)
+
+# 「どこで戦うか」を確定させるための5年検証（全モード・週1回）。
+# GMOのAPIは約3年しか遡れないので、足はデューカスコピーの公開データ（BID 1分足）から作る。
+# 判定ロジック・コスト（GMOの公表スプレッド）は毎日の1年検証と同じ。
+#   1) fetch   : 足りない日の1分足だけ取り、Actionsのキャッシュに貯める（2回目以降は差分だけ）
+#   2) compute : モードごとに並列で検証（1分足のスキャルは重いので別ジョブにする）
+#   3) merge   : backtest.json の "hist5" にまとめてコミット（取れなかったモードは前回を残す）
+
+on:
+  schedule:
+    - cron: '43 21 * * 6'   # 毎週日曜 06:43 JST（土曜 21:43 UTC）。FX市場の休場中
+  workflow_dispatch:
+    inputs:
+      modes:
+        description: '検証するモード（例: mtf,swing,day,scalp）'
+        type: string
+        default: 'mtf,swing,day,scalp'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backtest-5y
+  cancel-in-progress: false
+
+env:
+  DUKAS_CACHE: ${{ github.workspace }}/.dukas
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      modes: ${{ steps.m.outputs.modes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - uses: actions/cache/restore@v4
+        with:
+          path: .dukas
+          key: dukas-v1-${{ github.run_id }}
+          restore-keys: dukas-v1-
+      - name: Fetch Dukascopy 1-minute candles (missing days only)
+        env:
+          DUKAS_YEARS: "5"
+          DUKAS_WORKERS: "8"
+        run: python engine/dukascopy.py
+      - run: du -sh .dukas && find .dukas -name '*.bi5' | wc -l
+      - uses: actions/cache/save@v4
+        with:
+          path: .dukas
+          key: dukas-v1-${{ github.run_id }}
+      - id: m
+        run: |
+          M="${{ inputs.modes || 'mtf,swing,day,scalp' }}"
+          echo "modes=$(python -c "import json,sys;print(json.dumps([x.strip() for x in sys.argv[1].split(',') if x.strip()]))" "$M")" >> "$GITHUB_OUTPUT"
+
+  compute:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ${{ fromJson(needs.fetch.outputs.modes) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - uses: actions/cache/restore@v4
+        with:
+          path: .dukas
+          key: dukas-v1-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - name: Run 5-year backtest (${{ matrix.mode }})
+        env:
+          BACKTEST_MODES: hist5
+          HIST_MODES: ${{ matrix.mode }}
+          HIST_OUT: hist5_${{ matrix.mode }}.json
+        run: python engine/backtest.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hist5-${{ matrix.mode }}
+          path: hist5_${{ matrix.mode }}.json
+          retention-days: 7
+
+  merge:
+    needs: compute
+    if: always() && needs.compute.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hist5-*
+          path: parts
+          merge-multiple: true
+      - name: Merge into backtest.json and push
+        run: |
+          ls parts || true
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            git fetch origin "${GITHUB_REF_NAME}"
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+            python engine/backtest.py merge-hist parts/*.json
+            git add data/backtest.json
+            if git diff --staged --quiet; then echo "no changes"; exit 0; fi
+            git commit -m "auto: update 5-year backtest [skip ci]"
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then echo "pushed"; exit 0; fi
+            echo "push retry $i"; sleep 5
+          done
+          echo "push contended; skip"; exit 0

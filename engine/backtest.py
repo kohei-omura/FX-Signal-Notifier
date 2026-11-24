@@ -10,7 +10,7 @@ status.json に載る統計は直近8日ぶんしかない。しかも4通貨と
 判定ロジックは fx_signal.py のものをそのまま使う（二重実装を作らない）。
 出力: backtest.json（ツール画面が読む）
 """
-import datetime, json, os, sys
+import datetime, json, os, sys, time
 
 import fx_signal as F
 
@@ -368,6 +368,132 @@ def run_long(mode):
             "symbols": syms}
 
 
+# ===== 5年検証（デューカスコピーの1分足・週1回） =====
+# GMOは約3年しか遡れない。5年ぶんの足はデューカスコピーの公開データから作る（engine/dukascopy.py）。
+# 判定は fx_signal.py のロジックそのまま。1回の計算で取引ごとのRを受け取り、
+# 全期間・前半/後半・年ごと・時間帯ごとに分けて集計する（何度も回し直さない）。
+HIST_DAYS = int(os.environ.get("HIST_DAYS", str(int(365.25 * 5))))
+HIST_CAP = 10 ** 8
+HIST_POLICIES = ("advice", "tp_sl")
+
+
+def _jst(ms):
+    return datetime.datetime.fromtimestamp(ms / 1000, F.JST)
+
+
+def summarize_trades(trades, policy="advice"):
+    """[(時刻ms, 売買, {方針: R}, コスト)] → 全期間・前半/後半・年別・時間帯別・売買別。
+       前半/後半は件数ではなく時刻の中央で分ける（相場の時期で分けるため）。"""
+    rows = [(t, side, rs[policy], c) for t, side, rs, c in trades if policy in rs]
+    if not rows:
+        return None
+    rows.sort(key=lambda x: x[0])
+    mid = (rows[0][0] + rows[-1][0]) / 2
+    pick = lambda xs: F._r_summary([(r, c) for _, _, r, c in xs])
+    out = {"all": pick(rows),
+           "first_half": pick([x for x in rows if x[0] < mid]),
+           "second_half": pick([x for x in rows if x[0] >= mid]),
+           "by_year": {}, "by_session": {}, "by_side": {}}
+    groups = (("by_year", lambda x: str(_jst(x[0]).year)),
+              ("by_session", lambda x: F.session_of_hour(_jst(x[0]).hour)),
+              ("by_side", lambda x: x[1]))
+    for key, fn in groups:
+        b = {}
+        for x in rows:
+            b.setdefault(fn(x), []).append(x)
+        out[key] = {k: pick(v) for k, v in sorted(b.items())}
+    out["verdict"] = long_verdict(out["all"], out["first_half"], out["second_half"])
+    out["from"] = _jst(rows[0][0]).strftime("%Y-%m-%d")
+    out["to"] = _jst(rows[-1][0]).strftime("%Y-%m-%d")
+    return out
+
+
+def run_hist(mode, source=None):
+    """mode を5年ぶんで集計する。足はデューカスコピー（install済みであること）。"""
+    F.MODE = mode
+    F.P = F.PARAMS[mode]
+    F.TECH_W, F.FUND_W = (0.45, 0.55) if mode == "swing" else (0.85, 0.15)
+    F.STATS_DAYS = {m: HIST_DAYS for m in F.PARAMS}
+    F.STATS_MAX_BARS = {m: HIST_CAP for m in F.PARAMS}
+    for c in (F._OHLC_CACHE, F._MTF_CACHE, F._SCORE_CACHE, F._SERIES_CACHE):
+        c.clear()
+    per_sym, every = {}, []
+    for sym in F.SYMBOLS:
+        t0 = time.time()
+        F.TRADE_SINK = []
+        try:
+            F.compute_signal_stats(sym)
+            trades = list(F.TRADE_SINK)
+        except Exception as e:
+            print(f"[WARN] 5年検証 {mode}/{sym} 失敗: {e}", file=sys.stderr)
+            continue
+        finally:
+            F.TRADE_SINK = None
+        every.extend(trades)
+        per_sym[sym] = {p: summarize_trades(trades, p) for p in HIST_POLICIES}
+        a = (per_sym[sym].get("advice") or {}).get("all") or {}
+        print(f"[5年] {mode}/{sym} {len(trades)}件 平均{a.get('avg_r', 0):+.3f}R "
+              f"[{a.get('ci_lo', 0):+.3f}〜{a.get('ci_hi', 0):+.3f}] {time.time() - t0:.0f}秒", flush=True)
+        # 足のキャッシュは通貨ごとに捨てる（1分足5年×4通貨を同時に持つとメモリが足りない）
+        if mode == "scalp":
+            F._KLINE_DAY_CACHE.clear(); F._SERIES_CACHE.clear()
+    if not per_sym:
+        return None
+    covered = {s: len((source.days_with_data if source else {}).get(s, ())) for s in F.SYMBOLS}
+    res = {"generated_at": datetime.datetime.now(F.JST).strftime("%Y-%m-%d %H:%M JST"),
+           "source": "Dukascopy 公開データ（BID 1分足を集約）", "days": HIST_DAYS,
+           "days_covered": covered, "years_covered": round(max(covered.values() or [0]) / TRADING_DAYS_PER_YEAR, 2),
+           "rule": LONG_RULE, "cost": "GMOの公表スプレッドを往復ぶん控除",
+           "symbols": {s: v for s, v in per_sym.items()}}
+    for p in HIST_POLICIES:
+        res[p] = summarize_trades(every, p)
+    return res
+
+
+def main_hist():
+    """BACKTEST_MODES=hist5 HIST_MODES=mtf,day ... で呼ばれる（週1回の別ジョブ）。
+       結果は HIST_OUT（既定 hist5_<モード>.json）に書き、まとめるのは merge_hist()。"""
+    import dukascopy
+    src = dukascopy.install(F)
+    modes = [m.strip() for m in os.environ.get("HIST_MODES", "mtf,swing,day,scalp").split(",") if m.strip()]
+    out = {}
+    for m in modes:
+        r = run_hist(m, src)
+        if r:
+            out[m] = r
+            a = (r.get("advice") or {}).get("all") or {}
+            print(f"[OK] 5年検証 {m}: n={a.get('n')} 平均{a.get('avg_r', 0):+.3f}R "
+                  f"[{a.get('ci_lo', 0):+.3f}〜{a.get('ci_hi', 0):+.3f}] 判定:{(r.get('advice') or {}).get('verdict')}"
+                  f" 年別:" + " ".join(f"{y}:{v['avg_r']:+.3f}" for y, v in
+                                      ((r.get('advice') or {}).get('by_year') or {}).items() if v.get('n')))
+    path = os.environ.get("HIST_OUT") or f"hist5_{'_'.join(modes)}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False)
+    print(f"[OK] {path} に保存（{list(out)}）")
+    return out
+
+
+def merge_hist(paths, target=None):
+    """各ジョブの結果を backtest.json の "hist5" にまとめる。取れなかったモードは前回を残す。"""
+    target = target or OUT
+    try:
+        with open(target, encoding="utf-8") as f:
+            bt = json.load(f)
+    except Exception:
+        bt = {"modes": {}}
+    h = dict(bt.get("hist5") or {})
+    for p in paths:
+        try:
+            with open(p, encoding="utf-8") as f:
+                h.update(json.load(f) or {})
+        except Exception as e:
+            print(f"[WARN] {p} を読めません: {e}", file=sys.stderr)
+    bt["hist5"] = h
+    F.write_json(target, bt)
+    print(f"[OK] hist5 を更新: {sorted(h)}")
+    return bt
+
+
 def merge_previous(out, path):
     """今回回さなかったモードは、前回の結果をそのまま引き継ぐ（いつの結果かも残す）。"""
     try:
@@ -387,6 +513,8 @@ def merge_previous(out, path):
     # 3年検証は週1回なので、毎日の実行では前回の結果をそのまま引き継ぐ
     for m, v in (prev.get("long") or {}).items():
         out.setdefault("long", {}).setdefault(m, v)
+    for m, v in (prev.get("hist5") or {}).items():          # 5年検証も週1回
+        out.setdefault("hist5", {}).setdefault(m, v)
     return out
 
 
@@ -694,4 +822,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 2 and sys.argv[1] == "merge-hist":
+        merge_hist(sys.argv[2:])
+    elif os.environ.get("BACKTEST_MODES", "").strip() == "hist5":
+        main_hist()
+    else:
+        main()
