@@ -6995,6 +6995,7 @@ class Hist5SessionTest(RunTestCase):
         e = ss["早朝(6-9)"]
         self.assertTrue(e["ex_roll"]); self.assertEqual(e["n"], 700, "早朝を6〜7時込みの件数で出している")
         self.assertIsNotNone(e["roll_avg_r"])
+        self.assertNotIn("years_plus", e, "6〜7時込みの年数を混ぜている")
         self.assertEqual(F.hist5_session_line("mtf", "東京(9-15)"), "", "未確定の時間帯まで通知に載せている")
         F._HIST5["mtf"]["advice"]["by_session"]["東京(9-15)"].update(verdict="bad", ci_hi=-0.01, avg_r=-0.05)
         line = F.hist5_session_line("mtf", "東京(9-15)")

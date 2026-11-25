@@ -1256,6 +1256,7 @@ def hist5_sessions(mode):
             c["raw_avg_r"] = c.get("avg_r")
             c["roll_avg_r"] = (v.get("roll") or {}).get("avg_r")
             c.update({f: v["ex_roll"].get(f) for f in ("n", "avg_r", "ci_lo", "ci_hi", "h1", "h2", "verdict")})
+            c.pop("winrate", None); c.pop("years_plus", None)    # 6〜7時込みの数字なので混ぜない
             c["ex_roll"] = True
         out[k] = c
     return out

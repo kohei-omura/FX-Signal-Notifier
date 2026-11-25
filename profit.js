@@ -158,6 +158,7 @@ function _pfSess(bt,m,k){
             raw:v.avg_r,rollv:v.roll?v.roll.avg_r:null,ex:!!e,yp:e?null:(v.years_plus||null)};
   }catch(e){ return null; }
 }
+function _pfN(n){ return n>=10000?(Math.round(n/1000)/10)+'万':String(n); }
 function renderSessionTable(bt){
   if(!_pfH5Has(bt)) return '';
   var found=[], any=false;
@@ -169,7 +170,7 @@ function renderSessionTable(bt){
       var cls=c.verdict==='good'?'pfgood':(c.verdict==='bad'?'pfbad':'');
       if(c.verdict==='good'||c.verdict==='bad') found.push({m:m,k:k,c:c});
       return '<td class="pfc '+cls+'">'+_pf(c.avg,2)+(c.ex?'<sup>※</sup>':'')
-        +'<small>'+c.n+'件'+(c.yp&&c.yp[1]?' · '+c.yp[0]+'/'+c.yp[1]+'年':'')+'</small></td>'; }).join('');
+        +'<small>'+_pfN(c.n)+'件'+(c.yp&&c.yp[1]?'<br>'+c.yp[0]+'/'+c.yp[1]+'年＋':'')+'</small></td>'; }).join('');
     return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'+tds+'</tr>';
   }).join('');
   if(!any) return '';
@@ -183,7 +184,7 @@ function renderSessionTable(bt){
     +'<table class="pft pfyr"><thead><tr><th></th>'+PF_SESS.map(function(k){return '<th>'+k.replace('(','<br><small>').replace(')','時</small>')+'</th>';}).join('')
     +'</tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div style="margin-top:8px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font-size:12px;line-height:1.8">'+sum+'</div>'
-    +'<div class="note">枠の色は全体と同じ条件（95%区間が0の片側＋前半・後半とも同じ向き）。小さい数字は件数と「プラスだった年／年数」。'
+    +'<div class="note">枠の色は全体と同じ条件（95%区間が0の片側＋前半・後半とも同じ向き）。小さい数字は件数と「プラスだった年／年数」（例: 2/5年＋＝5年のうち2年がプラス）。'
     +'※早朝は6〜7時（ロールオーバー）を除いた8時台の値です。6〜7時はスプレッドが普段の約10倍に開き、売値だけのデータでは値が飛ぶため、'
     +'コストを10倍にしても実際には取れない勝ちが残ります（「何をやめるか」も6〜7時は避ける前提）'
     +(early.length?'。6〜7時込み→除いた値: '+early.join('、'):'')+'。'
