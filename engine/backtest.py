@@ -434,6 +434,15 @@ def summarize_trades(trades, policy="advice"):
                                  "h1": rh1.get("avg_r"), "h2": rh2.get("avg_r"),
                                  "verdict": long_verdict(ra, rh1, rh2) if ra and rh1 and rh2 else "und",
                                  "mult": ROLLOVER_COST_MULT}
+                    # 6〜7時は売値(BID)だけのデータだと値が飛び、実際には取れない勝ちが混ざる。
+                    # アプリも6〜7時は避ける前提なので、確定/未確定は6〜7時を除いた取引で決める
+                    ex = [x for x in v if _jst(x[0]).hour not in ROLLOVER_HOURS]
+                    ea = pick(ex) or {}
+                    eh1 = pick([x for x in ex if x[0] < mid]) or {}
+                    eh2 = pick([x for x in ex if x[0] >= mid]) or {}
+                    s["ex_roll"] = {"n": ea.get("n", 0), "avg_r": ea.get("avg_r"), "ci_lo": ea.get("ci_lo"),
+                                    "ci_hi": ea.get("ci_hi"), "h1": eh1.get("avg_r"), "h2": eh2.get("avg_r"),
+                                    "verdict": long_verdict(ea, eh1, eh2) if ea and eh1 and eh2 else "und"}
     hours = {}
     for x in rows:
         hours.setdefault(f"{_jst(x[0]).hour:02d}", []).append(x)

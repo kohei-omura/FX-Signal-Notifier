@@ -153,9 +153,9 @@ function renderYearTable(bt){
 var PF_SESS=['早朝(6-9)','東京(9-15)','欧州(15-21)','NY(21-6)'];
 function _pfSess(bt,m,k){
   try{ var v=bt.hist5[m].advice.by_session[k]; if(!v||!v.n) return null;
-    var r=v.roll||null;
-    return {n:v.n,avg:r?r.avg_r:v.avg_r,lo:r?r.ci_lo:v.ci_lo,hi:r?r.ci_hi:v.ci_hi,h1:r?r.h1:v.h1,h2:r?r.h2:v.h2,
-            verdict:r?r.verdict:v.verdict,raw:v.avg_r,roll:r?r.mult:0,yp:v.years_plus||null};
+    var e=(v.ex_roll&&v.ex_roll.n)?v.ex_roll:null, r=e||v;
+    return {n:r.n,avg:r.avg_r,lo:r.ci_lo,hi:r.ci_hi,h1:r.h1,h2:r.h2,verdict:r.verdict,
+            raw:v.avg_r,rollv:v.roll?v.roll.avg_r:null,ex:!!e,yp:e?null:(v.years_plus||null)};
   }catch(e){ return null; }
 }
 function renderSessionTable(bt){
@@ -168,7 +168,7 @@ function renderSessionTable(bt){
       any=true;
       var cls=c.verdict==='good'?'pfgood':(c.verdict==='bad'?'pfbad':'');
       if(c.verdict==='good'||c.verdict==='bad') found.push({m:m,k:k,c:c});
-      return '<td class="pfc '+cls+'">'+_pf(c.avg,2)+(c.roll?'<sup>※</sup>':'')
+      return '<td class="pfc '+cls+'">'+_pf(c.avg,2)+(c.ex?'<sup>※</sup>':'')
         +'<small>'+c.n+'件'+(c.yp&&c.yp[1]?' · '+c.yp[0]+'/'+c.yp[1]+'年':'')+'</small></td>'; }).join('');
     return '<tr><td class="pfm">'+(PF_SHORT[m]||m)+'</td>'+tds+'</tr>';
   }).join('');
@@ -177,14 +177,16 @@ function renderSessionTable(bt){
   var lab=function(x){ return (PF_SHORT[x.m]||x.m)+'×'+x.k.replace(/\(.*\)/,'')+' '+_pf(x.c.avg,3)+'R（前半'+_pf(x.c.h1,3)+'／後半'+_pf(x.c.h2,3)+'）'; };
   var sum=(good.length?'<div>✅ 時間帯を絞ると勝ちが確定: '+good.map(lab).join('、')+'</div>':'<div>✅ 時間帯を絞っても「勝ち確定」はありません。</div>')
     +(bad.length?'<div>⛔ 負けが確定: '+bad.map(lab).join('、')+'</div>':'');
-  var early=PF_MODES.map(function(m){ var c=_pfSess(bt,m,PF_SESS[0]); return (c&&c.roll)?(PF_SHORT[m]||m)+' '+_pf(c.raw,2)+'→'+_pf(c.avg,2):''; }).filter(Boolean);
+  var early=PF_MODES.map(function(m){ var c=_pfSess(bt,m,PF_SESS[0]);
+    return (c&&c.ex)?(PF_SHORT[m]||m)+' '+_pf(c.raw,2)+(c.rollv!=null?'（10倍でも'+_pf(c.rollv,2)+'）':'')+'→'+_pf(c.avg,2):''; }).filter(Boolean);
   return '<div class="sec" style="font-size:12px;margin:14px 2px 6px">1d. 時間帯ごとの平均R（5年検証・4通貨合計）</div>'
     +'<table class="pft pfyr"><thead><tr><th></th>'+PF_SESS.map(function(k){return '<th>'+k.replace('(','<br><small>').replace(')','時</small>')+'</th>';}).join('')
     +'</tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div style="margin-top:8px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font-size:12px;line-height:1.8">'+sum+'</div>'
     +'<div class="note">枠の色は全体と同じ条件（95%区間が0の片側＋前半・後半とも同じ向き）。小さい数字は件数と「プラスだった年／年数」。'
-    +'※早朝は6〜7時のロールオーバーでスプレッドが普段の約10倍に開くので、その時間の取引はコストを10倍にした控えめな値です'
-    +(early.length?'（公表スプレッドのままなら '+early.join('、')+'）':'')+'。'
+    +'※早朝は6〜7時（ロールオーバー）を除いた8時台の値です。6〜7時はスプレッドが普段の約10倍に開き、売値だけのデータでは値が飛ぶため、'
+    +'コストを10倍にしても実際には取れない勝ちが残ります（「何をやめるか」も6〜7時は避ける前提）'
+    +(early.length?'。6〜7時込み→除いた値: '+early.join('、'):'')+'。'
     +'時間帯は後から分けた数字で、16マスもあれば1つくらいは偶然でも色が付きえます。前半・後半の両方でそろっているかを必ず見てください。</div>';
 }
 

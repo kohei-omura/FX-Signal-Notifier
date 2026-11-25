@@ -2051,13 +2051,15 @@ function hist5Box(sym){
 // 今の時間帯は5年でどうだったか（このモード・4通貨合計）。確定の条件は全体と同じ（前半・後半とも同じ向き）
 function hist5SessLine(m,ms){
   var ss=(S&&S.hist5_sess&&S.hist5_sess[m])||null; if(!ss) return '';
-  var k=sessionOfHourJS(new Date((ms||Date.now())+9*3600e3).getUTCHours()), c=ss[k]; if(!c||!c.n) return '';
+  var hh=new Date((ms||Date.now())+9*3600e3).getUTCHours(), k=sessionOfHourJS(hh), c=ss[k];
+  if(hh===6||hh===7) return '<div class="h5t">🕒 今はロールオーバー（6〜7時）：スプレッドが普段の約10倍に開き、検証の値も当てになりません。新規は見送りが無難です</div>';
+  if(!c||!c.n) return '';
   var f=function(v){ return v==null?'—':(v>=0?'+':'')+(+v).toFixed(3); };
   var w=c.verdict==='good'?'✅ 勝ち確定':(c.verdict==='bad'?'⛔ 負け確定':'未確定');
   var yp=(c.years_plus&&c.years_plus[1])?' · '+c.years_plus[0]+'/'+c.years_plus[1]+'年プラス':'';
   return '<div class="h5t '+(c.verdict==='good'?'up':(c.verdict==='bad'?'down':''))+'">🕒 今の時間帯 '+escHtml(k)
     +'：1回平均 <b>'+f(c.avg_r)+'R</b> <span class="h5ci">［'+f(c.ci_lo)+'〜'+f(c.ci_hi)+'］</span> · '+c.n+'件'+yp
-    +' · <b>'+w+'</b>'+(c.roll?'<span class="h5ci">（6〜7時のスプレッド拡大×'+c.roll+'込み。公表スプレッドなら '+f(c.raw_avg_r)+'R）</span>':'')+'</div>';
+    +' · <b>'+w+'</b>'+(c.ex_roll?'<span class="h5ci">（8時台のみ。6〜7時込みなら '+f(c.raw_avg_r)+'R'+(c.roll_avg_r!=null?'・スプレッド10倍でも '+f(c.roll_avg_r)+'R':'')+'）</span>':'')+'</div>';
 }
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';

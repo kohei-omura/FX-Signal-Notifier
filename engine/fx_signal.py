@@ -1250,24 +1250,28 @@ def hist5_sessions(mode):
         if not (v and v.get("n")):
             continue
         c = {f: v.get(f) for f in keep if f in v}
-        if v.get("roll"):
-            # 早朝は 6〜7時のスプレッド拡大（約10倍）を入れた控えめな値を正とする
+        if v.get("ex_roll") and v["ex_roll"].get("n"):
+            # 早朝は 6〜7時（ロールオーバー）を除いた取引を正とする。BIDだけのデータだとこの時間は値が飛び、
+            # スプレッドを10倍にしてもまだ「取れない勝ち」が残るため。込みの値は参考に残す
             c["raw_avg_r"] = c.get("avg_r")
-            c.update({f: v["roll"].get(f) for f in ("avg_r", "ci_lo", "ci_hi", "h1", "h2", "verdict")})
-            c["roll"] = v["roll"].get("mult")
+            c["roll_avg_r"] = (v.get("roll") or {}).get("avg_r")
+            c.update({f: v["ex_roll"].get(f) for f in ("n", "avg_r", "ci_lo", "ci_hi", "h1", "h2", "verdict")})
+            c["ex_roll"] = True
         out[k] = c
     return out
 
 
 def hist5_session_line(mode, session=None):
     """通知に入れる「今の時間帯は5年でどうだったか」。確定している時だけ出す（未確定は情報が薄い）。"""
+    if session is None and datetime.datetime.fromtimestamp(_now_ts(), JST).hour in (6, 7):
+        return ""                      # ロールオーバー中の値は当てにしない（6〜7時を除いた数字しか持っていない）
     session = session or session_of_ms(int(_now_ts() * 1000))
     c = hist5_sessions(mode).get(session)
     if not c or c.get("verdict") not in ("good", "bad") or c.get("avg_r") is None:
         return ""
     return (f"\n  🕒今の時間帯 {session}: 5年で1回平均{c['avg_r']:+.3f}R"
             f"［{c['ci_lo']:+.3f}〜{c['ci_hi']:+.3f}］{c['n']}件 {HIST5_WORD[c['verdict']]}"
-            + ("（6〜7時のスプレッド拡大込み）" if c.get("roll") else ""))
+            + ("（6〜7時を除く）" if c.get("ex_roll") else ""))
 
 
 def hist5_table():
