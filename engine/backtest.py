@@ -381,6 +381,10 @@ def _jst(ms):
     return datetime.datetime.fromtimestamp(ms / 1000, F.JST)
 
 
+ROLLOVER_HOURS = (6, 7)       # JST。ツールの「何をやめるか」と同じ（スプレッドが普段の約10倍）
+ROLLOVER_COST_MULT = 10
+
+
 def summarize_trades(trades, policy="advice"):
     """[(時刻ms, 売買, {方針: R}, コスト)] → 全期間・前半/後半・年別・時間帯別・売買別。
        前半/後半は件数ではなく時刻の中央で分ける（相場の時期で分けるため）。"""
@@ -402,6 +406,39 @@ def summarize_trades(trades, policy="advice"):
         for x in rows:
             b.setdefault(fn(x), []).append(x)
         out[key] = {k: pick(v) for k, v in sorted(b.items())}
+        if key == "by_session":
+            # 時間帯は後から分けた数字なので、全体と同じ「先に決めた条件」（前半・後半とも同じ向き）で
+            # 確定/未確定を付ける。年ごとに何年プラスだったかも残す（1年だけの大勝ちを見分ける）
+            for k, v in b.items():
+                s = out[key][k]
+                if not s:
+                    continue
+                h1 = pick([x for x in v if x[0] < mid]) or {}
+                h2 = pick([x for x in v if x[0] >= mid]) or {}
+                s["h1"], s["h2"] = h1.get("avg_r"), h2.get("avg_r")
+                s["verdict"] = long_verdict(s, h1, h2) if h1 and h2 else "und"
+                yrs = {}
+                for x in v:
+                    yrs.setdefault(_jst(x[0]).year, []).append(x)
+                ys = [pick(xs) for xs in yrs.values() if len(xs) >= 30]
+                s["years_plus"] = [sum(1 for y in ys if y and y["avg_r"] > 0), len(ys)]
+                if any(_jst(x[0]).hour in ROLLOVER_HOURS for x in v):
+                    # 6〜7時はロールオーバーでスプレッドが普段の約10倍に開く。公表スプレッドのままだと
+                    # 早朝だけ良く見えるので、その時間の取引はコストを10倍にした控えめな値も出す
+                    rv = [(t, sd, r, c * ROLLOVER_COST_MULT if _jst(t).hour in ROLLOVER_HOURS else c)
+                          for t, sd, r, c in v]
+                    ra = pick(rv) or {}
+                    rh1 = pick([x for x in rv if x[0] < mid]) or {}
+                    rh2 = pick([x for x in rv if x[0] >= mid]) or {}
+                    s["roll"] = {"avg_r": ra.get("avg_r"), "ci_lo": ra.get("ci_lo"), "ci_hi": ra.get("ci_hi"),
+                                 "h1": rh1.get("avg_r"), "h2": rh2.get("avg_r"),
+                                 "verdict": long_verdict(ra, rh1, rh2) if ra and rh1 and rh2 else "und",
+                                 "mult": ROLLOVER_COST_MULT}
+    hours = {}
+    for x in rows:
+        hours.setdefault(f"{_jst(x[0]).hour:02d}", []).append(x)
+    out["by_hour"] = {k: {f: v.get(f) for f in ("n", "avg_r", "avg_r_gross", "cost_r", "ci_lo", "ci_hi")}
+                      for k, v in ((k, pick(xs)) for k, xs in sorted(hours.items())) if v}
     out["verdict"] = long_verdict(out["all"], out["first_half"], out["second_half"])
     out["from"] = _jst(rows[0][0]).strftime("%Y-%m-%d")
     out["to"] = _jst(rows[-1][0]).strftime("%Y-%m-%d")

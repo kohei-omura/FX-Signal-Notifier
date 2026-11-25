@@ -1240,6 +1240,36 @@ def hist5_line(mode, sym):
             f"［{c['ci_lo']:+.3f}〜{c['ci_hi']:+.3f}］{c['n']}件 {w}{tail}")
 
 
+def hist5_sessions(mode):
+    """そのモード（全通貨）の時間帯ごとの5年成績。確定の判定は全体と同じ条件（前半・後半とも同じ向き）。"""
+    m = load_hist5().get(mode) or {}
+    bs = (m.get("advice") or {}).get("by_session") or {}
+    keep = ("n", "avg_r", "ci_lo", "ci_hi", "winrate", "h1", "h2", "verdict", "years_plus")
+    out = {}
+    for k, v in bs.items():
+        if not (v and v.get("n")):
+            continue
+        c = {f: v.get(f) for f in keep if f in v}
+        if v.get("roll"):
+            # 早朝は 6〜7時のスプレッド拡大（約10倍）を入れた控えめな値を正とする
+            c["raw_avg_r"] = c.get("avg_r")
+            c.update({f: v["roll"].get(f) for f in ("avg_r", "ci_lo", "ci_hi", "h1", "h2", "verdict")})
+            c["roll"] = v["roll"].get("mult")
+        out[k] = c
+    return out
+
+
+def hist5_session_line(mode, session=None):
+    """通知に入れる「今の時間帯は5年でどうだったか」。確定している時だけ出す（未確定は情報が薄い）。"""
+    session = session or session_of_ms(int(_now_ts() * 1000))
+    c = hist5_sessions(mode).get(session)
+    if not c or c.get("verdict") not in ("good", "bad") or c.get("avg_r") is None:
+        return ""
+    return (f"\n  🕒今の時間帯 {session}: 5年で1回平均{c['avg_r']:+.3f}R"
+            f"［{c['ci_lo']:+.3f}〜{c['ci_hi']:+.3f}］{c['n']}件 {HIST5_WORD[c['verdict']]}"
+            + ("（6〜7時のスプレッド拡大込み）" if c.get("roll") else ""))
+
+
 def hist5_table():
     """status.json に載せる小さな表（画面が読む）。全モード×(4通貨＋全体)。"""
     out = {}
@@ -1848,7 +1878,7 @@ def sub_mode_signals(data, subs=None):
                     f"  📍{sc['price']:.3f}で建てた場合のOCO → TP {tp:.3f} / SL {sl:.3f}\n"
                     f"  ▶登録するときは必ずモードを「{MODE_LABEL.get(m, m)}」にしてください"
                     f"（別モードの物差しで監視すると利確/損切りの判断がずれます）"
-                    + hist5_line(m, sym))
+                    + hist5_line(m, sym) + hist5_session_line(m))
                 events.append((sig, sym))
     # 合図が消えた組み合わせも「消えた」と記録する（次に出た時は新規扱いになる）
     try:
@@ -3413,7 +3443,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
                           f"   ・{valid_min}分以内（{entry['valid_until']}まで）\n"
                           f"   ・現在値が {entry['entry_limit']} {arrow}なら可"
                           f"（+{entry['maxchase_pips']}pipsまで追い、超過は見送り）"
-                          + mtf_txt + stat_txt + hist5_line(MODE, sym))
+                          + mtf_txt + stat_txt + hist5_line(MODE, sym) + hist5_session_line(MODE))
             sig_events.append((sig, sym))
 
     open_pos, closed_pos = [], []
@@ -3460,6 +3490,7 @@ def build_status(ticker, data, market_open, stats=None, advice_map=None, prev_si
         "market_open": market_open, "mode": MODE, "blackout": any_blackout,
         "weights": {"tech": TECH_W, "fund": FUND_W},
         **({"hist5": hist5_table()} if hist5_table() else {}),
+        **({"hist5_sess": {m: hist5_sessions(m) for m in load_hist5()}} if load_hist5() else {}),
         **({"line": {"used": lq["used"], "limit": lq["limit"], "at": lq.get("at"),
                      "reserve": LINE_RESERVE}} if lq else {}),
         "pairs": pairs, "open_positions": open_pos, "closed_positions": closed_pos[-20:],

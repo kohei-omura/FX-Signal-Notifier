@@ -545,6 +545,10 @@ footer{border-top:1px solid transparent;border-image:linear-gradient(90deg,var(-
 .h5box .h5n{margin-top:3px;color:var(--ink);font-variant-numeric:tabular-nums}
 .h5box .h5ci{color:var(--mut);font-size:10.5px}
 .h5box .h5s{color:var(--dim);font-size:10.5px}
+.h5box .h5t{margin-top:5px;padding-top:5px;border-top:1px dashed var(--line);color:var(--mut);font-variant-numeric:tabular-nums}
+.h5box .h5t b{color:var(--ink)}
+.h5box .h5t.up b{color:var(--up)}
+.h5box .h5t.down b{color:var(--down)}
 .h5box.h5-bad{border-color:rgba(255,123,140,.45);background:rgba(255,123,140,.06)}
 .h5box.h5-bad .h5v{color:var(--down);border-color:rgba(255,123,140,.55)}
 .h5box.h5-good{border-color:rgba(78,224,162,.45);background:rgba(78,224,162,.06)}
@@ -2041,7 +2045,19 @@ function hist5Box(sym){
     +'</span><b class="h5v">'+(c.verdict==='bad'?'⛔ ':(c.verdict==='good'?'✅ ':''))+(HIST5_WORD[c.verdict]||'未確定')+'</b></div>'
     +'<div class="h5n">1回平均 <b>'+f(c.avg_r)+'R</b> <span class="h5ci">［'+f(c.ci_lo)+'〜'+f(c.ci_hi)+'］</span>'
     +' · 前半 '+f(c.h1)+' / 後半 '+f(c.h2)+' · '+c.n+'件</div>'
-    +'<div class="h5s">'+note+(c.from?'（'+escHtml(c.from)+'〜'+escHtml(c.to||'')+'）':'')+'</div></div>';
+    +'<div class="h5s">'+note+(c.from?'（'+escHtml(c.from)+'〜'+escHtml(c.to||'')+'）':'')+'</div>'
+    +hist5SessLine(m)+'</div>';
+}
+// 今の時間帯は5年でどうだったか（このモード・4通貨合計）。確定の条件は全体と同じ（前半・後半とも同じ向き）
+function hist5SessLine(m,ms){
+  var ss=(S&&S.hist5_sess&&S.hist5_sess[m])||null; if(!ss) return '';
+  var k=sessionOfHourJS(new Date((ms||Date.now())+9*3600e3).getUTCHours()), c=ss[k]; if(!c||!c.n) return '';
+  var f=function(v){ return v==null?'—':(v>=0?'+':'')+(+v).toFixed(3); };
+  var w=c.verdict==='good'?'✅ 勝ち確定':(c.verdict==='bad'?'⛔ 負け確定':'未確定');
+  var yp=(c.years_plus&&c.years_plus[1])?' · '+c.years_plus[0]+'/'+c.years_plus[1]+'年プラス':'';
+  return '<div class="h5t '+(c.verdict==='good'?'up':(c.verdict==='bad'?'down':''))+'">🕒 今の時間帯 '+escHtml(k)
+    +'：1回平均 <b>'+f(c.avg_r)+'R</b> <span class="h5ci">［'+f(c.ci_lo)+'〜'+f(c.ci_hi)+'］</span> · '+c.n+'件'+yp
+    +' · <b>'+w+'</b>'+(c.roll?'<span class="h5ci">（6〜7時のスプレッド拡大×'+c.roll+'込み。公表スプレッドなら '+f(c.raw_avg_r)+'R）</span>':'')+'</div>';
 }
 function pairCard(p,i){const sg=p.signal==='買い'?`<span class="sig buy">▲ 買い</span>`:p.signal==='売り'?`<span class="sig sell">▼ 売り</span>`:`<span class="sig none">${p.bias||'様子見'}</span>`;
   const rsi=p.rsi!=null?p.rsi:50,reasons=(p.reasons&&p.reasons.length)?`<div class="reasons">${p.reasons.join(' ／ ')}</div>`:'';

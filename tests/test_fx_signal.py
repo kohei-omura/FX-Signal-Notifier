@@ -5749,6 +5749,24 @@ class ProfitWhereToFightHist5Test(ToolsHarness, unittest.TestCase):
         self.assertIn("1/2年プラス", html)
         self.assertIn("5年・", html)
 
+    def test_session_table_marks_only_confirmed_and_rollover(self):
+        h5 = json.loads(json.dumps(self.H5))
+        h5["mtf"]["advice"]["by_session"] = {
+            "早朝(6-9)": {"n": 500, "avg_r": 0.29, "ci_lo": 0.18, "ci_hi": 0.39, "h1": 0.3, "h2": 0.28, "verdict": "good",
+                         "years_plus": [5, 5], "roll": {"avg_r": 0.05, "ci_lo": -0.06, "ci_hi": 0.16, "h1": 0.07,
+                                                        "h2": 0.03, "verdict": "und", "mult": 10}},
+            "東京(9-15)": {"n": 1000, "avg_r": 0.12, "ci_lo": 0.05, "ci_hi": 0.19, "h1": 0.1, "h2": 0.14,
+                          "verdict": "good", "years_plus": [4, 5]}}
+        bt = dict(ProfitWhereToFightTest.BT, hist5=h5)
+        html = self._node("", "BT_CACHE=" + json.dumps(bt, ensure_ascii=False) + ";"
+                          "renderWhereToFight(BT_CACHE); return {html:document.querySelector('#wherefight').innerHTML};")["html"]
+        self.assertIn("1d. 時間帯ごとの平均R", html)
+        sec = html[html.index("1d. 時間帯ごと"):]
+        self.assertIn("+0.05<sup>※</sup>", sec, "早朝をスプレッド拡大込みで出していない")
+        self.assertIn("+0.29→+0.05", sec)
+        self.assertIn("上位足×東京 +0.120R", sec)
+        self.assertNotIn("上位足×早朝", sec, "拡大後は未確定なのに確定扱いしている")
+
 
 class ProfitRuleWhatIfTest(ToolsHarness, unittest.TestCase):
     def test_off_pairs_are_adopted_and_saving_is_counted(self):
@@ -6938,6 +6956,46 @@ class Hist5ReflectTest(RunTestCase):
         self.assertIn("⛔負け確定", txt)
         self.assertEqual(self.status()["hist5"]["mtf"]["USD_JPY"]["verdict"], "bad")
 
+
+class Hist5SessionTest(RunTestCase):
+    """時間帯ごとの5年成績。後から分けた数字なので全体と同じ確定条件、早朝はスプレッド拡大込み。"""
+
+    def _trades(self):
+        sys.path.insert(0, os.path.join(ROOT, "engine"))
+        import backtest as B
+        JST_ = datetime.timezone(datetime.timedelta(hours=9))
+        tr = []
+        for d in range(0, 1400, 2):                 # 約4年、2日おき
+            day = datetime.datetime(2022, 1, 3, tzinfo=JST_) + datetime.timedelta(days=d)
+            for h, r in ((6, 0.30 if d % 4 else 0.10), (10, 0.5 if d % 4 else -0.5)):
+                t = int((day + datetime.timedelta(hours=h)).timestamp() * 1000)
+                tr.append((t, "買い", {"advice": r}, 0.03))
+        return B, tr
+
+    def test_session_halves_verdict_and_rollover_cost(self):
+        B, tr = self._trades()
+        out = B.summarize_trades(tr, "advice")
+        early, tokyo = out["by_session"]["早朝(6-9)"], out["by_session"]["東京(9-15)"]
+        self.assertEqual(early["verdict"], "good", "公表スプレッドなら早朝は前半・後半とも勝ち")
+        self.assertEqual(tokyo["verdict"], "und")
+        self.assertIn("h1", early); self.assertEqual(early["years_plus"][0], early["years_plus"][1])
+        self.assertEqual(early["roll"]["mult"], 10)
+        self.assertLess(early["roll"]["avg_r"], early["avg_r"] - 0.2, "6〜7時のスプレッド拡大を入れていない")
+        self.assertNotEqual(early["roll"]["verdict"], "good", "拡大後も勝ち確定のまま")
+        self.assertNotIn("roll", tokyo, "6〜7時が無い時間帯までコストを上げている")
+        self.assertEqual(sorted(out["by_hour"]), ["06", "10"])
+
+    def test_status_and_notify_use_the_conservative_value(self):
+        B, tr = self._trades()
+        F._HIST5 = {"mtf": {"advice": B.summarize_trades(tr, "advice"), "symbols": {}}}
+        ss = F.hist5_sessions("mtf")
+        e = ss["早朝(6-9)"]
+        self.assertEqual(e["roll"], 10)
+        self.assertLess(e["avg_r"], e["raw_avg_r"])
+        self.assertEqual(F.hist5_session_line("mtf", "東京(9-15)"), "", "未確定の時間帯まで通知に載せている")
+        F._HIST5["mtf"]["advice"]["by_session"]["東京(9-15)"].update(verdict="bad", ci_hi=-0.01, avg_r=-0.05)
+        line = F.hist5_session_line("mtf", "東京(9-15)")
+        self.assertIn("🕒今の時間帯 東京(9-15)", line); self.assertIn("⛔負け確定", line)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
